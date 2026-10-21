@@ -1,0 +1,21 @@
+# Dependencies & build output
+node_modules/
+dist/
+target/
+crates/directory-worker/build/
+
+# Wrangler local state (local D1/R2 data) and secrets
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.env
+.env.*
+
+# Tooling
+*.log
+coverage/
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json

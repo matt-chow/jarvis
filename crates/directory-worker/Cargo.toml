@@ -1,0 +1,15 @@
+[package]
+name = "directory-worker"
+description = "Cloudflare Workers adapter for Directory: HTTP routing, D1 and R2 bindings."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+directory-core = { path = "../directory-core" }
+serde.workspace = true
+worker = { version = "0.8.7", features = ["d1"] }

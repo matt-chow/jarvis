@@ -1,0 +1,38 @@
+# Directory — single Worker serving the PWA (static assets) and the Rust API.
+# Free-tier only: Workers Free, D1 free, R2 free (10 GB). No paid features.
+# See ARCHITECTURE.md › Deployment for one-time Cloudflare setup.
+
+name = "directory"
+main = "crates/directory-worker/build/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+# Do not attach preview URLs that would expose the app on extra hostnames.
+preview_urls = false
+
+[build]
+command = "worker-build --release"
+cwd = "crates/directory-worker"
+watch_dir = ["crates/directory-core/src", "crates/directory-worker/src"]
+
+[assets]
+directory = "apps/web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+# Only API routes invoke the Worker; static files are served directly (free, unmetered).
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "directory-db"
+# Replace with the id printed by `npx wrangler d1 create directory-db`.
+# Local development (`--local`) works with this placeholder.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "FILES"
+# Private bucket: never enable r2.dev public access or a custom domain on it.
+bucket_name = "directory-files"
+
+# Secrets (not stored here):
+#   DIRECTORY_API_TOKEN — `npx wrangler secret put DIRECTORY_API_TOKEN`; locally via .dev.vars
