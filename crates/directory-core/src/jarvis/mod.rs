@@ -7,6 +7,7 @@
 //! command executes through the owning module's service as the caller.
 
 pub mod parser;
+pub mod presets;
 
 use crate::entropy::{is_id, new_id, Entropy};
 use crate::identity::Principal;

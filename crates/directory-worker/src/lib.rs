@@ -42,6 +42,9 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .post_async("/api/v1/jarvis/plans/:id/execute", jarvis::execute)
         .post_async("/api/v1/jarvis/plans/:id/cancel", jarvis::cancel)
         .get_async("/api/v1/jarvis/history", jarvis::history)
+        .get_async("/api/v1/jarvis/presets", jarvis::list_presets)
+        .post_async("/api/v1/jarvis/presets", jarvis::create_preset)
+        .delete_async("/api/v1/jarvis/presets/:id", jarvis::delete_preset)
         // Data export
         .get_async("/api/v1/export", export::export)
         // Links

@@ -35,3 +35,10 @@ export const STATUS_TONE: Record<PlanStatus, string> = {
   cancelled: "text-muted",
   expired: "text-muted",
 };
+
+export interface Preset {
+  id: string;
+  name: string;
+  input: string;
+  created_at: number;
+}

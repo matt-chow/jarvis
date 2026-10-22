@@ -4,7 +4,7 @@
  * native clients can pass a device token instead.
  */
 import type { InboxItem, Triaged, TriageTarget } from "./inbox";
-import type { Plan } from "./jarvis";
+import type { Plan, Preset } from "./jarvis";
 import type { JournalEntry, JournalSummary, PutJournal } from "./journal";
 import type { EntityRef, Linked } from "./links";
 import type { Note, NotePatch, NoteSummary } from "./notes";
@@ -201,6 +201,9 @@ export class Api {
   jarvisExecute = (id: string) => this.call<Plan>("POST", `/api/v1/jarvis/plans/${encodeURIComponent(id)}/execute`);
   jarvisCancel = (id: string) => this.call<Plan>("POST", `/api/v1/jarvis/plans/${encodeURIComponent(id)}/cancel`);
   jarvisHistory = async () => (await this.call<{ plans: Plan[] }>("GET", "/api/v1/jarvis/history")).plans;
+  presets = async () => (await this.call<{ presets: Preset[] }>("GET", "/api/v1/jarvis/presets")).presets;
+  createPreset = (name: string, input: string) => this.call<Preset>("POST", "/api/v1/jarvis/presets", { name, input });
+  deletePreset = (id: string) => this.call<void>("DELETE", `/api/v1/jarvis/presets/${encodeURIComponent(id)}`);
 
   // ---- Export ----
   async exportData(): Promise<Blob> {

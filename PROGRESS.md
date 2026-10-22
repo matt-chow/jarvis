@@ -8,8 +8,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - **Milestone:** M1 Private Alpha is **feature-complete locally**. All M1
   slices are done and `npm run ci` is green. The first deploy is **blocked on
   owner approval** (see the readiness checklist in docs/ARCHITECTURE.md ›
-  Deployment). **M2 JARVIS Alpha:** command layer ✅. Next: presets, then
-  voice.
+  Deployment). **M2 JARVIS Alpha:** command layer ✅, presets ✅. Next:
+  voice input.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
   - Device tokens for native clients and scripts.
@@ -29,7 +29,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
     cross-module picker and deep links.
   - Full JSON data export from Settings.
   - JARVIS text commands (tasks, notes, journal, capture, list) with preview,
-    approve, results, and history.
+    approve, results, history, and saved presets.
   - PWA install and offline relaunch with the saved session.
   - Health dashboard.
 - **Not deployed.** Nothing has run on Cloudflare yet; that needs owner approval
@@ -42,9 +42,9 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | Command | Result (2026-10-21) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 1,205 KiB / 389 KiB gzipped |
-| `cargo test -p directory-core` | ✅ 72 passed |
+| `cargo test -p directory-core` | ✅ 74 passed |
 | Vitest | ✅ 26 passed (9 files) |
-| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 25/25 |
+| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 26/26 |
 | `npm run test:browser` (headless Edge 155, virtual passkey) | ✅ 15/15 |
 
 ### Known issues and technical debt
@@ -77,17 +77,30 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-**M2 slice 2: JARVIS presets.**
-- Saved commands with a name and command text, stored in D1 and owner-scoped.
-- Running a preset goes through the same plan → approve path.
-- `/api/v1/jarvis/presets` CRUD.
-- UI: a preset chips row in the console, plus "save as preset" from history.
-- Then: voice input (Web Speech API, progressive enhancement), and more
-  commands (projects, linking).
+**M2 slice 3: voice input for JARVIS.**
+- Progressive enhancement: a microphone button appears only when the browser
+  exposes `SpeechRecognition`/`webkitSpeechRecognition`. The transcript
+  fills the command box for review and is never auto-executed; writes still
+  need approval.
+- Permissions-Policy must allow the microphone for self (currently denied in
+  `_headers`).
+- Privacy note in the UI: browser speech services may process audio in the
+  cloud (e.g. Chrome sends it to Google). Mention this in docs.
+- Then: more commands (projects, linking), and M3 planning.
 
 ---
 
 ## Log
+
+### 2026-10-21 — M2 slice: JARVIS presets
+- **Core:** `jarvis::presets` (name and input validation, dry-parse on
+  save, a 50-per-owner limit).
+- **Worker:** `d1/presets.rs` and preset routes. Migration
+  `0011_jarvis_presets.sql` (schema v11).
+- **Web:** preset chips (run → preview → approve), delete, and "save as
+  preset" on current and history plans.
+- **Tests:** 2 core tests, a smoke presets check, and a browser e2e
+  (save → chip → preview → cancel).
 
 ### 2026-10-21 — M2 slice: JARVIS command layer
 - **Core:**

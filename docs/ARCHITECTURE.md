@@ -87,6 +87,8 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | POST | `/api/v1/jarvis/plans/{id}/execute` | session or token | Approve: atomic `pending → running` claim, so a plan runs at most once (`409 not_pending`). |
 | POST | `/api/v1/jarvis/plans/{id}/cancel` | session or token | |
 | GET | `/api/v1/jarvis/history` | session or token | Last 50 plans with results |
+| GET / POST | `/api/v1/jarvis/presets` | session or token | Saved commands `{ name, input }` (≤ 50, validated by parsing). Running one is a normal `plan` call. |
+| DELETE | `/api/v1/jarvis/presets/{id}` | session or token | |
 | GET | `/api/v1/export` | session or token | One JSON download (`format: "directory-export"`, `format_version: 1`): user, tasks, projects, notes with bodies, journal, inbox, links, and file metadata. No credential material. |
 | GET | `/api/v1/links?kind=task|note|project|journal&id=` | session or token | Items linked to an entity, with resolved titles. Links whose other end was deleted are dropped and removed. |
 | POST | `/api/v1/links` | session or token | `{ from: {kind,id}, to: {kind,id} }` → `201 { link_id, kind, id, title }`. Idempotent and symmetric; both ends must exist and be owned. |
@@ -117,7 +119,7 @@ JSON bodies are capped at 64 KiB.
 ## Data
 
 - **D1** migrations live in `migrations/NNNN_name.sql` and are append-only.
-  `system_meta.schema_version` must equal `EXPECTED_SCHEMA_VERSION` (now **10**).
+  `system_meta.schema_version` must equal `EXPECTED_SCHEMA_VERSION` (now **11**).
   - `0001`: `system_meta`
   - `0002`: `users`, `passkeys`, `auth_challenges`, `sessions`, `api_tokens`.
     Times are epoch milliseconds; secrets are stored only as SHA-256 hex.
@@ -132,6 +134,7 @@ JSON bodies are capped at 64 KiB.
   - `0008`: `inbox_items`.
   - `0009`: `links` (normalized pair `a < b`, unique per owner).
   - `0010`: `jarvis_plans` (actions and results as JSON; status lifecycle).
+  - `0011`: `jarvis_presets`.
 - **R2** bucket `directory-files` is private, with no r2.dev URL or custom domain.
   Object keys are `u/<user_id>/<key>`.
 - **IndexedDB** database `directory` (v1) has a `kv` store with cached

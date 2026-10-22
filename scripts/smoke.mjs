@@ -376,6 +376,17 @@ async function local() {
       await api.req("DELETE", `/api/v1/tasks/${task.id}`);
     });
 
+    await check("jarvis presets: save (validated by parsing), list, delete", async () => {
+      const bad = await api.req("POST", "/api/v1/jarvis/presets", { body: { name: "Bad", input: "dance" } });
+      expect(bad.status === 400 && bad.json.error === "not_understood", `unparseable → ${bad.status}`);
+      const p = await api.req("POST", "/api/v1/jarvis/presets", { body: { name: "Morning", input: "list tasks; journal started the day" } });
+      expect(p.status === 201 && p.json.name === "Morning", `create → ${p.text}`);
+      const list = await api.req("GET", "/api/v1/jarvis/presets");
+      expect(list.json.presets.some((x) => x.id === p.json.id), "listed");
+      expect((await api.req("DELETE", `/api/v1/jarvis/presets/${p.json.id}`)).status === 204, "delete");
+      expect((await api.req("DELETE", `/api/v1/jarvis/presets/${p.json.id}`)).status === 404, "gone");
+    });
+
     await check("device API token: create (shown once), use as bearer, cannot manage credentials", async () => {
       const r = await api.req("POST", "/api/v1/auth/tokens", { body: { name: "Smoke device" } });
       expect(r.status === 201 && r.json.secret.startsWith("dir_"), `${r.status} ${r.text}`);

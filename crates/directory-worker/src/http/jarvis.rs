@@ -1,13 +1,15 @@
 //! JARVIS routes: plan (preview), execute (approve), cancel, history.
 
 use super::auth::principal;
-use super::{error, error_with, json, read_json};
+use super::{error, error_with, json, no_content, read_json};
 use crate::d1::{
-    D1InboxRepository, D1JarvisRepository, D1JournalRepository, D1NoteRepository, D1TaskRepository,
+    D1InboxRepository, D1JarvisRepository, D1JournalRepository, D1NoteRepository,
+    D1PresetRepository, D1TaskRepository,
 };
 use crate::{bindings, entropy::WebCryptoEntropy, try_or_respond};
 use directory_core::identity::Principal;
 use directory_core::jarvis::parser::{ParseError, EXAMPLES};
+use directory_core::jarvis::presets::{NewPreset, PresetError, PresetService};
 use directory_core::jarvis::{
     CommandTargets, DeterministicParser, JarvisError, JarvisService, PlanRequest,
 };
@@ -149,5 +151,69 @@ pub async fn history(req: Request, rc: RouteContext<()>) -> Result<Response> {
     match c.service().history(&c.principal).await {
         Ok(plans) => json(200, &body!({ "plans": plans })),
         Err(e) => jarvis_error(e),
+    }
+}
+
+fn preset_error(e: PresetError) -> Result<Response> {
+    match e {
+        PresetError::Invalid(field, why) => {
+            error_with(400, "invalid_input", format!("{field}: {why}"))
+        }
+        PresetError::Parse(p) => jarvis_error(JarvisError::Parse(p)),
+        PresetError::Limit => error_with(409, "limit_reached", "at most 50 presets"),
+        PresetError::NotFound => error(404, "not_found"),
+        PresetError::Backend(detail) => {
+            worker::console_error!("presets backend error: {detail}");
+            error(502, "backend_unavailable")
+        }
+    }
+}
+
+async fn presets(
+    req: &Request,
+    rc: &RouteContext<()>,
+) -> Result<std::result::Result<(D1PresetRepository, Principal), Response>> {
+    let p = match principal(req, &rc.env).await? {
+        Ok(p) => p,
+        Err(resp) => return Ok(Err(resp)),
+    };
+    Ok(Ok((D1PresetRepository::new(rc.env.d1(bindings::DB)?), p)))
+}
+
+fn now() -> i64 {
+    Date::now().as_millis() as i64
+}
+
+pub async fn list_presets(req: Request, rc: RouteContext<()>) -> Result<Response> {
+    let (repo, p) = try_or_respond!(presets(&req, &rc).await?);
+    match PresetService::new(&repo, &WebCryptoEntropy, now())
+        .list(&p)
+        .await
+    {
+        Ok(list) => json(200, &body!({ "presets": list })),
+        Err(e) => preset_error(e),
+    }
+}
+
+pub async fn create_preset(mut req: Request, rc: RouteContext<()>) -> Result<Response> {
+    let (repo, p) = try_or_respond!(presets(&req, &rc).await?);
+    let input: NewPreset = try_or_respond!(read_json(&mut req).await?);
+    match PresetService::new(&repo, &WebCryptoEntropy, now())
+        .create(&p, input)
+        .await
+    {
+        Ok(preset) => json(201, &preset),
+        Err(e) => preset_error(e),
+    }
+}
+
+pub async fn delete_preset(req: Request, rc: RouteContext<()>) -> Result<Response> {
+    let (repo, p) = try_or_respond!(presets(&req, &rc).await?);
+    match PresetService::new(&repo, &WebCryptoEntropy, now())
+        .delete(&p, &id_param(&rc))
+        .await
+    {
+        Ok(()) => no_content(),
+        Err(e) => preset_error(e),
     }
 }

@@ -13,7 +13,7 @@ JARVIS commands will refer to them.
 | `notes` | Notes | preview | read-only | `/api/v1/notes` | Server notes with debounced autosave, pinning, and conflict detection (409, then "use theirs" or "keep mine"). Migrates legacy Scratchpad notes once. |
 | `journal` | Journal | preview | read-only | `/api/v1/journal` | One entry per day with mood (1–5), autosave, month list, and day navigation. |
 | `files` | Files | preview | no | `/api/v1/storage/*` | Owner-scoped private R2 storage (10 MB cap, no folders yet). |
-| `jarvis` | JARVIS | preview | no | `/api/v1/jarvis/*` | Text command console: preview → approve → results (with links to items), clickable examples, history. Deterministic parser; no AI provider yet. |
+| `jarvis` | JARVIS | preview | no | `/api/v1/jarvis/*` | Text command console: preview → approve → results (with links to items), clickable examples, history, and presets (save from any plan, run from chips). Deterministic parser; no AI provider yet. |
 | `settings` | Settings | ready | no | `/api/v1/auth/*` | Passkeys, device tokens, sign-out. |
 
 **Links** aren't a module either. The `LinkedSection` component appears in the

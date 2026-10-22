@@ -41,8 +41,8 @@ part of every slice, not deferred to the end.
 | Slice | Status |
 | --- | --- |
 | Command layer: typed commands, deterministic parser, preview/approve/execute-once, multi-step, history | ✅ done |
-| Command presets (saved commands, one-tap run) | next |
-| Voice input (Web Speech API where available; text fallback) | planned |
+| Command presets (saved commands, one-tap run) | ✅ done |
+| Voice input (Web Speech API where available; text fallback) | next |
 | More commands (projects, links, search) | planned |
 | AI intent provider | needs owner approval (provider, budget) |
 

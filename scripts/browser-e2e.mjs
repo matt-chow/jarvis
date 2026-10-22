@@ -191,6 +191,16 @@ try {
     await page.waitForText("EXECUTED"); // innerText reflects CSS text-transform
     const after = await page.evaluate(`fetch("/api/v1/tasks").then((r) => r.json())`);
     if (!after.tasks.some((t) => t.title === "Plan the offsite" && t.due_date)) throw new Error("task missing after approval");
+
+    // Save it as a preset, then run the preset: it previews again and needs approval.
+    await page.click("save as preset");
+    await page.fill("Preset name", "Offsite kickoff");
+    await page.click("save");
+    await page.waitForText("▸ Offsite kickoff");
+    await page.click("▸ Offsite kickoff");
+    await page.waitForText("PENDING");
+    await page.click("cancel");
+    await page.waitForText("CANCELLED");
   });
 
   await step("Settings lists one passkey; device token is shown once", async () => {

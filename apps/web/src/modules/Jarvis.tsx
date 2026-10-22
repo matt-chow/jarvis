@@ -5,7 +5,7 @@ import { describeError } from "../hooks/useCachedList";
 import { reportIfUnauthorized } from "../hooks/useSession";
 import { api, ApiError } from "../lib/api";
 import { formatTime } from "../lib/format";
-import { STATUS_TONE, type Plan } from "../lib/jarvis";
+import { STATUS_TONE, type Plan, type Preset } from "../lib/jarvis";
 import { entityRoute } from "../lib/links";
 import { localDate } from "../lib/tasks";
 
@@ -18,7 +18,53 @@ interface Problem {
   examples?: string[];
 }
 
-function PlanCard({ plan, busy, onApprove, onCancel }: { plan: Plan; busy: boolean; onApprove?: () => void; onCancel?: () => void }) {
+function SaveAsPreset({ onSave }: { onSave: (name: string) => Promise<boolean> }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="font-mono text-[11px] text-muted hover:text-accent">
+        save as preset
+      </button>
+    );
+  }
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        void onSave(name).then((ok) => ok && setOpen(false));
+      }}
+      className="flex items-center gap-1.5"
+    >
+      <input
+        autoFocus
+        value={name}
+        maxLength={60}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Preset name"
+        aria-label="Preset name"
+        className={`${inputClass} min-h-7 w-36 text-xs`}
+      />
+      <Button type="submit" className={small} disabled={!name.trim()}>
+        save
+      </Button>
+    </form>
+  );
+}
+
+function PlanCard({
+  plan,
+  busy,
+  onApprove,
+  onCancel,
+  onSave,
+}: {
+  plan: Plan;
+  busy: boolean;
+  onApprove?: () => void;
+  onCancel?: () => void;
+  onSave?: (name: string) => Promise<boolean>;
+}) {
   return (
     <div className="rounded-sm border border-line bg-sunken/40 p-3">
       <div className="flex items-baseline justify-between gap-3 font-mono text-xs">
@@ -64,6 +110,11 @@ function PlanCard({ plan, busy, onApprove, onCancel }: { plan: Plan; busy: boole
           <span className="ml-auto font-mono text-[11px] text-muted">expires {formatTime(plan.expires_at)}</span>
         </div>
       )}
+      {onSave && (
+        <div className="mt-2 flex justify-end">
+          <SaveAsPreset onSave={onSave} />
+        </div>
+      )}
     </div>
   );
 }
@@ -75,14 +126,38 @@ export function Jarvis({ online }: ModuleProps) {
   const [history, setHistory] = useState<Plan[]>();
   const [problem, setProblem] = useState<Problem>();
   const [busy, setBusy] = useState(false);
+  const [presets, setPresets] = useState<Preset[]>();
 
   const loadHistory = useCallback(() => {
     api.jarvisHistory().then(setHistory, reportIfUnauthorized);
   }, []);
 
   useEffect(() => {
-    if (online) loadHistory();
+    if (!online) return;
+    loadHistory();
+    api.presets().then(setPresets, reportIfUnauthorized);
   }, [online, loadHistory]);
+
+  const savePreset = (input: string) => async (name: string) => {
+    try {
+      const created = await api.createPreset(name, input);
+      setPresets((ps) => [...(ps ?? []), created]);
+      return true;
+    } catch (e) {
+      reportIfUnauthorized(e);
+      setProblem({ message: describeError(e, "preset") });
+      return false;
+    }
+  };
+
+  const removePreset = async (id: string) => {
+    try {
+      await api.deletePreset(id);
+      setPresets((ps) => ps?.filter((p) => p.id !== id));
+    } catch (e) {
+      reportIfUnauthorized(e);
+    }
+  };
 
   const run = async (fn: () => Promise<Plan>) => {
     setBusy(true);
@@ -131,6 +206,31 @@ export function Jarvis({ online }: ModuleProps) {
             run
           </Button>
         </form>
+        {presets && presets.length > 0 && (
+          <ul aria-label="Presets" className="mt-3 flex flex-wrap gap-1.5">
+            {presets.map((p) => (
+              <li key={p.id} className="flex items-center rounded-sm border border-line">
+                <button
+                  type="button"
+                  title={p.input}
+                  disabled={!online || busy}
+                  onClick={() => void run(() => api.jarvisPlan(p.input, localDate()))}
+                  className="px-2 py-0.5 font-mono text-xs hover:text-accent disabled:opacity-50"
+                >
+                  ▸ {p.name}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Delete preset “${p.name}”`}
+                  onClick={() => void removePreset(p.id)}
+                  className="border-l border-line px-1.5 font-mono text-xs text-muted hover:text-bad"
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         {!online && <p className="mt-3 text-sm text-muted">JARVIS needs a connection.</p>}
         <p className="mt-2 text-xs text-muted">
           Changes are previewed and only happen when you approve. Chain steps with “;” or “then”.
@@ -164,6 +264,7 @@ export function Jarvis({ online }: ModuleProps) {
               busy={busy}
               onApprove={() => void run(() => api.jarvisExecute(current.id))}
               onCancel={() => void run(() => api.jarvisCancel(current.id))}
+              onSave={savePreset(current.input)}
             />
           </div>
         )}
@@ -178,7 +279,7 @@ export function Jarvis({ online }: ModuleProps) {
           <ul className="flex flex-col gap-2">
             {history.map((p) => (
               <li key={p.id}>
-                <PlanCard plan={p} busy={busy} />
+                <PlanCard plan={p} busy={busy} onSave={savePreset(p.input)} />
               </li>
             ))}
           </ul>
