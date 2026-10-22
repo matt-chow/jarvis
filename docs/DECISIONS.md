@@ -136,6 +136,23 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-021 — Calendar: local wall-clock events, repeats expanded on both sides
+**Status:** accepted
+- Events store local dates and `HH:MM` times with no time zone, which fits a
+  single-owner personal calendar. If shared calendars or travel across time
+  zones become requirements, add an IANA zone per event; this would be a
+  migration, not a redesign.
+- Repeats are a small enum (daily, weekly, monthly, yearly) with an optional
+  last date, not RRULE. Monthly on the 31st skips shorter months, and yearly
+  on Feb 29 waits for leap years. Deleting a repeating event deletes every
+  occurrence; there are no per-occurrence exceptions yet.
+- `GET /events` returns events unexpanded. The web client expands any range
+  itself, so every month works offline. Core has the same expansion
+  (`/events/agenda`, for JARVIS and other clients), and both sides are tested
+  with the same cases.
+- The calendar shows open tasks with due dates from the tasks cache; it
+  doesn't store copies.
+
 ## D-020 — Habits: weekday schedules, idempotent check-ins, server-side streaks
 **Status:** accepted
 - A habit is scheduled on chosen weekdays (stored as a bit mask, Monday = bit

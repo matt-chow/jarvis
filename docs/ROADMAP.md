@@ -68,7 +68,7 @@ part of every slice, not deferred to the end.
 | Slice | Status |
 | --- | --- |
 | Habits: weekday schedules, check-ins, streaks, offline (D-020) | ✅ done |
-| Calendar | next |
+| Calendar: month/day views, timed/all-day/multi-day/repeating events, tasks due, offline (D-021) | ✅ done |
 | Automation engine | planned |
 | Music library, playlists, streaming and offline media | planned (R2 storage and quota implications need review) |
 | Customizable dashboard | planned |

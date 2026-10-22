@@ -4,7 +4,7 @@
  * should share these ids.
  */
 
-export type ModuleId = "home" | "search" | "inbox" | "tasks" | "projects" | "habits" | "notes" | "journal" | "library" | "files" | "jarvis" | "settings";
+export type ModuleId = "home" | "search" | "inbox" | "tasks" | "projects" | "calendar" | "habits" | "notes" | "journal" | "library" | "files" | "jarvis" | "settings";
 
 export interface ModuleMeta {
   id: ModuleId;
@@ -23,6 +23,7 @@ export const MODULES: readonly ModuleMeta[] = [
   { id: "inbox", label: "Inbox", glyph: "↓", summary: "Capture first, sort later: triage into tasks, notes, or the journal.", stage: "preview", offline: true },
   { id: "tasks", label: "Tasks", glyph: "☐", summary: "Tasks and subtasks with due dates and priorities.", stage: "preview", offline: true },
   { id: "projects", label: "Projects", glyph: "▦", summary: "Group tasks and track progress.", stage: "preview", offline: true },
+  { id: "calendar", label: "Calendar", glyph: "▣", summary: "Events by month and day, with tasks that are due.", stage: "preview", offline: true },
   { id: "habits", label: "Habits", glyph: "✓", summary: "Daily routines on chosen days, with streaks.", stage: "preview", offline: true },
   { id: "notes", label: "Notes", glyph: "¶", summary: "Notes and wiki pages, with autosave and backlinks.", stage: "preview", offline: true },
   { id: "journal", label: "Journal", glyph: "≡", summary: "One entry per day, with mood.", stage: "preview", offline: true },

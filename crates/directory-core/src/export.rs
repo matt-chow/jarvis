@@ -1,6 +1,7 @@
 //! Full data export: one JSON document with every record the owner has.
 //! Contains no credential material (sessions, passkeys, device tokens).
 
+use crate::calendar::Event;
 use crate::files::FileEntry;
 use crate::habits::{CheckIn, Habit};
 use crate::identity::User;
@@ -61,6 +62,7 @@ pub struct Export {
     pub files: Vec<FileEntry>,
     pub reading_progress: Vec<Progress>,
     pub habits: Vec<HabitRecord>,
+    pub events: Vec<Event>,
 }
 
 /// Everything owned by `owner_id`, per module.
@@ -75,6 +77,7 @@ pub trait ExportSource {
     async fn reading_progress(&self, owner_id: &str) -> Result<Vec<Progress>, String>;
     async fn habits(&self, owner_id: &str) -> Result<Vec<Habit>, String>;
     async fn habit_checkins(&self, owner_id: &str) -> Result<Vec<CheckIn>, String>;
+    async fn events(&self, owner_id: &str) -> Result<Vec<Event>, String>;
 }
 
 pub async fn export<S: ExportSource>(
@@ -118,6 +121,7 @@ pub async fn export<S: ExportSource>(
         files: source.files(&owner).await?,
         reading_progress: source.reading_progress(&owner).await?,
         habits,
+        events: source.events(&owner).await?,
         user,
     })
 }
@@ -196,6 +200,9 @@ mod tests {
                 date: date.into(),
             };
             Ok(vec![c("2026-10-21"), c("2026-10-19")])
+        }
+        async fn events(&self, _: &str) -> Result<Vec<Event>, String> {
+            Ok(vec![])
         }
     }
 

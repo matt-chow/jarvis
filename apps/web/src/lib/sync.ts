@@ -9,6 +9,7 @@
  * becomes a conflict for the owner to resolve (DECISIONS D-018).
  */
 import { ApiError, isNetworkError } from "./api";
+import { addDays, dayNumber, type CalendarEvent, type EventPatch, type NewEvent } from "./calendar";
 import type { OutboxEntry } from "./db";
 import { withCheck, type Habit, type HabitPatch, type HabitView, type NewHabit } from "./habits";
 import type { InboxItem } from "./inbox";
@@ -36,7 +37,10 @@ export type Op =
   | { kind: "habit.update"; id: string; patch: HabitPatch }
   | { kind: "habit.delete"; id: string }
   /** Idempotent: sets the day to `done`. */
-  | { kind: "habit.check"; id: string; date: string; done: boolean };
+  | { kind: "habit.check"; id: string; date: string; done: boolean }
+  | { kind: "event.create"; event: NewEvent & { id: string } }
+  | { kind: "event.update"; id: string; patch: EventPatch }
+  | { kind: "event.delete"; id: string };
 
 export interface NoteFields {
   title: string;
@@ -84,6 +88,9 @@ export interface SyncApi {
   updateHabit(id: string, patch: HabitPatch): Promise<Habit>;
   deleteHabit(id: string): Promise<void>;
   checkHabit(id: string, date: string, done: boolean): Promise<void>;
+  createEvent(e: NewEvent & { id: string }): Promise<CalendarEvent>;
+  updateEvent(id: string, patch: EventPatch): Promise<CalendarEvent>;
+  deleteEvent(id: string): Promise<void>;
 }
 
 export interface SyncResult {
@@ -155,6 +162,15 @@ async function apply(api: SyncApi, op: Op): Promise<number | void> {
       case "habit.check":
         await api.checkHabit(op.id, op.date, op.done);
         return;
+      case "event.create":
+        await api.createEvent(op.event);
+        return;
+      case "event.update":
+        await api.updateEvent(op.id, op.patch);
+        return;
+      case "event.delete":
+        await api.deleteEvent(op.id);
+        return;
     }
   } catch (e) {
     // Already applied by an earlier, interrupted replay.
@@ -201,6 +217,12 @@ function describeOp(op: Op): string {
       return "delete a habit";
     case "habit.check":
       return `check in a habit for ${op.date}`;
+    case "event.create":
+      return `create event “${op.event.title}”`;
+    case "event.update":
+      return "update an event";
+    case "event.delete":
+      return "delete an event";
   }
 }
 
@@ -329,5 +351,46 @@ export function applyHabitLocally(habits: HabitView[], op: Op, today: string, no
       return habits.map((h) => (h.id === op.id ? withCheck(h, op.date, op.done, today) : h));
     default:
       return habits;
+  }
+}
+
+/** Apply an event op to a local event list. */
+export function applyEventLocally(events: CalendarEvent[], op: Op, now = Date.now()): CalendarEvent[] {
+  switch (op.kind) {
+    case "event.create": {
+      const e = op.event;
+      const start_time = e.start_time ?? null;
+      return [
+        ...events,
+        {
+          id: e.id,
+          title: e.title.trim(),
+          start_date: e.start_date,
+          end_date: e.end_date ?? e.start_date,
+          start_time,
+          end_time: start_time ? (e.end_time ?? null) : null,
+          location: (e.location ?? "").trim(),
+          notes: e.notes ?? "",
+          repeat: e.repeat ?? "none",
+          repeat_until: e.repeat && e.repeat !== "none" ? (e.repeat_until ?? null) : null,
+          created_at: now,
+          updated_at: now,
+        },
+      ];
+    }
+    case "event.update":
+      return events.map((e) => {
+        if (e.id !== op.id) return e;
+        const next = { ...e, ...op.patch, updated_at: now };
+        // Same rules as the server: moving the start keeps the length; all-day has no end time.
+        if (op.patch.start_date && !op.patch.end_date) next.end_date = addDays(op.patch.start_date, dayNumber(e.end_date) - dayNumber(e.start_date));
+        if (!next.start_time) next.end_time = null;
+        if (next.repeat === "none") next.repeat_until = null;
+        return next;
+      });
+    case "event.delete":
+      return events.filter((e) => e.id !== op.id);
+    default:
+      return events;
   }
 }

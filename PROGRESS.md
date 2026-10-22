@@ -11,7 +11,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   Deployment). **M2 JARVIS Alpha:** command layer ✅, presets ✅, `find` ✅,
   project commands ✅.
   Voice is blocked on owner approval. **M3:** search ✅, files ✅, library ✅,
-  offline editing ✅, wiki ✅. **M4:** habits ✅.
+  offline editing ✅, wiki ✅. **M4:** habits ✅, calendar ✅.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
   - Device tokens for native clients and scripts.
@@ -29,6 +29,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   - Wiki: `[[links]]` between notes, create a note from a missing link,
     and backlinks.
   - Habits: weekday schedules, daily check-ins, streaks (offline too).
+  - Calendar: month and day views, events (timed, all-day, multi-day,
+    repeating), and tasks that are due (offline too).
   - Journal: one entry per day with mood, autosave, month list, and day
     navigation.
   - Inbox: quick capture (on Home and in Inbox) and triage into a task, a
@@ -53,10 +55,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | Command | Result (2026-10-22) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
-| `cargo test -p directory-core` | ✅ 90 passed |
-| Vitest | ✅ 44 passed |
+| `cargo test -p directory-core` | ✅ 93 passed |
+| Vitest | ✅ 49 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
-| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 20/20 |
+| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 21/21 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -97,14 +99,40 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. M4: Calendar (events with date/time, month and agenda views; tasks with
-   due dates shown alongside).
-2. Remaining owner decisions: deploy approval, voice, AI provider, reader
-   dependency.
+1. JARVIS agenda and habit commands ("what's on today", "check in
+   <habit>"), then search over events and habits.
+2. M4 next: customizable dashboard (Home), then automations.
+3. Remaining owner decisions: deploy approval, voice, AI provider, reader
+   dependency, music storage (R2 quota).
 
 ---
 
 ## Log
+
+### 2026-10-22 — M4 slice: Calendar (D-021)
+- **Migration 0015:** `events`. Schema version 15.
+- **Core:** `calendar` module:
+  - Validation: dates, `HH:MM` times, end ≥ start, at most 366 days long.
+  - Repeat expansion (`occurrence_starts`, `occurrences`) and `agenda`
+    (≤ 400 days).
+  - Create (client ids), partial update (moving the start keeps the
+    length), and delete. Events are included in the export.
+- **Worker:** `/api/v1/events` (list, create, agenda, patch, delete) and
+  the D1 repository.
+- **Web:**
+  - `lib/calendar.ts` mirrors the expansion and builds a Monday-first
+    month grid.
+  - `useEvents` runs changes through the outbox, so they work offline.
+  - Calendar module: month grid with events and due tasks, a day panel,
+    and an event form (all-day/timed, multi-day, repeat + until, location,
+    notes, delete).
+- **Tests:**
+  - core 93: expansion edge cases (31st, Feb 29), sorting, validation,
+    move, scope, idempotency.
+  - web 49: expansion parity, month grid, event ops.
+  - smoke: validation, weekly agenda, move, all-day, export, 401, delete.
+  - browser e2e 21/21: add an event today, see it in the cell and day,
+    then delete it.
 
 ### 2026-10-22 — M4 slice: Habits (D-020)
 - **Migration 0014:** `habits` and `habit_checkins`. Schema version 14.

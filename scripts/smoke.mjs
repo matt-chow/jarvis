@@ -375,6 +375,34 @@ async function local() {
       expect((await api.req("GET", "/api/v1/habits?today=2026-10-22")).json.habits.length === 0, "gone");
     });
 
+    await check("calendar: events (validated), repeats expanded in the agenda, move keeps length, export, delete", async () => {
+      const post = (body) => api.req("POST", "/api/v1/events", { body });
+      expect((await post({ title: "x", start_date: "2026-10-22", end_date: "2026-10-01" })).status === 400, "end before start");
+      expect((await post({ title: "x", start_date: "2026-10-22", start_time: "9am" })).status === 400, "bad time");
+      const eid = "2c".repeat(16);
+      const standup = await post({ id: eid, title: "Standup", start_date: "2026-10-05", start_time: "09:30", end_time: "09:45", repeat: "weekly", repeat_until: "2026-10-26" });
+      expect(standup.status === 201 && standup.json.end_date === "2026-10-05" && standup.json.repeat === "weekly", `create → ${standup.text}`);
+      expect((await post({ id: eid, title: "Standup", start_date: "2026-10-05" })).status === 409, "replayed create");
+      const trip = (await post({ title: "Trip", start_date: "2026-11-01", end_date: "2026-11-03" })).json;
+
+      const agenda = await api.req("GET", "/api/v1/events/agenda?from=2026-10-01&to=2026-11-30");
+      const starts = agenda.json.occurrences.map((o) => `${o.title}@${o.start_date}`);
+      expect(starts.join() === "Standup@2026-10-05,Standup@2026-10-12,Standup@2026-10-19,Standup@2026-10-26,Trip@2026-11-01", `agenda → ${starts}`);
+      expect((await api.req("GET", "/api/v1/events/agenda?from=2026-01-01&to=2028-01-01")).status === 400, "range too long");
+
+      const moved = await api.req("PATCH", `/api/v1/events/${trip.id}`, { body: { start_date: "2026-11-10" } });
+      expect(moved.json.end_date === "2026-11-12", `move → ${moved.text}`);
+      const allDay = await api.req("PATCH", `/api/v1/events/${eid}`, { body: { start_time: null } });
+      expect(allDay.json.start_time === null && allDay.json.end_time === null, "all day clears end time");
+
+      const doc = (await api.req("GET", "/api/v1/export")).json;
+      expect(doc.events.length === 2 && doc.events.every((e) => e.owner_id === undefined), "in export");
+      expect((await fetch(`${baseUrl}/api/v1/events`)).status === 401, "anonymous → 401");
+      for (const id of [eid, trip.id]) expect((await api.req("DELETE", `/api/v1/events/${id}`)).status === 204, "delete");
+      expect((await api.req("DELETE", `/api/v1/events/${eid}`)).status === 404, "deleted twice → 404");
+      expect((await api.req("GET", "/api/v1/events")).json.events.length === 0, "empty");
+    });
+
     await check("export: one JSON download with every record, no credential material", async () => {
       const task = (await api.req("POST", "/api/v1/tasks", { body: { title: "Export me" } })).json;
       const note = (await api.req("POST", "/api/v1/notes", { body: { body: "Exported note body" } })).json;

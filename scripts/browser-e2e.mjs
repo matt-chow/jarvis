@@ -288,6 +288,23 @@ try {
     await shot("habits");
   });
 
+  await step("Calendar: add an event on today, it shows in the month and day, then delete it", async () => {
+    await page.hash("/calendar");
+    await page.waitForText("Nothing scheduled.");
+    await page.click("+ event");
+    await page.fill("Event title", "Dentist");
+    await page.click("add event");
+    await waitFor("event in today's cell", () => page.evaluate(`[...document.querySelectorAll("button[aria-current=date]")].some((b) => b.getAttribute("aria-label").endsWith("1 item"))`));
+    await page.waitForText("All day");
+    const events = await page.evaluate(`fetch("/api/v1/events").then((r) => r.json())`);
+    if (!events.events.some((e) => e.title === "Dentist" && e.start_date === localToday())) throw new Error(`server events: ${JSON.stringify(events)}`);
+    await shot("calendar");
+    await page.click("Edit “Dentist”");
+    await page.click("delete");
+    await page.click("confirm delete");
+    await page.waitForText("Nothing scheduled.");
+  });
+
   await step("Projects: create, add a task from the project, progress updates", async () => {
     await page.hash("/projects");
     await page.waitForText("No active projects");

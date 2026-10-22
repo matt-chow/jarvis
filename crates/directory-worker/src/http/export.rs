@@ -3,8 +3,9 @@
 use super::auth::{identity_error, principal, Identity};
 use super::{error, harden};
 use crate::d1::{
-    D1ExportSource, D1FileRepository, D1HabitRepository, D1InboxRepository, D1JournalRepository,
-    D1LibraryRepository, D1LinkRepository, D1NoteRepository, D1ProjectRepository, D1TaskRepository,
+    D1EventRepository, D1ExportSource, D1FileRepository, D1HabitRepository, D1InboxRepository,
+    D1JournalRepository, D1LibraryRepository, D1LinkRepository, D1NoteRepository,
+    D1ProjectRepository, D1TaskRepository,
 };
 use crate::{bindings, try_or_respond};
 use directory_core::export::export as build_export;
@@ -29,6 +30,7 @@ pub async fn export(req: Request, rc: RouteContext<()>) -> Result<Response> {
         files: D1FileRepository::new(db()?),
         library: D1LibraryRepository::new(db()?, D1FileRepository::new(db()?)),
         habits: D1HabitRepository::new(db()?),
+        events: D1EventRepository::new(db()?),
     };
     let now = Date::now().as_millis() as i64;
     let doc = match build_export(&source, user, EXPECTED_SCHEMA_VERSION, now).await {

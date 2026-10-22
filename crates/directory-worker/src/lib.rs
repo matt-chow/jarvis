@@ -13,8 +13,8 @@ mod http;
 mod r2;
 
 use http::{
-    auth, export, files, habits, health, inbox, jarvis, journal, library, links, notes, projects,
-    search, tasks,
+    auth, events, export, files, habits, health, inbox, jarvis, journal, library, links, notes,
+    projects, search, tasks,
 };
 
 #[event(fetch)]
@@ -60,6 +60,12 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get_async("/api/v1/links", links::list)
         .post_async("/api/v1/links", links::create)
         .delete_async("/api/v1/links/:id", links::delete)
+        // Calendar
+        .get_async("/api/v1/events", events::list)
+        .post_async("/api/v1/events", events::create)
+        .get_async("/api/v1/events/agenda", events::agenda)
+        .patch_async("/api/v1/events/:id", events::update)
+        .delete_async("/api/v1/events/:id", events::delete)
         // Habits
         .get_async("/api/v1/habits", habits::list)
         .post_async("/api/v1/habits", habits::create)

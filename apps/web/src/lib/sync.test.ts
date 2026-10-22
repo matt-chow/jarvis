@@ -2,7 +2,7 @@ import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import { LocalDb } from "./db";
-import { applyHabitLocally, applyInboxLocally, applyLocally, applyProjectLocally, clientId, replay, type Op, type SyncApi } from "./sync";
+import { applyEventLocally, applyHabitLocally, applyInboxLocally, applyLocally, applyProjectLocally, clientId, replay, type Op, type SyncApi } from "./sync";
 import type { Note } from "./notes";
 import type { Task } from "./tasks";
 
@@ -54,6 +54,15 @@ function fakeApi(fail: (op: string) => unknown = () => undefined) {
     updateHabit: async (id) => ({ ...(await run(`habit-update:${id}`)), name: "", days: [], archived: false }),
     deleteHabit: async (id) => void (await run(`habit-delete:${id}`)),
     checkHabit: async (id, date, done) => void (await run(`habit-check:${id}:${date}:${done}`)),
+    createEvent: async (e) => {
+      await run(`event:${e.id}`);
+      return applyEventLocally([], { kind: "event.create", event: e })[0];
+    },
+    updateEvent: async (id) => {
+      await run(`event-update:${id}`);
+      return applyEventLocally([], { kind: "event.create", event: { id, title: "", start_date: "2026-01-01" } })[0];
+    },
+    deleteEvent: async (id) => void (await run(`event-delete:${id}`)),
     putJournal: async (date, e) => {
       await run(`journal:${date}@${e.expected_updated_at}`);
       return { date, body: "", mood: null, created_at: 0, updated_at: 60 };
@@ -216,5 +225,23 @@ describe("habit ops", () => {
     list = applyHabitLocally(list, { kind: "habit.check", id: "h1", date: today, done: true }, today);
     expect(list[0]).toMatchObject({ checkins: [today], streak: 1 });
     expect(applyHabitLocally(list, { kind: "habit.delete", id: "h1" }, today)).toEqual([]);
+  });
+});
+
+describe("event ops", () => {
+  it("replays idempotently and applies locally like the server", async () => {
+    const db = await outboxWith([
+      { kind: "event.create", event: { id: "e1", title: "Trip", start_date: "2026-11-01", end_date: "2026-11-03" } },
+      { kind: "event.delete", id: "gone" },
+    ]);
+    const { api, calls } = fakeApi((op) => (op === "event:e1" ? new ApiError(409, "exists") : op === "event-delete:gone" ? new ApiError(404, "not_found") : undefined));
+    expect(await replay(db, api)).toMatchObject({ applied: 2, rejected: [] });
+    expect(calls).toEqual(["event:e1", "event-delete:gone"]);
+
+    let list = applyEventLocally([], { kind: "event.create", event: { id: "e1", title: " Trip ", start_date: "2026-11-01", end_date: "2026-11-03", end_time: "10:00" } }, 1);
+    expect(list[0]).toMatchObject({ title: "Trip", end_time: null, repeat: "none" });
+    list = applyEventLocally(list, { kind: "event.update", id: "e1", patch: { start_date: "2026-11-10" } }, 2);
+    expect(list[0]).toMatchObject({ start_date: "2026-11-10", end_date: "2026-11-12" });
+    expect(applyEventLocally(list, { kind: "event.delete", id: "e1" })).toEqual([]);
   });
 });

@@ -1,9 +1,10 @@
 //! `ExportSource` over the D1 repositories (no new SQL beyond each module's).
 
 use super::{
-    D1FileRepository, D1HabitRepository, D1InboxRepository, D1JournalRepository,
+    D1EventRepository, D1FileRepository, D1HabitRepository, D1InboxRepository, D1JournalRepository,
     D1LibraryRepository, D1LinkRepository, D1NoteRepository, D1ProjectRepository, D1TaskRepository,
 };
+use directory_core::calendar::{Event, EventRepository, MAX_EVENTS};
 use directory_core::export::ExportSource;
 use directory_core::files::FileEntry;
 use directory_core::habits::{CheckIn, Habit, HabitRepository};
@@ -28,6 +29,7 @@ pub struct D1ExportSource {
     pub files: D1FileRepository,
     pub library: D1LibraryRepository,
     pub habits: D1HabitRepository,
+    pub events: D1EventRepository,
 }
 
 impl ExportSource for D1ExportSource {
@@ -62,5 +64,8 @@ impl ExportSource for D1ExportSource {
         self.habits
             .checkins(owner_id, "0000-01-01", "9999-12-31")
             .await
+    }
+    async fn events(&self, owner_id: &str) -> Result<Vec<Event>, String> {
+        self.events.list(owner_id, MAX_EVENTS).await
     }
 }

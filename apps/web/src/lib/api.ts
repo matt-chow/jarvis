@@ -3,6 +3,7 @@
  * The browser authenticates with the HttpOnly session cookie (same origin);
  * native clients can pass a device token instead.
  */
+import type { CalendarEvent, EventPatch, NewEvent } from "./calendar";
 import type { FileEntry, Listing, Usage } from "./files";
 import { HISTORY_DAYS, type Habit, type HabitPatch, type HabitView, type NewHabit } from "./habits";
 import type { InboxItem, Triaged, TriageTarget } from "./inbox";
@@ -175,6 +176,13 @@ export class Api {
   createNote = (n: { id?: string; title?: string; body?: string; pinned?: boolean }) => this.call<Note>("POST", "/api/v1/notes", n);
   updateNote = (id: string, patch: NotePatch) => this.call<Note>("PATCH", `/api/v1/notes/${encodeURIComponent(id)}`, patch);
   deleteNote = (id: string) => this.call<void>("DELETE", `/api/v1/notes/${encodeURIComponent(id)}`);
+
+  // ---- Calendar ----
+  /** Every event, repeats not expanded (see lib/calendar `occurrences`). */
+  events = async () => (await this.call<{ events: CalendarEvent[] }>("GET", "/api/v1/events")).events;
+  createEvent = (e: NewEvent & { id?: string }) => this.call<CalendarEvent>("POST", "/api/v1/events", e);
+  updateEvent = (id: string, patch: EventPatch) => this.call<CalendarEvent>("PATCH", `/api/v1/events/${encodeURIComponent(id)}`, patch);
+  deleteEvent = (id: string) => this.call<void>("DELETE", `/api/v1/events/${encodeURIComponent(id)}`);
 
   // ---- Habits ----
   habits = async (today: string, days = HISTORY_DAYS) =>
