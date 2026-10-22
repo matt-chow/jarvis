@@ -10,6 +10,7 @@ JARVIS commands will refer to them.
 | `search` | Search | preview | no | `/api/v1/search` | Debounced search with highlighted titles and snippets, query in the URL (`#/search?q=`), and `/` to open from anywhere. Also the JARVIS `find …` command. |
 | `inbox` | Inbox | preview | capture | `/api/v1/inbox` | Quick capture (also on Home); triage into task (first line becomes the title), note, or today's journal. Capture and discard work offline (queued); triage needs a connection. |
 | `tasks` | Tasks | preview | yes | `/api/v1/tasks` | Tasks and one-level subtasks, status, priority, due date, notes. Editable offline: changes queue and sync on reconnect. |
+| `habits` | Habits | preview | yes | `/api/v1/habits` | Routines on chosen weekdays; tap a day in the last-7-days row to check it off; current streak; rename, reschedule, archive, delete (D-020). Everything works offline. |
 | `projects` | Projects | preview | yes | `/api/v1/projects` | Group top-level tasks; progress, archive, and links into Tasks filtered by project. Editable offline (links need a connection). |
 | `notes` | Notes | preview | yes | `/api/v1/notes` | Server notes with debounced autosave, pinning, and conflict detection (409, then "use theirs" or "keep mine"). Create, edit, and delete work offline; conflicts found on sync use the same choice. Pinning and links need a connection. Wiki: `[[Title]]` (or with a `\|label`) links to other notes (missing ones can be created from the link) and a backlinks list (D-019). Migrates legacy Scratchpad notes once. |
 | `journal` | Journal | preview | yes | `/api/v1/journal` | One entry per day with mood (1–5), autosave, month list, day navigation, and deep links (`#/journal?date=`). Editable offline (a new day saves create-only); deleting and links need a connection. |
@@ -41,6 +42,7 @@ provisional (DECISIONS D-013): built from the shared `Panel`, `Button`, and
 | Inbox + capture box | `modules/Inbox.tsx`, `components/CaptureBox.tsx` | awaiting design integration |
 | Tasks | `modules/Tasks.tsx` | awaiting design integration |
 | Projects | `modules/Projects.tsx` | awaiting design integration |
+| Habits | `modules/Habits.tsx` | awaiting design integration |
 | Notes | `modules/Notes.tsx` | awaiting design integration |
 | Journal | `modules/Journal.tsx` | awaiting design integration |
 | Library | `modules/Library.tsx` | awaiting design integration |

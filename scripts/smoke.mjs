@@ -346,6 +346,35 @@ async function local() {
       await api.req("DELETE", `/api/v1/projects/${proj.id}`);
     });
 
+    await check("habits: create (validated), idempotent check-ins, streak, archive, export, delete", async () => {
+      expect((await api.req("GET", "/api/v1/habits")).status === 400, "today is required");
+      expect((await api.req("POST", "/api/v1/habits", { body: { name: "x", days: [] } })).status === 400, "no days");
+      const hid = "1b".repeat(16);
+      const made = await api.req("POST", "/api/v1/habits", { body: { id: hid, name: " Stretch ", days: [4, 0, 2] } });
+      expect(made.status === 201 && made.json.name === "Stretch" && made.json.days.join() === "0,2,4", `create → ${made.text}`);
+      expect((await api.req("POST", "/api/v1/habits", { body: { id: hid, name: "Stretch" } })).status === 409, "replayed create");
+
+      const day = (date, method = "PUT") => api.req(method, `/api/v1/habits/${hid}/checkins/${date}`);
+      expect((await day("2026-10-21")).status === 204 && (await day("2026-10-21")).status === 204, "check twice");
+      expect((await day("2026-10-19")).status === 204 && (await day("2026-10-19", "DELETE")).status === 204, "check then clear");
+      expect((await day("2026-10-19", "DELETE")).status === 204, "clear twice");
+      expect((await day("2999-01-01")).status === 400 && (await day("2026-13-01")).status === 400, "future / invalid date");
+      expect((await api.req("PUT", `/api/v1/habits/${"0".repeat(32)}/checkins/2026-10-21`)).status === 404, "unknown habit");
+
+      // Mon/Wed/Fri: Wed 21st done, Thu 22nd unscheduled, Mon 19th missed → streak 1.
+      const list = await api.req("GET", "/api/v1/habits?today=2026-10-22&days=7");
+      const h = list.json.habits.find((x) => x.id === hid);
+      expect(h && h.checkins.join() === "2026-10-21" && h.streak === 1, `list → ${list.text}`);
+
+      expect((await api.req("PATCH", `/api/v1/habits/${hid}`, { body: { archived: true } })).json.archived === true, "archive");
+      const doc = (await api.req("GET", "/api/v1/export")).json;
+      const exported = doc.habits.find((x) => x.id === hid);
+      expect(exported && exported.checkins.join() === "2026-10-21" && exported.owner_id === undefined, "in export");
+      expect((await fetch(`${baseUrl}/api/v1/habits?today=2026-10-22`)).status === 401, "anonymous → 401");
+      expect((await api.req("DELETE", `/api/v1/habits/${hid}`)).status === 204, "delete");
+      expect((await api.req("GET", "/api/v1/habits?today=2026-10-22")).json.habits.length === 0, "gone");
+    });
+
     await check("export: one JSON download with every record, no credential material", async () => {
       const task = (await api.req("POST", "/api/v1/tasks", { body: { title: "Export me" } })).json;
       const note = (await api.req("POST", "/api/v1/notes", { body: { body: "Exported note body" } })).json;

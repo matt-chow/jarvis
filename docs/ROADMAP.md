@@ -10,7 +10,7 @@ part of every slice, not deferred to the end.
 | **M1 Private Alpha** | Owner auth + functional core (P1) | ✅ feature-complete locally; deploy awaits owner approval |
 | M2 JARVIS Alpha | Command layer and assistant (P2) | 🟡 in progress |
 | M3 Knowledge & Offline Beta | Wiki, library, files, search, sync (P3) | 🟡 core slices done; reader awaits a dependency decision |
-| M4 Personal OS | Habits, calendar, automations, music, dashboards (P4) | planned |
+| M4 Personal OS | Habits, calendar, automations, music, dashboards (P4) | 🟡 in progress |
 | M5 1.0 | Production hardening (P5) | planned |
 
 ## M1 Private Alpha: P1 functional core
@@ -64,8 +64,14 @@ part of every slice, not deferred to the end.
 | Wiki: `[[links]]` between notes, create-from-link, backlinks (D-019) | ✅ done |
 
 ## M4 Personal OS (P4)
-Habits, calendar, automation engine, music library and playlists, streaming and
-offline media, customizable dashboard.
+
+| Slice | Status |
+| --- | --- |
+| Habits: weekday schedules, check-ins, streaks, offline (D-020) | ✅ done |
+| Calendar | next |
+| Automation engine | planned |
+| Music library, playlists, streaming and offline media | planned (R2 storage and quota implications need review) |
+| Customizable dashboard | planned |
 
 ## M5 1.0 (P5)
 Security review, performance, accessibility audit, backup/restore, error

@@ -2,7 +2,7 @@ import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import { LocalDb } from "./db";
-import { applyInboxLocally, applyLocally, applyProjectLocally, clientId, replay, type Op, type SyncApi } from "./sync";
+import { applyHabitLocally, applyInboxLocally, applyLocally, applyProjectLocally, clientId, replay, type Op, type SyncApi } from "./sync";
 import type { Note } from "./notes";
 import type { Task } from "./tasks";
 
@@ -50,6 +50,10 @@ function fakeApi(fail: (op: string) => unknown = () => undefined) {
       return note(id, 50);
     },
     deleteNote: async (id) => void (await run(`note-delete:${id}`)),
+    createHabit: async (h) => ({ ...(await run(`habit:${h.id}`)), name: h.name, days: [], archived: false }),
+    updateHabit: async (id) => ({ ...(await run(`habit-update:${id}`)), name: "", days: [], archived: false }),
+    deleteHabit: async (id) => void (await run(`habit-delete:${id}`)),
+    checkHabit: async (id, date, done) => void (await run(`habit-check:${id}:${date}:${done}`)),
     putJournal: async (date, e) => {
       await run(`journal:${date}@${e.expected_updated_at}`);
       return { date, body: "", mood: null, created_at: 0, updated_at: 60 };
@@ -192,5 +196,25 @@ describe("document saves (D-018)", () => {
     const left = await db.outbox();
     expect(left).toHaveLength(1);
     expect(left[0].op).toMatchObject({ fields: { body: "second" }, base: 50 });
+  });
+});
+
+describe("habit ops", () => {
+  it("replays idempotently and applies locally with streaks", async () => {
+    const db = await outboxWith([
+      { kind: "habit.create", habit: { id: "h1", name: "Stretch" } },
+      { kind: "habit.check", id: "h1", date: "2026-10-22", done: true },
+      { kind: "habit.check", id: "gone", date: "2026-10-22", done: true },
+    ]);
+    const { api, calls } = fakeApi((op) => (op === "habit:h1" ? new ApiError(409, "exists") : op.startsWith("habit-check:gone") ? new ApiError(404, "not_found") : undefined));
+    expect(await replay(db, api)).toMatchObject({ applied: 3, rejected: [] });
+    expect(calls).toEqual(["habit:h1", "habit-check:h1:2026-10-22:true", "habit-check:gone:2026-10-22:true"]);
+
+    const today = "2026-10-22";
+    let list = applyHabitLocally([], { kind: "habit.create", habit: { id: "h1", name: " Stretch ", days: [4, 0, 0] } }, today, 5);
+    expect(list[0]).toMatchObject({ name: "Stretch", days: [0, 4], checkins: [], streak: 0 });
+    list = applyHabitLocally(list, { kind: "habit.check", id: "h1", date: today, done: true }, today);
+    expect(list[0]).toMatchObject({ checkins: [today], streak: 1 });
+    expect(applyHabitLocally(list, { kind: "habit.delete", id: "h1" }, today)).toEqual([]);
   });
 });

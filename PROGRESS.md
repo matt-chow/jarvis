@@ -11,7 +11,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   Deployment). **M2 JARVIS Alpha:** command layer ✅, presets ✅, `find` ✅,
   project commands ✅.
   Voice is blocked on owner approval. **M3:** search ✅, files ✅, library ✅,
-  offline editing for tasks, projects, notes, journal, and inbox capture ✅.
+  offline editing ✅, wiki ✅. **M4:** habits ✅.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
   - Device tokens for native clients and scripts.
@@ -28,6 +28,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
     devices, and a one-time migration of legacy Scratchpad notes.
   - Wiki: `[[links]]` between notes, create a note from a missing link,
     and backlinks.
+  - Habits: weekday schedules, daily check-ins, streaks (offline too).
   - Journal: one entry per day with mood, autosave, month list, and day
     navigation.
   - Inbox: quick capture (on Home and in Inbox) and triage into a task, a
@@ -52,10 +53,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | Command | Result (2026-10-22) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
-| `cargo test -p directory-core` | ✅ 87 passed |
-| Vitest | ✅ 39 passed |
+| `cargo test -p directory-core` | ✅ 90 passed |
+| Vitest | ✅ 44 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
-| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 19/19 |
+| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 20/20 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -96,13 +97,35 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. M4 start: Habits (daily check-ins, streaks), then Calendar.
+1. M4: Calendar (events with date/time, month and agenda views; tasks with
+   due dates shown alongside).
 2. Remaining owner decisions: deploy approval, voice, AI provider, reader
    dependency.
 
 ---
 
 ## Log
+
+### 2026-10-22 — M4 slice: Habits (D-020)
+- **Migration 0014:** `habits` and `habit_checkins`. Schema version 14.
+- **Core:** `habits` module: create (client ids), update, archive, delete,
+  idempotent `set_check`, list with a check-in window and streaks. Habits
+  are included in the export with every check-in date.
+- **Worker:** `/api/v1/habits` routes and the D1 repository. Delete removes
+  check-ins explicitly.
+- **Web:**
+  - Habits module: add with day picker, a last-7-days check-in row,
+    streak, rename/reschedule, archive/restore, and delete.
+  - `useHabits` runs everything through the outbox, so it works offline.
+    `lib/habits.ts` mirrors the streak rule.
+  - Module registry: offline flags corrected (inbox, tasks, projects,
+    notes, and journal work offline).
+- **Tests:**
+  - core 90: streak rules, lifecycle, validation, idempotency, export.
+  - web 44: streak parity, toggles, habit ops replay.
+  - smoke: validation, idempotent check-ins, streak, archive, export, 401,
+    delete.
+  - browser e2e 20/20: add a habit, check off today, streak on the server.
 
 ### 2026-10-22 — M2 slice: JARVIS project commands
 - **Core:**

@@ -12,6 +12,7 @@ pub mod encoding;
 pub mod entropy;
 pub mod export;
 pub mod files;
+pub mod habits;
 pub mod health;
 pub mod identity;
 pub mod inbox;

@@ -14,6 +14,7 @@ import { Jarvis } from "./modules/Jarvis";
 import { Journal } from "./modules/Journal";
 import { Library } from "./modules/Library";
 import { Notes } from "./modules/Notes";
+import { Habits } from "./modules/Habits";
 import { Projects } from "./modules/Projects";
 import { Search } from "./modules/Search";
 import { Settings } from "./modules/Settings";
@@ -33,6 +34,7 @@ const VIEWS: Record<ModuleId, ComponentType<ModuleProps>> = {
   inbox: Inbox,
   tasks: Tasks,
   projects: Projects,
+  habits: Habits,
   notes: Notes,
   journal: Journal,
   library: Library,

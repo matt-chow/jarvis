@@ -2,6 +2,7 @@
 //! Contains no credential material (sessions, passkeys, device tokens).
 
 use crate::files::FileEntry;
+use crate::habits::{CheckIn, Habit};
 use crate::identity::User;
 use crate::inbox::InboxItem;
 use crate::journal::Entry;
@@ -35,6 +36,14 @@ impl From<Link> for LinkRecord {
     }
 }
 
+/// A habit with every check-in date, oldest first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HabitRecord {
+    #[serde(flatten)]
+    pub habit: Habit,
+    pub checkins: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Export {
     pub format: &'static str,
@@ -51,6 +60,7 @@ pub struct Export {
     /// File metadata only; download contents via the files API.
     pub files: Vec<FileEntry>,
     pub reading_progress: Vec<Progress>,
+    pub habits: Vec<HabitRecord>,
 }
 
 /// Everything owned by `owner_id`, per module.
@@ -63,6 +73,8 @@ pub trait ExportSource {
     async fn links(&self, owner_id: &str) -> Result<Vec<Link>, String>;
     async fn files(&self, owner_id: &str) -> Result<Vec<FileEntry>, String>;
     async fn reading_progress(&self, owner_id: &str) -> Result<Vec<Progress>, String>;
+    async fn habits(&self, owner_id: &str) -> Result<Vec<Habit>, String>;
+    async fn habit_checkins(&self, owner_id: &str) -> Result<Vec<CheckIn>, String>;
 }
 
 pub async fn export<S: ExportSource>(
@@ -72,6 +84,21 @@ pub async fn export<S: ExportSource>(
     now: i64,
 ) -> Result<Export, String> {
     let owner = user.id.clone();
+    let mut checkins = source.habit_checkins(&owner).await?;
+    checkins.sort_by(|a, b| a.date.cmp(&b.date));
+    let habits = source
+        .habits(&owner)
+        .await?
+        .into_iter()
+        .map(|habit| HabitRecord {
+            checkins: checkins
+                .iter()
+                .filter(|c| c.habit_id == habit.id)
+                .map(|c| c.date.clone())
+                .collect(),
+            habit,
+        })
+        .collect();
     Ok(Export {
         format: FORMAT,
         format_version: FORMAT_VERSION,
@@ -90,6 +117,7 @@ pub async fn export<S: ExportSource>(
             .collect(),
         files: source.files(&owner).await?,
         reading_progress: source.reading_progress(&owner).await?,
+        habits,
         user,
     })
 }
@@ -151,6 +179,24 @@ mod tests {
         async fn reading_progress(&self, _: &str) -> Result<Vec<Progress>, String> {
             Ok(vec![])
         }
+        async fn habits(&self, owner_id: &str) -> Result<Vec<Habit>, String> {
+            Ok(vec![Habit {
+                id: "h".into(),
+                owner_id: owner_id.into(),
+                name: "Stretch".into(),
+                days: vec![0, 2],
+                archived: false,
+                created_at: 1,
+                updated_at: 1,
+            }])
+        }
+        async fn habit_checkins(&self, _: &str) -> Result<Vec<CheckIn>, String> {
+            let c = |date: &str| CheckIn {
+                habit_id: "h".into(),
+                date: date.into(),
+            };
+            Ok(vec![c("2026-10-21"), c("2026-10-19")])
+        }
     }
 
     #[test]
@@ -167,6 +213,12 @@ mod tests {
         assert_eq!(json["tasks"][0]["title"], "T");
         assert!(json["tasks"][0].get("owner_id").is_none());
         assert_eq!(json["links"][0]["a"]["kind"], "task");
+        assert_eq!(json["habits"][0]["name"], "Stretch");
+        assert_eq!(json["habits"][0]["days"], serde_json::json!([0, 2]));
+        assert_eq!(
+            json["habits"][0]["checkins"],
+            serde_json::json!(["2026-10-19", "2026-10-21"])
+        );
         let text = json.to_string();
         for secret in ["token_hash", "public_key", "sign_count", "owner_id"] {
             assert!(!text.contains(secret), "{secret} leaked");

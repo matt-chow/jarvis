@@ -273,6 +273,21 @@ try {
     await page.evaluate(`fetch("/api/v1/inbox").then((r) => r.json()).then((b) => Promise.all(b.items.map((i) => fetch("/api/v1/inbox/" + i.id, { method: "DELETE", headers: { Origin: location.origin } }))))`);
   });
 
+  await step("Habits: add one, check off today, streak shows and reaches the server", async () => {
+    await page.hash("/habits");
+    await page.waitForText("No habits yet");
+    await page.fill("New habit", "Stretch");
+    await page.click("add");
+    await page.waitForText("Every day · no streak yet");
+    await page.click("(today)");
+    await page.waitForText("1-day streak");
+    await page.waitForText("1/1 TODAY"); // panel titles are uppercased by CSS
+    const today = localToday();
+    const list = await page.evaluate(`fetch("/api/v1/habits?today=${today}").then((r) => r.json())`);
+    if (!list.habits.some((h) => h.name === "Stretch" && h.checkins.includes(today) && h.streak === 1)) throw new Error(`server habits: ${JSON.stringify(list)}`);
+    await shot("habits");
+  });
+
   await step("Projects: create, add a task from the project, progress updates", async () => {
     await page.hash("/projects");
     await page.waitForText("No active projects");

@@ -94,6 +94,10 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | GET | `/api/v1/links?kind=task|note|project|journal&id=` | session or token | Items linked to an entity, with resolved titles. Links whose other end was deleted are dropped and removed. |
 | POST | `/api/v1/links` | session or token | `{ from: {kind,id}, to: {kind,id} }` → `201 { link_id, kind, id, title }`. Idempotent and symmetric; both ends must exist and be owned. |
 | DELETE | `/api/v1/links/{id}` | session or token | Unlink |
+| GET | `/api/v1/habits?today=YYYY-MM-DD&days=N` | session or token | Habits (archived too) with check-in dates from the last `days` (1–366, default 28) and the current `streak`. `today` is the caller's local date. |
+| POST | `/api/v1/habits` | session or token | `{ id?, name, days? }` (`days`: weekdays 0 = Monday … 6, default all) → `201`; a repeated client id → `409 exists` |
+| PATCH / DELETE | `/api/v1/habits/{id}` | session or token | `{ name?, days?, archived? }`; delete removes its check-ins |
+| PUT / DELETE | `/api/v1/habits/{id}/checkins/{YYYY-MM-DD}` | session or token | Check a day / clear it → `204`. Idempotent. Dates after the server's UTC date + 1 day are rejected. |
 | GET / POST | `/api/v1/inbox` | session or token | List (oldest first), or capture `{ text, id? }` (≤ 2,000 chars; an optional client-chosen 32-hex `id` makes offline replays idempotent: a repeat → `409 exists`) |
 | DELETE | `/api/v1/inbox/{id}` | session or token | Discard |
 | POST | `/api/v1/inbox/{id}/triage` | session or token | `{ to: task|note|journal, date? }` → `{ kind, task|note|entry }`. Goes through the target module's service; the target is created before the item is removed. |
@@ -144,11 +148,13 @@ JSON bodies are capped at 64 KiB.
   - `0011`: `jarvis_presets`.
   - `0012`: `files` (unique `owner_id, folder, name`).
   - `0013`: `reading_progress` (keyed `owner_id, file_id`; cascades with the file).
+  - `0014`: `habits` (weekday bit mask, Monday = bit 0) and `habit_checkins`
+    (keyed `habit_id, date`).
 - **R2** bucket `directory-files` is private, with no r2.dev URL or custom domain.
   File content lives at `u/<user_id>/f/<file_id>`; names and folders live in D1.
 - **IndexedDB** database `directory` (v2, adds `outbox`) has a `kv` store with cached
   copies for offline use: health, the last verified session user,
-  task, project, and note lists, each opened note (`note:<id>`), and each
+  task, project, habit, and note lists, each opened note (`note:<id>`), and each
   journal month and day (`journal:<YYYY-MM>`, `journal:<date>`). Unresolved
   sync conflicts live at `conflict:<doc>` (D-018). Outbox entries carry an
   optional `doc` key, a `merge` key for coalesced document saves, and a `rev`

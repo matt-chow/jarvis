@@ -1,11 +1,12 @@
 //! `ExportSource` over the D1 repositories (no new SQL beyond each module's).
 
 use super::{
-    D1FileRepository, D1InboxRepository, D1JournalRepository, D1LibraryRepository,
-    D1LinkRepository, D1NoteRepository, D1ProjectRepository, D1TaskRepository,
+    D1FileRepository, D1HabitRepository, D1InboxRepository, D1JournalRepository,
+    D1LibraryRepository, D1LinkRepository, D1NoteRepository, D1ProjectRepository, D1TaskRepository,
 };
 use directory_core::export::ExportSource;
 use directory_core::files::FileEntry;
+use directory_core::habits::{CheckIn, Habit, HabitRepository};
 use directory_core::inbox::{InboxItem, InboxRepository};
 use directory_core::journal::Entry;
 use directory_core::library::{LibraryRepository, Progress};
@@ -26,6 +27,7 @@ pub struct D1ExportSource {
     pub links: D1LinkRepository,
     pub files: D1FileRepository,
     pub library: D1LibraryRepository,
+    pub habits: D1HabitRepository,
 }
 
 impl ExportSource for D1ExportSource {
@@ -52,5 +54,13 @@ impl ExportSource for D1ExportSource {
     }
     async fn reading_progress(&self, owner_id: &str) -> Result<Vec<Progress>, String> {
         self.library.progress(owner_id).await
+    }
+    async fn habits(&self, owner_id: &str) -> Result<Vec<Habit>, String> {
+        self.habits.list(owner_id, EXPORT_LIMIT).await
+    }
+    async fn habit_checkins(&self, owner_id: &str) -> Result<Vec<CheckIn>, String> {
+        self.habits
+            .checkins(owner_id, "0000-01-01", "9999-12-31")
+            .await
     }
 }

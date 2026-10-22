@@ -2,6 +2,7 @@
 
 mod export;
 mod files;
+mod habits;
 mod identity;
 mod inbox;
 mod jarvis;
@@ -17,6 +18,7 @@ mod tasks;
 
 pub use export::D1ExportSource;
 pub use files::D1FileRepository;
+pub use habits::D1HabitRepository;
 pub use identity::D1IdentityRepository;
 pub use inbox::D1InboxRepository;
 pub use jarvis::D1JarvisRepository;

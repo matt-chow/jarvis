@@ -10,6 +10,7 @@
  */
 import { ApiError, isNetworkError } from "./api";
 import type { OutboxEntry } from "./db";
+import { withCheck, type Habit, type HabitPatch, type HabitView, type NewHabit } from "./habits";
 import type { InboxItem } from "./inbox";
 import type { JournalEntry, PutJournal } from "./journal";
 import type { Note, NotePatch } from "./notes";
@@ -30,7 +31,12 @@ export type Op =
   | { kind: "note.save"; id: string; fields: NoteFields; base?: number }
   | { kind: "note.delete"; id: string }
   /** `base` 0 = the day had no entry (create only). */
-  | { kind: "journal.save"; date: string; fields: JournalFields; base?: number };
+  | { kind: "journal.save"; date: string; fields: JournalFields; base?: number }
+  | { kind: "habit.create"; habit: NewHabit & { id: string } }
+  | { kind: "habit.update"; id: string; patch: HabitPatch }
+  | { kind: "habit.delete"; id: string }
+  /** Idempotent: sets the day to `done`. */
+  | { kind: "habit.check"; id: string; date: string; done: boolean };
 
 export interface NoteFields {
   title: string;
@@ -74,6 +80,10 @@ export interface SyncApi {
   updateNote(id: string, patch: NotePatch): Promise<Note>;
   deleteNote(id: string): Promise<void>;
   putJournal(date: string, entry: PutJournal): Promise<JournalEntry>;
+  createHabit(h: NewHabit & { id: string }): Promise<Habit>;
+  updateHabit(id: string, patch: HabitPatch): Promise<Habit>;
+  deleteHabit(id: string): Promise<void>;
+  checkHabit(id: string, date: string, done: boolean): Promise<void>;
 }
 
 export interface SyncResult {
@@ -133,11 +143,24 @@ async function apply(api: SyncApi, op: Op): Promise<number | void> {
         return;
       case "journal.save":
         return (await api.putJournal(op.date, { ...op.fields, expected_updated_at: op.base })).updated_at;
+      case "habit.create":
+        await api.createHabit(op.habit);
+        return;
+      case "habit.update":
+        await api.updateHabit(op.id, op.patch);
+        return;
+      case "habit.delete":
+        await api.deleteHabit(op.id);
+        return;
+      case "habit.check":
+        await api.checkHabit(op.id, op.date, op.done);
+        return;
     }
   } catch (e) {
     // Already applied by an earlier, interrupted replay.
     const isCreate = op.kind.endsWith(".create") || op.kind === "inbox.capture";
-    const isDelete = op.kind.endsWith(".delete");
+    // A check-in for a habit deleted meanwhile has nothing left to do.
+    const isDelete = op.kind.endsWith(".delete") || op.kind === "habit.check";
     if (e instanceof ApiError && isCreate && e.code === "exists") return;
     if (e instanceof ApiError && isDelete && e.status === 404) return;
     throw e;
@@ -170,6 +193,14 @@ function describeOp(op: Op): string {
       return "delete a note";
     case "journal.save":
       return `save the journal for ${op.date}`;
+    case "habit.create":
+      return `create habit “${op.habit.name}”`;
+    case "habit.update":
+      return "update a habit";
+    case "habit.delete":
+      return "delete a habit";
+    case "habit.check":
+      return `check in a habit for ${op.date}`;
   }
 }
 
@@ -279,5 +310,24 @@ export function applyProjectLocally(projects: Project[], op: Op, now = Date.now(
       return projects.filter((p) => p.id !== op.id);
     default:
       return projects;
+  }
+}
+
+/** Apply a habit op to a local habit list; `today` recomputes streaks. */
+export function applyHabitLocally(habits: HabitView[], op: Op, today: string, now = Date.now()): HabitView[] {
+  switch (op.kind) {
+    case "habit.create": {
+      const h = op.habit;
+      const days = h.days ? [...new Set(h.days)].sort() : [0, 1, 2, 3, 4, 5, 6];
+      return [...habits, { id: h.id, name: h.name.trim(), days, archived: false, created_at: now, updated_at: now, checkins: [], streak: 0 }];
+    }
+    case "habit.update":
+      return habits.map((h) => (h.id === op.id ? withCheck({ ...h, ...op.patch, updated_at: now }, today, h.checkins.includes(today), today) : h));
+    case "habit.delete":
+      return habits.filter((h) => h.id !== op.id);
+    case "habit.check":
+      return habits.map((h) => (h.id === op.id ? withCheck(h, op.date, op.done, today) : h));
+    default:
+      return habits;
   }
 }

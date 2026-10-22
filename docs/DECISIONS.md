@@ -136,6 +136,22 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-020 — Habits: weekday schedules, idempotent check-ins, server-side streaks
+**Status:** accepted
+- A habit is scheduled on chosen weekdays (stored as a bit mask, Monday = bit
+  0). A check-in is one row per habit and local date. `PUT` and `DELETE`
+  are idempotent, so offline replays need no client ids beyond the habit's
+  own.
+- **Streak:** count back from today. A checked day counts. A scheduled day
+  without a check-in ends the streak, except today, which isn't over yet.
+  Unscheduled days are skipped, but a check-in on one still counts. The
+  look-back is 366 days. Core computes it; the web client mirrors the rule to
+  update offline, and the shared cases are tested on both sides.
+- Dates are the owner's local dates. The server can't know the time zone, so
+  it rejects dates more than one day past its UTC date.
+- The client loads 366 days of history so it can recompute streaks locally.
+  That's fine for a personal dataset; revisit if it grows.
+
 ## D-019 — The wiki is notes with `[[title]]` links, not a separate module
 **Status:** accepted
 - A wiki page is a note. `[[Title]]` or `[[Title|label]]` in a body links to

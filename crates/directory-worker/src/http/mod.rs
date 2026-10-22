@@ -4,6 +4,7 @@
 pub mod auth;
 pub mod export;
 pub mod files;
+pub mod habits;
 pub mod health;
 pub mod inbox;
 pub mod jarvis;

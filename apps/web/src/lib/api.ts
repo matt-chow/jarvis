@@ -4,6 +4,7 @@
  * native clients can pass a device token instead.
  */
 import type { FileEntry, Listing, Usage } from "./files";
+import { HISTORY_DAYS, type Habit, type HabitPatch, type HabitView, type NewHabit } from "./habits";
 import type { InboxItem, Triaged, TriageTarget } from "./inbox";
 import type { Plan, Preset } from "./jarvis";
 import type { JournalEntry, JournalSummary, PutJournal } from "./journal";
@@ -174,6 +175,16 @@ export class Api {
   createNote = (n: { id?: string; title?: string; body?: string; pinned?: boolean }) => this.call<Note>("POST", "/api/v1/notes", n);
   updateNote = (id: string, patch: NotePatch) => this.call<Note>("PATCH", `/api/v1/notes/${encodeURIComponent(id)}`, patch);
   deleteNote = (id: string) => this.call<void>("DELETE", `/api/v1/notes/${encodeURIComponent(id)}`);
+
+  // ---- Habits ----
+  habits = async (today: string, days = HISTORY_DAYS) =>
+    (await this.call<{ habits: HabitView[] }>("GET", `/api/v1/habits?today=${today}&days=${days}`)).habits;
+  createHabit = (h: NewHabit & { id?: string }) => this.call<Habit>("POST", "/api/v1/habits", h);
+  updateHabit = (id: string, patch: HabitPatch) => this.call<Habit>("PATCH", `/api/v1/habits/${encodeURIComponent(id)}`, patch);
+  deleteHabit = (id: string) => this.call<void>("DELETE", `/api/v1/habits/${encodeURIComponent(id)}`);
+  /** Idempotent: mark `date` done or not. */
+  checkHabit = (id: string, date: string, done: boolean) =>
+    this.call<void>(done ? "PUT" : "DELETE", `/api/v1/habits/${encodeURIComponent(id)}/checkins/${date}`);
 
   // ---- Projects ----
   projects = async (includeArchived = false) =>

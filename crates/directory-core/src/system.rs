@@ -4,7 +4,7 @@ use crate::health::Check;
 
 /// Schema version the code expects. Bump alongside each migration that
 /// updates `system_meta.schema_version`.
-pub const EXPECTED_SCHEMA_VERSION: u32 = 13;
+pub const EXPECTED_SCHEMA_VERSION: u32 = 14;
 
 pub trait SystemRepository {
     /// Current schema version, or `None` if migrations have not run.
