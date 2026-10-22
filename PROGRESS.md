@@ -28,6 +28,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   - Links between tasks, notes, projects, and journal days, with a
     cross-module picker and deep links.
   - Full JSON data export from Settings.
+  - Library of PDFs/ePubs with reading progress.
   - JARVIS text commands (tasks, notes, journal, capture, list) with preview,
     approve, results, history, and saved presets.
   - Universal search (`/` from anywhere), plus JARVIS `find`.
@@ -43,7 +44,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | Command | Result (2026-10-21) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 1,247 KiB / 401 KiB gzipped |
-| `cargo test -p directory-core` | ✅ 78 passed |
+| `cargo test -p directory-core` | ✅ 79 passed |
 | Vitest | ✅ 26 passed (9 files) |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 27/27 |
 | `npm run test:browser` (headless Edge 155, virtual passkey) | ✅ 16/16 |
@@ -84,12 +85,28 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. M3: PDF/ePub library with reading progress (built on Files), then the
-   offline sync design.
+**M3: offline sync design and the first offline-editable module (tasks).**
+- An IndexedDB outbox of mutations replayed in order on reconnect.
+- A conflict policy: last write wins for task fields, with server
+  `updated_at` checks surfaced as conflicts like notes.
+- UI: show pending changes and a sync state in the header.
+- Write a design note in DECISIONS first.
+- Wiki is still open (it could reuse notes with `[[links]]`).
 
 ---
 
 ## Log
+
+### 2026-10-22 — M3 slice: Document library
+- **Core:** `library` module: documents are files by type or extension.
+  Progress covers status, pages, a derived percent, auto reading/finished,
+  and re-reading. The export includes `reading_progress`.
+- **Worker:** migration `0013_reading_progress.sql` (schema v13),
+  `d1/library.rs` (files via the files repository), `/api/v1/library`.
+- **Web:** Library module (status and progress editor, progress bars,
+  "currently reading"). PDFs open via a blob URL in a new tab; ePubs
+  download.
+- **Tests:** core 79, smoke 28/28, browser e2e 17/17.
 
 ### 2026-10-21 — M3 slice: Private file management
 - **Core:** a `files` module (folder and name validation, quota 1 GiB

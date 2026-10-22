@@ -108,6 +108,8 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | GET | `/api/v1/tasks?status=all|open|closed` | session or token | Owner's tasks and subtasks (max 1000) |
 | POST | `/api/v1/tasks` | session or token | `{ title, notes?, priority?, due_date?, parent_id?, project_id? }` → `201`. Subtasks are one level deep and can't set `project_id`. |
 | GET / PATCH / DELETE | `/api/v1/tasks/{id}` | session or token | PATCH: any of `title, notes, status, priority, due_date, project_id` (`null` clears the due date or project). DELETE cascades to subtasks. |
+| GET | `/api/v1/library` | session or token | PDF/ePub files with reading progress (reading, want, unread, finished) |
+| PUT / DELETE | `/api/v1/library/{file_id}/progress` | session or token | PUT `{ status?, current_page?, total_pages?, position? }`. Percent is derived from pages; reaching the last page finishes the document. DELETE resets it. |
 | GET | `/api/v1/files?folder=` | session or token | `{ folder, folders, files }` from D1 metadata (no R2 list operations) |
 | POST | `/api/v1/files?folder=&name=` | session or token | Raw body with `Content-Length` (411 if missing). Streamed to R2 at `u/<owner>/f/<id>`. Limits: 95 MiB per file (413), owner quota (507; default 1 GiB, `DIRECTORY_QUOTA_BYTES`), duplicate name (409). |
 | GET | `/api/v1/files/usage` | session or token | `{ used, quota, max_file }` |
@@ -123,7 +125,7 @@ JSON bodies are capped at 64 KiB.
 ## Data
 
 - **D1** migrations live in `migrations/NNNN_name.sql` and are append-only.
-  `system_meta.schema_version` must equal `EXPECTED_SCHEMA_VERSION` (now **12**).
+  `system_meta.schema_version` must equal `EXPECTED_SCHEMA_VERSION` (now **13**).
   - `0001`: `system_meta`
   - `0002`: `users`, `passkeys`, `auth_challenges`, `sessions`, `api_tokens`.
     Times are epoch milliseconds; secrets are stored only as SHA-256 hex.
@@ -140,6 +142,7 @@ JSON bodies are capped at 64 KiB.
   - `0010`: `jarvis_plans` (actions and results as JSON; status lifecycle).
   - `0011`: `jarvis_presets`.
   - `0012`: `files` (unique `owner_id, folder, name`).
+  - `0013`: `reading_progress` (keyed `owner_id, file_id`; cascades with the file).
 - **R2** bucket `directory-files` is private, with no r2.dev URL or custom domain.
   File content lives at `u/<user_id>/f/<file_id>`; names and folders live in D1.
 - **IndexedDB** database `directory` (v1) has a `kv` store with cached

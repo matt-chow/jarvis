@@ -13,6 +13,7 @@ JARVIS commands will refer to them.
 | `projects` | Projects | preview | read-only | `/api/v1/projects` | Group top-level tasks; progress, archive, and links into Tasks filtered by project. |
 | `notes` | Notes | preview | read-only | `/api/v1/notes` | Server notes with debounced autosave, pinning, and conflict detection (409, then "use theirs" or "keep mine"). Migrates legacy Scratchpad notes once. |
 | `journal` | Journal | preview | read-only | `/api/v1/journal` | One entry per day with mood (1–5), autosave, month list, and day navigation. |
+| `library` | Library | preview | no | `/api/v1/library` | PDFs/ePubs from Files with status and page progress. PDFs open in a new tab; ePubs download. No in-app reader yet. |
 | `files` | Files | preview | no | `/api/v1/files` | Folders (`#/files?folder=`), streamed multi/drag-drop upload, download, rename/move, delete, usage bar against the quota. |
 | `jarvis` | JARVIS | preview | no | `/api/v1/jarvis/*` | Text command console: preview → approve → results (with links to items), clickable examples, history, and presets (save from any plan, run from chips). Deterministic parser; no AI provider yet. |
 | `settings` | Settings | ready | no | `/api/v1/auth/*` | Passkeys, device tokens, sign-out. |
@@ -42,6 +43,7 @@ provisional (DECISIONS D-013): built from the shared `Panel`, `Button`, and
 | Projects | `modules/Projects.tsx` | awaiting design integration |
 | Notes | `modules/Notes.tsx` | awaiting design integration |
 | Journal | `modules/Journal.tsx` | awaiting design integration |
+| Library | `modules/Library.tsx` | awaiting design integration |
 | Files | `modules/Files.tsx` | awaiting design integration |
 | Settings | `modules/Settings.tsx` | awaiting design integration |
 | JARVIS console | `modules/Jarvis.tsx` | awaiting design integration |

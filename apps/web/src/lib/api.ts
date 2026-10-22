@@ -7,6 +7,7 @@ import type { FileEntry, Listing, Usage } from "./files";
 import type { InboxItem, Triaged, TriageTarget } from "./inbox";
 import type { Plan, Preset } from "./jarvis";
 import type { JournalEntry, JournalSummary, PutJournal } from "./journal";
+import type { LibraryItem, Progress, ProgressPatch } from "./library";
 import type { EntityRef, Linked } from "./links";
 import type { Note, NotePatch, NoteSummary } from "./notes";
 import type { NewProject, Project, ProjectPatch } from "./projects";
@@ -205,6 +206,12 @@ export class Api {
     if (!res.ok) return fail(res);
     return res.blob();
   }
+
+  // ---- Library ----
+  library = async () => (await this.call<{ items: LibraryItem[] }>("GET", "/api/v1/library")).items;
+  setProgress = (fileId: string, patch: ProgressPatch) =>
+    this.call<Progress>("PUT", `/api/v1/library/${encodeURIComponent(fileId)}/progress`, patch);
+  clearProgress = (fileId: string) => this.call<void>("DELETE", `/api/v1/library/${encodeURIComponent(fileId)}/progress`);
 
   // ---- Files ----
   files = (folder = "") => this.call<Listing>("GET", `/api/v1/files?folder=${encodeURIComponent(folder)}`);

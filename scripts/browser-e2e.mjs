@@ -120,6 +120,24 @@ try {
     if (text !== "uploaded from the browser e2e test") throw new Error(`download: ${text}`);
   });
 
+  await step("Library: a PDF from Files appears; reading progress is saved", async () => {
+    await page.evaluate(`fetch("/api/v1/files?folder=books&name=Dune.pdf", {
+      method: "POST", headers: { "Content-Type": "application/pdf" }, body: "%PDF-1.4 e2e",
+    }).then((r) => { if (!r.ok) throw new Error("upload " + r.status); })`);
+    await page.hash("/library");
+    await page.waitForText("Dune");
+    await page.click("progress");
+    await page.fill("Current page", "50");
+    await page.fill("Total pages", "200");
+    await page.click("save");
+    await page.waitForText("p. 50 of 200");
+    await page.waitForText("CURRENTLY READING");
+    const lib = await page.evaluate(`fetch("/api/v1/library").then((r) => r.json())`);
+    const item = lib.items.find((i) => i.file.name === "Dune.pdf");
+    if (item?.progress?.percent !== 25 || item.progress.status !== "reading") throw new Error(`progress: ${JSON.stringify(item)}`);
+    await shot("library");
+  });
+
   await step("Tasks: quick add, subtask, complete, filters", async () => {
     await page.hash("/tasks");
     await page.waitForText("Add a task");

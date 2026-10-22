@@ -5,6 +5,7 @@ use crate::files::FileEntry;
 use crate::identity::User;
 use crate::inbox::InboxItem;
 use crate::journal::Entry;
+use crate::library::Progress;
 use crate::links::{EntityRef, Link};
 use crate::notes::Note;
 use crate::projects::Project;
@@ -49,6 +50,7 @@ pub struct Export {
     pub links: Vec<LinkRecord>,
     /// File metadata only; download contents via the files API.
     pub files: Vec<FileEntry>,
+    pub reading_progress: Vec<Progress>,
 }
 
 /// Everything owned by `owner_id`, per module.
@@ -60,6 +62,7 @@ pub trait ExportSource {
     async fn inbox(&self, owner_id: &str) -> Result<Vec<InboxItem>, String>;
     async fn links(&self, owner_id: &str) -> Result<Vec<Link>, String>;
     async fn files(&self, owner_id: &str) -> Result<Vec<FileEntry>, String>;
+    async fn reading_progress(&self, owner_id: &str) -> Result<Vec<Progress>, String>;
 }
 
 pub async fn export<S: ExportSource>(
@@ -86,6 +89,7 @@ pub async fn export<S: ExportSource>(
             .map(LinkRecord::from)
             .collect(),
         files: source.files(&owner).await?,
+        reading_progress: source.reading_progress(&owner).await?,
         user,
     })
 }
@@ -142,6 +146,9 @@ mod tests {
             }])
         }
         async fn files(&self, _: &str) -> Result<Vec<FileEntry>, String> {
+            Ok(vec![])
+        }
+        async fn reading_progress(&self, _: &str) -> Result<Vec<Progress>, String> {
             Ok(vec![])
         }
     }

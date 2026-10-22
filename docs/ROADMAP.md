@@ -55,6 +55,9 @@ part of every slice, not deferred to the end.
 
 ## M3 Knowledge & Offline Beta (P3)
 - ✅ Private file management (folders, streamed content, quota).
+- ✅ PDF/ePub library with manual reading progress. An in-app reader
+  (pdf.js / epub.js) needs a dependency decision and would enable automatic
+  progress.
 - ✅ Universal search (substring, all text modules). A full-text index is
   pending, behind `SearchSource`.
 - Wiki and PDF/ePub library on R2, with reading progress.

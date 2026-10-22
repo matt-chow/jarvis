@@ -13,7 +13,8 @@ mod http;
 mod r2;
 
 use http::{
-    auth, export, files, health, inbox, jarvis, journal, links, notes, projects, search, tasks,
+    auth, export, files, health, inbox, jarvis, journal, library, links, notes, projects, search,
+    tasks,
 };
 
 #[event(fetch)]
@@ -47,6 +48,10 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get_async("/api/v1/jarvis/presets", jarvis::list_presets)
         .post_async("/api/v1/jarvis/presets", jarvis::create_preset)
         .delete_async("/api/v1/jarvis/presets/:id", jarvis::delete_preset)
+        // Library (reading progress for PDF/ePub files)
+        .get_async("/api/v1/library", library::list)
+        .put_async("/api/v1/library/:file_id/progress", library::update)
+        .delete_async("/api/v1/library/:file_id/progress", library::clear)
         // Search
         .get_async("/api/v1/search", search::search)
         // Data export

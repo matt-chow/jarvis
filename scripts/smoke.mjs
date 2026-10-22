@@ -425,6 +425,34 @@ async function local() {
       await api.req("DELETE", `/api/v1/projects/${proj.id}`);
     });
 
+    await check("library: PDF/ePub files with reading progress; non-documents rejected; exported", async () => {
+      const up = async (name, type) =>
+        (await api.req("POST", `/api/v1/files?folder=books&name=${encodeURIComponent(name)}`, { body: "%PDF-1.4 smoke", headers: { "Content-Type": type } })).json;
+      const pdf = await up("Dune.pdf", "application/pdf");
+      const epub = await up("Novel.epub", "application/octet-stream");
+      const jpg = await up("cover.jpg", "image/jpeg");
+      const lib = await api.req("GET", "/api/v1/library");
+      const names = lib.json.items.map((i) => i.file.name);
+      expect(names.includes("Dune.pdf") && names.includes("Novel.epub") && !names.includes("cover.jpg"), `library → ${names}`);
+
+      const p1 = await api.req("PUT", `/api/v1/library/${pdf.id}/progress`, { body: { current_page: 50, total_pages: 200 } });
+      expect(p1.status === 200 && p1.json.status === "reading" && p1.json.percent === 25, `progress → ${p1.text}`);
+      const p2 = await api.req("PUT", `/api/v1/library/${pdf.id}/progress`, { body: { current_page: 200 } });
+      expect(p2.json.status === "finished" && p2.json.percent === 100 && p2.json.finished_at > 0, "finished at last page");
+      const bad = await api.req("PUT", `/api/v1/library/${pdf.id}/progress`, { body: { current_page: 201 } });
+      expect(bad.status === 400, `beyond last page → ${bad.status}`);
+      expect((await api.req("PUT", `/api/v1/library/${jpg.id}/progress`, { body: {} })).status === 400, "not a document");
+
+      const ordered = (await api.req("GET", "/api/v1/library")).json.items;
+      expect(ordered[ordered.length - 1].file.id === pdf.id && ordered[ordered.length - 1].progress.status === "finished", "finished sorts last");
+      const doc = (await api.req("GET", "/api/v1/export")).json;
+      expect(doc.reading_progress.some((r) => r.file_id === pdf.id), "progress exported");
+
+      expect((await api.req("DELETE", `/api/v1/library/${pdf.id}/progress`)).status === 204, "clear");
+      for (const f of [pdf, epub, jpg]) await api.req("DELETE", `/api/v1/files/${f.id}`);
+      expect((await api.req("GET", "/api/v1/library")).json.items.length === 0, "library empties with files");
+    });
+
     await check("device API token: create (shown once), use as bearer, cannot manage credentials", async () => {
       const r = await api.req("POST", "/api/v1/auth/tokens", { body: { name: "Smoke device" } });
       expect(r.status === 201 && r.json.secret.startsWith("dir_"), `${r.status} ${r.text}`);

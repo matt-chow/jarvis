@@ -8,6 +8,7 @@ pub mod health;
 pub mod inbox;
 pub mod jarvis;
 pub mod journal;
+pub mod library;
 pub mod links;
 pub mod notes;
 pub mod projects;
