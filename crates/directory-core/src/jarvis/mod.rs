@@ -15,6 +15,7 @@ use crate::inbox::{Capture, InboxError, InboxRepository, InboxService};
 use crate::journal::{JournalError, JournalRepository, JournalService};
 use crate::links::{EntityKind, EntityRef};
 use crate::notes::{NewNote, NoteError, NoteRepository, NoteService};
+use crate::projects::{NewProject, ProjectError, ProjectRepository, ProjectService};
 use crate::search::{self, SearchError, SearchSource};
 use crate::tasks::{
     self, Filter, NewTask, Status, TaskError, TaskPatch, TaskRepository, TaskService,
@@ -34,7 +35,17 @@ pub enum Command {
     CreateTask {
         title: String,
         due_date: Option<String>,
+        /// Project named by the user ("… in project Garden").
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<String>,
+        /// Filled in when the plan is resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project_id: Option<String>,
     },
+    CreateProject {
+        name: String,
+    },
+    ListProjects,
     /// `task_id`/`title` are filled in when the plan is resolved.
     CompleteTask {
         query: String,
@@ -78,7 +89,7 @@ fn quote(s: &str, max: usize) -> String {
 impl Command {
     pub fn risk(&self) -> Risk {
         match self {
-            Self::ListTasks | Self::Find { .. } => Risk::Read,
+            Self::ListTasks | Self::ListProjects | Self::Find { .. } => Risk::Read,
             _ => Risk::Write,
         }
     }
@@ -88,12 +99,21 @@ impl Command {
         match self {
             Self::CreateTask {
                 title,
-                due_date: Some(d),
-            } => format!("Create task {} due {d}", quote(title, 80)),
-            Self::CreateTask {
-                title,
-                due_date: None,
-            } => format!("Create task {}", quote(title, 80)),
+                due_date,
+                project,
+                ..
+            } => {
+                let mut s = format!("Create task {}", quote(title, 80));
+                if let Some(p) = project {
+                    s.push_str(&format!(" in project {}", quote(p, 60)));
+                }
+                if let Some(d) = due_date {
+                    s.push_str(&format!(" due {d}"));
+                }
+                s
+            }
+            Self::CreateProject { name } => format!("Create project {}", quote(name, 80)),
+            Self::ListProjects => "List active projects".into(),
             Self::CompleteTask { title: Some(t), .. } => format!("Complete task {}", quote(t, 80)),
             Self::CompleteTask { query, .. } => {
                 format!("Complete the task matching {}", quote(query, 80))
@@ -240,12 +260,13 @@ pub trait JarvisRepository {
 }
 
 /// Module repositories commands execute through.
-pub struct CommandTargets<'a, T, N, J, I, S> {
+pub struct CommandTargets<'a, T, N, J, I, S, Pj> {
     pub tasks: &'a T,
     pub notes: &'a N,
     pub journal: &'a J,
     pub inbox: &'a I,
     pub search: &'a S,
+    pub projects: &'a Pj,
 }
 
 fn backend(e: String) -> JarvisError {
@@ -283,6 +304,65 @@ fn journal_failure(e: JournalError) -> ActionResult {
     })
 }
 
+fn project_failure(e: ProjectError) -> ActionResult {
+    failure(match e {
+        ProjectError::Invalid(f, w) => format!("Invalid {f}: {w}."),
+        _ => "The projects service is unavailable.".into(),
+    })
+}
+
+/// Pick the one item whose name matches `query`: an exact (case-insensitive)
+/// match wins, otherwise a unique substring match.
+fn pick<'t, X>(
+    items: &'t [X],
+    name: impl Fn(&X) -> &str,
+    query: &str,
+) -> Result<&'t X, Vec<&'t X>> {
+    let needle = query.to_lowercase();
+    let exact: Vec<&X> = items
+        .iter()
+        .filter(|x| name(x).to_lowercase() == needle)
+        .collect();
+    let matches = if exact.len() == 1 {
+        exact
+    } else {
+        items
+            .iter()
+            .filter(|x| name(x).to_lowercase().contains(&needle))
+            .collect()
+    };
+    match matches.as_slice() {
+        [one] => Ok(one),
+        _ => Err(matches),
+    }
+}
+
+/// The name of a project an earlier step creates, if it matches `query` exactly.
+fn created_earlier(earlier: &[PlannedAction], query: &str) -> Option<String> {
+    earlier.iter().find_map(|a| match &a.command {
+        Command::CreateProject { name } if name.trim().eq_ignore_ascii_case(query.trim()) => {
+            Some(name.trim().to_owned())
+        }
+        _ => None,
+    })
+}
+
+fn ambiguity<X>(query: &str, what: &str, matches: &[&X], name: impl Fn(&X) -> &str) -> JarvisError {
+    if matches.is_empty() {
+        return JarvisError::Unresolved(format!("No {what} matches “{query}”."));
+    }
+    let names: Vec<String> = matches
+        .iter()
+        .take(5)
+        .map(|x| format!("“{}”", name(x)))
+        .collect();
+    JarvisError::Unresolved(format!(
+        "“{query}” matches {} {what}s: {}. Be more specific.",
+        matches.len(),
+        names.join(", ")
+    ))
+}
+
 fn inbox_failure(e: InboxError) -> ActionResult {
     failure(match e {
         InboxError::Invalid(f, w) => format!("Invalid {f}: {w}."),
@@ -302,12 +382,12 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
     }
 
     /// Interpret and resolve `req` into a plan. Read-only plans execute now.
-    pub async fn plan<P, T, N, J, I, S>(
+    pub async fn plan<P, T, N, J, I, S, Pj>(
         &self,
         p: &Principal,
         provider: &P,
         req: PlanRequest,
-        targets: CommandTargets<'_, T, N, J, I, S>,
+        targets: CommandTargets<'_, T, N, J, I, S, Pj>,
     ) -> Result<Plan, JarvisError>
     where
         P: IntentProvider,
@@ -316,6 +396,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         J: JournalRepository,
         I: InboxRepository,
         S: SearchSource,
+        Pj: ProjectRepository,
     {
         let input = req.input.trim();
         if input.chars().count() > MAX_INPUT {
@@ -325,7 +406,9 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         let commands = provider.interpret(input, &today).await?;
         let mut actions = Vec::with_capacity(commands.len());
         for command in commands {
-            let command = self.resolve(p, command, targets.tasks).await?;
+            let command = self
+                .resolve(p, command, &actions, targets.tasks, targets.projects)
+                .await?;
             actions.push(PlannedAction {
                 summary: command.summary(),
                 risk: command.risk(),
@@ -354,64 +437,73 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
     }
 
     /// Fill in references the user described by name.
-    async fn resolve<T: TaskRepository>(
+    async fn resolve<T: TaskRepository, Pj: ProjectRepository>(
         &self,
         p: &Principal,
         command: Command,
+        earlier: &[PlannedAction],
         tasks: &T,
+        projects: &Pj,
     ) -> Result<Command, JarvisError> {
-        let Command::CompleteTask { query, .. } = command else {
-            return Ok(command);
-        };
-        let open = TaskService::new(tasks, self.entropy, self.now)
-            .list(p, Filter::Open)
-            .await
-            .map_err(|e| match e {
-                TaskError::Backend(b) => JarvisError::Backend(b),
-                _ => JarvisError::Unresolved("Couldn't read your tasks.".into()),
-            })?;
-        let needle = query.to_lowercase();
-        let exact: Vec<_> = open
-            .iter()
-            .filter(|t| t.title.to_lowercase() == needle)
-            .collect();
-        let matches: Vec<_> = if exact.len() == 1 {
-            exact
-        } else {
-            open.iter()
-                .filter(|t| t.title.to_lowercase().contains(&needle))
-                .collect()
-        };
-        match matches.as_slice() {
-            [] => Err(JarvisError::Unresolved(format!(
-                "No open task matches “{query}”."
-            ))),
-            [t] => Ok(Command::CompleteTask {
-                query,
-                task_id: Some(t.id.clone()),
-                title: Some(t.title.clone()),
-            }),
-            many => {
-                let names: Vec<String> = many
-                    .iter()
-                    .take(5)
-                    .map(|t| format!("“{}”", t.title))
-                    .collect();
-                Err(JarvisError::Unresolved(format!(
-                    "“{query}” matches {} tasks: {}. Be more specific.",
-                    many.len(),
-                    names.join(", ")
-                )))
+        match command {
+            Command::CompleteTask { query, .. } => {
+                let open = TaskService::new(tasks, self.entropy, self.now)
+                    .list(p, Filter::Open)
+                    .await
+                    .map_err(|e| match e {
+                        TaskError::Backend(b) => JarvisError::Backend(b),
+                        _ => JarvisError::Unresolved("Couldn't read your tasks.".into()),
+                    })?;
+                let t = pick(&open, |t| &t.title, &query)
+                    .map_err(|m| ambiguity(&query, "open task", &m, |t| &t.title))?;
+                Ok(Command::CompleteTask {
+                    task_id: Some(t.id.clone()),
+                    title: Some(t.title.clone()),
+                    query,
+                })
             }
+            Command::CreateTask {
+                title,
+                due_date,
+                project: Some(query),
+                ..
+            } => {
+                let active = ProjectService::new(projects, self.entropy, self.now)
+                    .list(p, false)
+                    .await
+                    .map_err(|e| match e {
+                        ProjectError::Backend(b) => JarvisError::Backend(b),
+                        _ => JarvisError::Unresolved("Couldn't read your projects.".into()),
+                    })?;
+                match pick(&active, |x| &x.name, &query) {
+                    Ok(pr) => Ok(Command::CreateTask {
+                        title,
+                        due_date,
+                        project: Some(pr.name.clone()),
+                        project_id: Some(pr.id.clone()),
+                    }),
+                    // Created by an earlier step of this plan: look it up when it runs.
+                    Err(m) if m.is_empty() && created_earlier(earlier, &query).is_some() => {
+                        Ok(Command::CreateTask {
+                            title,
+                            due_date,
+                            project: created_earlier(earlier, &query),
+                            project_id: None,
+                        })
+                    }
+                    Err(m) => Err(ambiguity(&query, "active project", &m, |x| &x.name)),
+                }
+            }
+            other => Ok(other),
         }
     }
 
     /// Approve and run a pending plan (exactly once).
-    pub async fn execute<T, N, J, I, S>(
+    pub async fn execute<T, N, J, I, S, Pj>(
         &self,
         p: &Principal,
         id: &str,
-        targets: CommandTargets<'_, T, N, J, I, S>,
+        targets: CommandTargets<'_, T, N, J, I, S, Pj>,
     ) -> Result<Plan, JarvisError>
     where
         T: TaskRepository,
@@ -419,6 +511,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         J: JournalRepository,
         I: InboxRepository,
         S: SearchSource,
+        Pj: ProjectRepository,
     {
         let plan = self.load(p, id).await?;
         if plan.status != PlanStatus::Pending {
@@ -483,11 +576,11 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
     }
 
     /// Run actions in order; stop at the first failure.
-    async fn run<T, N, J, I, S>(
+    async fn run<T, N, J, I, S, Pj>(
         &self,
         p: &Principal,
         actions: &[PlannedAction],
-        t: &CommandTargets<'_, T, N, J, I, S>,
+        t: &CommandTargets<'_, T, N, J, I, S, Pj>,
     ) -> (PlanStatus, Vec<ActionResult>)
     where
         T: TaskRepository,
@@ -495,6 +588,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         J: JournalRepository,
         I: InboxRepository,
         S: SearchSource,
+        Pj: ProjectRepository,
     {
         let mut results = Vec::with_capacity(actions.len());
         for action in actions {
@@ -508,11 +602,11 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         (PlanStatus::Executed, results)
     }
 
-    async fn run_one<T, N, J, I, S>(
+    async fn run_one<T, N, J, I, S, Pj>(
         &self,
         p: &Principal,
         command: &Command,
-        t: &CommandTargets<'_, T, N, J, I, S>,
+        t: &CommandTargets<'_, T, N, J, I, S, Pj>,
     ) -> ActionResult
     where
         T: TaskRepository,
@@ -520,6 +614,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         J: JournalRepository,
         I: InboxRepository,
         S: SearchSource,
+        Pj: ProjectRepository,
     {
         let tasks = TaskService::new(t.tasks, self.entropy, self.now);
         let entity = |kind, id: &str| {
@@ -529,7 +624,29 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
             })
         };
         match command {
-            Command::CreateTask { title, due_date } => {
+            Command::CreateTask {
+                title,
+                due_date,
+                project,
+                project_id,
+            } => {
+                // A project created earlier in this plan is looked up by its exact name now.
+                let project_id = match (project, project_id) {
+                    (Some(name), None) => {
+                        let active = match ProjectService::new(t.projects, self.entropy, self.now)
+                            .list(p, false)
+                            .await
+                        {
+                            Ok(a) => a,
+                            Err(e) => return project_failure(e),
+                        };
+                        match active.iter().find(|x| x.name.eq_ignore_ascii_case(name)) {
+                            Some(x) => Some(x.id.clone()),
+                            None => return failure(format!("Project “{name}” wasn't found.")),
+                        }
+                    }
+                    (_, id) => id.clone(),
+                };
                 let input = NewTask {
                     id: None,
                     title: title.clone(),
@@ -537,15 +654,80 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     priority: None,
                     due_date: due_date.clone(),
                     parent_id: None,
-                    project_id: None,
+                    project_id: project_id.clone(),
                 };
                 match tasks.create(p, input).await {
                     Ok(task) => ActionResult {
                         ok: true,
-                        message: format!("Created task “{}”.", task.title),
+                        message: match project {
+                            Some(name) => format!("Created task “{}” in “{name}”.", task.title),
+                            None => format!("Created task “{}”.", task.title),
+                        },
                         entity: entity(EntityKind::Task, &task.id),
                     },
                     Err(e) => task_failure(e),
+                }
+            }
+            Command::CreateProject { name } => {
+                let input = NewProject {
+                    id: None,
+                    name: name.clone(),
+                    description: None,
+                };
+                match ProjectService::new(t.projects, self.entropy, self.now)
+                    .create(p, input)
+                    .await
+                {
+                    Ok(pr) => ActionResult {
+                        ok: true,
+                        message: format!("Created project “{}”.", pr.name),
+                        entity: entity(EntityKind::Project, &pr.id),
+                    },
+                    Err(e) => project_failure(e),
+                }
+            }
+            Command::ListProjects => {
+                let active = match ProjectService::new(t.projects, self.entropy, self.now)
+                    .list(p, false)
+                    .await
+                {
+                    Ok(a) => a,
+                    Err(e) => return project_failure(e),
+                };
+                let all = match tasks.list(p, Filter::All).await {
+                    Ok(all) => all,
+                    Err(e) => return task_failure(e),
+                };
+                let message = if active.is_empty() {
+                    "No active projects.".into()
+                } else {
+                    let names: Vec<String> = active
+                        .iter()
+                        .take(LIST_PREVIEW)
+                        .map(|pr| {
+                            // Same rule as the Projects screen: top-level, not cancelled.
+                            let mine = all.iter().filter(|t| {
+                                t.project_id.as_deref() == Some(pr.id.as_str())
+                                    && t.parent_id.is_none()
+                                    && t.status != Status::Cancelled
+                            });
+                            let (done, total) = mine.fold((0, 0), |(d, n), t| {
+                                (d + usize::from(t.status == Status::Done), n + 1)
+                            });
+                            format!("{} ({done}/{total} done)", pr.name)
+                        })
+                        .collect();
+                    let more = if active.len() > LIST_PREVIEW {
+                        format!(", and {} more", active.len() - LIST_PREVIEW)
+                    } else {
+                        String::new()
+                    };
+                    format!("{} active: {}{more}.", active.len(), names.join("; "))
+                };
+                ActionResult {
+                    ok: true,
+                    message,
+                    entity: None,
                 }
             }
             Command::CompleteTask {

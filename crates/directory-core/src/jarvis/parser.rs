@@ -1,7 +1,10 @@
 //! Deterministic text → command parser (the default `IntentProvider`).
 //!
 //! Grammar (case-insensitive keywords, content kept verbatim):
-//!   add task <title> [due|by <date>]   · also: task, todo, remind me to
+//!   add task <title> [in|to|for project <name>] [due|by <date>]
+//!                                      · also: task, todo, remind me to
+//!   new project <name>                 · also: add project, create project
+//!   list projects                      · also: projects, show projects
 //!   complete <query>                   · also: done, finish, complete task
 //!   note <text>                        · also: add note, new note
 //!   journal <text>                     · also: log, diary
@@ -19,6 +22,8 @@ pub const MAX_STEPS: usize = 5;
 /// Examples shown when input isn't understood.
 pub const EXAMPLES: &[&str] = &[
     "add task call the dentist due friday",
+    "new project garden; add task plant tomatoes in project garden",
+    "list projects",
     "complete dentist",
     "note gate code is 4512",
     "journal long walk by the river",
@@ -129,6 +134,22 @@ fn split_due(rest: &str, today: &str) -> Result<(String, Option<String>), ParseE
     Ok((rest.to_owned(), None))
 }
 
+/// Split "… in project <name>" (or `to`/`for`) off a task. A due date may sit
+/// before the clause or at the very end, after the project name.
+fn split_project(rest: &str) -> (String, Option<String>) {
+    let words: Vec<&str> = rest.split_whitespace().collect();
+    let at = (1..words.len().saturating_sub(2)).rev().find(|&i| {
+        ["in", "to", "for"]
+            .iter()
+            .any(|k| words[i].eq_ignore_ascii_case(k))
+            && words[i + 1].eq_ignore_ascii_case("project")
+    });
+    match at {
+        Some(i) => (words[..i].join(" "), Some(words[i + 2..].join(" "))),
+        None => (rest.to_owned(), None),
+    }
+}
+
 fn parse_step(step: &str, today: &str) -> Result<Command, ParseError> {
     let step = strip(step, &["please", "jarvis,", "jarvis"]).unwrap_or(step);
     let lower = step.to_lowercase();
@@ -138,6 +159,25 @@ fn parse_step(step: &str, today: &str) -> Result<Command, ParseError> {
         "list tasks" | "show tasks" | "tasks" | "open tasks" | "what's open" | "what is open"
     ) {
         return Ok(Command::ListTasks);
+    }
+    if matches!(
+        lower,
+        "list projects" | "show projects" | "projects" | "active projects"
+    ) {
+        return Ok(Command::ListProjects);
+    }
+    if let Some(rest) = strip(
+        step,
+        &[
+            "new project",
+            "add project",
+            "create project",
+            "start project",
+        ],
+    ) {
+        return Ok(Command::CreateProject {
+            name: require(rest, "project name")?.to_owned(),
+        });
     }
     if let Some(rest) = strip(
         step,
@@ -150,8 +190,27 @@ fn parse_step(step: &str, today: &str) -> Result<Command, ParseError> {
             "todo",
         ],
     ) {
-        let (title, due_date) = split_due(require(rest, "task title")?, today)?;
-        return Ok(Command::CreateTask { title, due_date });
+        let (rest, project) = split_project(require(rest, "task title")?);
+        let (title, project, due_date) = match project {
+            // "… in project garden due friday": the date trails the project name.
+            Some(name) => match split_due(&name, today)? {
+                (name, Some(due)) => (rest, Some(name), Some(due)),
+                (name, None) => {
+                    let (title, due) = split_due(&rest, today)?;
+                    (title, Some(name), due)
+                }
+            },
+            None => {
+                let (title, due) = split_due(&rest, today)?;
+                (title, None, due)
+            }
+        };
+        return Ok(Command::CreateTask {
+            title,
+            due_date,
+            project,
+            project_id: None,
+        });
     }
     if let Some(rest) = strip(
         step,
@@ -218,28 +277,36 @@ mod tests {
             one("add task Call the dentist"),
             Command::CreateTask {
                 title: "Call the dentist".into(),
-                due_date: None
+                due_date: None,
+                project: None,
+                project_id: None
             }
         );
         assert_eq!(
             one("Please add task Call the dentist due Friday"),
             Command::CreateTask {
                 title: "Call the dentist".into(),
-                due_date: Some("2026-10-23".into())
+                due_date: Some("2026-10-23".into()),
+                project: None,
+                project_id: None
             }
         );
         assert_eq!(
             one("todo renew passport by 2026-12-01"),
             Command::CreateTask {
                 title: "renew passport".into(),
-                due_date: Some("2026-12-01".into())
+                due_date: Some("2026-12-01".into()),
+                project: None,
+                project_id: None
             }
         );
         assert_eq!(
             one("remind me to water plants due tomorrow"),
             Command::CreateTask {
                 title: "water plants".into(),
-                due_date: Some("2026-10-22".into())
+                due_date: Some("2026-10-22".into()),
+                project: None,
+                project_id: None
             }
         );
         // "by" followed by a non-date is just part of the title.
@@ -247,7 +314,9 @@ mod tests {
             one("task walk by the river"),
             Command::CreateTask {
                 title: "walk by the river".into(),
-                due_date: None
+                due_date: None,
+                project: None,
+                project_id: None
             }
         );
         assert_eq!(
@@ -332,7 +401,9 @@ mod tests {
             one("task 日本語"),
             Command::CreateTask {
                 title: "日本語".into(),
-                due_date: None
+                due_date: None,
+                project: None,
+                project_id: None
             }
         );
     }
@@ -347,5 +418,50 @@ mod tests {
         assert_eq!(parse_date("thu", TODAY).as_deref(), Some("2026-10-22"));
         assert_eq!(parse_date("Sunday.", TODAY).as_deref(), Some("2026-10-25"));
         assert_eq!(parse_date("2026-02-30", TODAY), None);
+    }
+
+    #[test]
+    fn project_commands_and_task_project_clauses() {
+        let one = |s: &str| parse(s, TODAY).unwrap().remove(0);
+        assert_eq!(one("list projects"), Command::ListProjects);
+        assert_eq!(
+            one("new project Home renovation"),
+            Command::CreateProject {
+                name: "Home renovation".into()
+            }
+        );
+        let task = |title: &str, project: Option<&str>, due: Option<&str>| Command::CreateTask {
+            title: title.into(),
+            due_date: due.map(Into::into),
+            project: project.map(Into::into),
+            project_id: None,
+        };
+        assert_eq!(
+            one("add task plant tomatoes in project garden due friday"),
+            task("plant tomatoes", Some("garden"), Some("2026-10-23"))
+        );
+        assert_eq!(
+            one("todo buy paint due tomorrow for project Home renovation"),
+            task("buy paint", Some("Home renovation"), Some("2026-10-22")),
+            "the date may also come before the clause"
+        );
+        assert_eq!(
+            one("add task review project plan"),
+            task("review project plan", None, None),
+            "`project` only starts a clause after in/to/for"
+        );
+        assert_eq!(
+            one("add task in project"),
+            task("in project", None, None),
+            "a clause needs a title before it and a name after it"
+        );
+        assert_eq!(
+            one("add task move boxes to project Garage"),
+            task("move boxes", Some("Garage"), None)
+        );
+        assert_eq!(
+            parse("new project", TODAY),
+            Err(ParseError::MissingText("project name"))
+        );
     }
 }

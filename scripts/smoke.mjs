@@ -404,6 +404,28 @@ async function local() {
       await api.req("DELETE", `/api/v1/tasks/${task.id}`);
     });
 
+    await check("jarvis projects: create, add a task to one (also within the same plan), list with progress", async () => {
+      const plan = (input) => api.req("POST", "/api/v1/jarvis/plan", { body: { input, today: "2026-10-21" } });
+      const both = await plan("new project Smoke Garden; add task sow seeds in project smoke garden due friday");
+      expect(both.status === 200 && both.json.actions[1].summary === "Create task “sow seeds” in project “Smoke Garden” due 2026-10-23", both.text);
+      const ran = await api.req("POST", `/api/v1/jarvis/plans/${both.json.id}/execute`);
+      expect(ran.json.status === "executed" && ran.json.results[1].message === "Created task “sow seeds” in “Smoke Garden”.", ran.text);
+      const project = (await api.req("GET", "/api/v1/projects")).json.projects.find((p) => p.name === "Smoke Garden");
+      const task = (await api.req("GET", "/api/v1/tasks")).json.tasks.find((t) => t.title === "sow seeds");
+      expect(project && task && task.project_id === project.id && task.due_date === "2026-10-23", "task in the new project");
+
+      const later = await plan("add task weed beds to project garden");
+      expect(later.json.actions?.[0].command.project_id === project.id, `existing project resolved → ${later.text}`);
+      await api.req("POST", `/api/v1/jarvis/plans/${later.json.id}/cancel`);
+      const list = await plan("list projects");
+      expect(list.json.status === "executed" && list.json.results[0].message.includes("Smoke Garden (0/1 done)"), list.text);
+      const none = await plan("add task x in project nowhere");
+      expect(none.status === 422 && none.json.message === "No active project matches “nowhere”.", `unresolved → ${none.text}`);
+
+      await api.req("DELETE", `/api/v1/tasks/${task.id}`);
+      await api.req("DELETE", `/api/v1/projects/${project.id}`);
+    });
+
     await check("jarvis presets: save (validated by parsing), list, delete", async () => {
       const bad = await api.req("POST", "/api/v1/jarvis/presets", { body: { name: "Bad", input: "dance" } });
       expect(bad.status === 400 && bad.json.error === "not_understood", `unparseable → ${bad.status}`);

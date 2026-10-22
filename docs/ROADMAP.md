@@ -43,7 +43,7 @@ part of every slice, not deferred to the end.
 | Command layer: typed commands, deterministic parser, preview/approve/execute-once, multi-step, history | ✅ done |
 | Command presets (saved commands, one-tap run) | ✅ done |
 | Voice input (Web Speech API where available; text fallback) | **needs owner approval**: browser speech services send audio to the vendor |
-| More commands: `find` ✅; projects and links planned | partial |
+| More commands: `find` ✅, projects ✅ (new, list, tasks `in project …`, also within one plan); entity links later | mostly done |
 | AI intent provider | needs owner approval (provider, budget) |
 
 - A command registry where modules expose typed, validated commands.

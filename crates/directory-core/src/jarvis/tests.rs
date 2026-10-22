@@ -4,6 +4,7 @@ use crate::identity::AuthMethod;
 use crate::inbox::memory::MemoryInbox;
 use crate::journal::testing::MemoryJournal;
 use crate::notes::testing::MemoryNotes;
+use crate::projects::memory::MemoryProjects;
 use crate::search::{Candidate, SearchSource};
 use crate::tasks::memory::MemoryTasks;
 use crate::test_util::block_on;
@@ -130,19 +131,29 @@ struct F {
     notes: MemoryNotes,
     journal: MemoryJournal,
     inbox: MemoryInbox,
+    projects: MemoryProjects,
     e: CountingEntropy,
 }
 
 impl F {
     fn targets(
         &self,
-    ) -> CommandTargets<'_, MemoryTasks, MemoryNotes, MemoryJournal, MemoryInbox, MemoryTasks> {
+    ) -> CommandTargets<
+        '_,
+        MemoryTasks,
+        MemoryNotes,
+        MemoryJournal,
+        MemoryInbox,
+        MemoryTasks,
+        MemoryProjects,
+    > {
         CommandTargets {
             tasks: &self.tasks,
             notes: &self.notes,
             journal: &self.journal,
             inbox: &self.inbox,
             search: &self.tasks,
+            projects: &self.projects,
         }
     }
     fn svc(&self, now: i64) -> JarvisService<'_, MemoryPlans, CountingEntropy> {
@@ -244,7 +255,7 @@ fn complete_resolves_by_title() {
         .any(|t| t.title == "Water plants" && t.status == Status::Done));
 
     match f.plan("complete pay") {
-        Err(JarvisError::Unresolved(msg)) => assert!(msg.contains("matches 2 tasks"), "{msg}"),
+        Err(JarvisError::Unresolved(msg)) => assert!(msg.contains("matches 2 open tasks"), "{msg}"),
         other => panic!("{other:?}"),
     }
     assert!(matches!(
@@ -257,6 +268,71 @@ fn complete_resolves_by_title() {
     assert!(matches!(
         f.plan("complete taxes"),
         Err(JarvisError::Unresolved(_))
+    ));
+}
+
+#[test]
+fn projects_create_list_and_receive_tasks() {
+    let f = F::default();
+    let created = f.plan("new project Garden; new project Garage").unwrap();
+    assert_eq!(created.actions[0].summary, "Create project “Garden”");
+    f.execute(&created.id, 1_100).unwrap();
+    // The task repository checks project ownership through its own table.
+    for pr in f.projects.0.borrow().iter() {
+        f.tasks
+            .1
+            .borrow_mut()
+            .push((pr.owner_id.clone(), pr.id.clone()));
+    }
+
+    let plan = f
+        .plan("add task plant tomatoes in project garden due friday")
+        .unwrap();
+    assert_eq!(
+        plan.actions[0].summary,
+        "Create task “plant tomatoes” in project “Garden” due 2026-10-23"
+    );
+    let done = f.execute(&plan.id, 1_200).unwrap();
+    assert_eq!(
+        done.results[0].message,
+        "Created task “plant tomatoes” in “Garden”."
+    );
+    let garden_id = f.projects.0.borrow()[0].id.clone();
+    assert!(f.tasks.0.borrow().iter().any(
+        |t| t.title == "plant tomatoes" && t.project_id.as_deref() == Some(garden_id.as_str())
+    ));
+
+    // Read-only: runs at once.
+    let list = f.plan("list projects").unwrap();
+    assert_eq!(list.status, PlanStatus::Executed);
+    assert_eq!(
+        list.results[0].message,
+        "2 active: Garden (0/1 done); Garage (0/0 done)."
+    );
+
+    match f.plan("add task x in project ga") {
+        Err(JarvisError::Unresolved(msg)) => {
+            assert!(msg.contains("matches 2 active projects"), "{msg}")
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(matches!(
+        f.plan("add task x to project shed"),
+        Err(JarvisError::Unresolved(m)) if m == "No active project matches “shed”."
+    ));
+
+    // A project created earlier in the same plan is resolved when the plan runs
+    // (verified end to end against D1 by the smoke test).
+    let forward = f
+        .plan("new project Shed; add task paint door in project shed")
+        .unwrap();
+    assert_eq!(
+        forward.actions[1].summary,
+        "Create task “paint door” in project “Shed”"
+    );
+    assert!(matches!(
+        &forward.actions[1].command,
+        Command::CreateTask { project: Some(n), project_id: None, .. } if n == "Shed"
     ));
 }
 

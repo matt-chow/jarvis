@@ -4,7 +4,7 @@ use super::auth::principal;
 use super::{error, error_with, json, no_content, read_json};
 use crate::d1::{
     D1InboxRepository, D1JarvisRepository, D1JournalRepository, D1NoteRepository,
-    D1PresetRepository, D1SearchSource, D1TaskRepository,
+    D1PresetRepository, D1ProjectRepository, D1SearchSource, D1TaskRepository,
 };
 use crate::{bindings, entropy::WebCryptoEntropy, try_or_respond};
 use directory_core::identity::Principal;
@@ -51,6 +51,7 @@ struct Targets {
     journal: D1JournalRepository,
     inbox: D1InboxRepository,
     search: D1SearchSource,
+    projects: D1ProjectRepository,
 }
 
 type Borrowed<'a> = CommandTargets<
@@ -60,6 +61,7 @@ type Borrowed<'a> = CommandTargets<
     D1JournalRepository,
     D1InboxRepository,
     D1SearchSource,
+    D1ProjectRepository,
 >;
 
 impl Targets {
@@ -71,6 +73,7 @@ impl Targets {
             journal: D1JournalRepository::new(db()?),
             inbox: D1InboxRepository::new(db()?),
             search: D1SearchSource::new(db()?),
+            projects: D1ProjectRepository::new(db()?),
         })
     }
 
@@ -81,6 +84,7 @@ impl Targets {
             journal: &self.journal,
             inbox: &self.inbox,
             search: &self.search,
+            projects: &self.projects,
         }
     }
 }

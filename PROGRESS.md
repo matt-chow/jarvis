@@ -8,7 +8,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - **Milestone:** M1 Private Alpha is **feature-complete locally**. All M1
   slices are done and `npm run ci` is green. The first deploy is **blocked on
   owner approval** (see the readiness checklist in docs/ARCHITECTURE.md ›
-  Deployment). **M2 JARVIS Alpha:** command layer ✅, presets ✅, `find` ✅.
+  Deployment). **M2 JARVIS Alpha:** command layer ✅, presets ✅, `find` ✅,
+  project commands ✅.
   Voice is blocked on owner approval. **M3:** search ✅, files ✅, library ✅,
   offline editing for tasks, projects, notes, journal, and inbox capture ✅.
 - **Works locally** (verified by automated tests):
@@ -35,7 +36,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
     cross-module picker and deep links.
   - Full JSON data export from Settings.
   - Library of PDFs/ePubs with reading progress.
-  - JARVIS text commands (tasks, notes, journal, capture, list) with preview,
+  - JARVIS text commands (tasks, projects, notes, journal, capture, list,
+    find) with preview,
     approve, results, history, and saved presets.
   - Universal search (`/` from anywhere), plus JARVIS `find`.
   - PWA install and offline relaunch with the saved session.
@@ -47,10 +49,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ### Verification commands and latest results
 
-| Command | Result (2026-10-21) |
+| Command | Result (2026-10-22) |
 | --- | --- |
-| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass (2026-10-22). Worker upload 1,323 KiB / 424 KiB gzipped |
-| `cargo test -p directory-core` | ✅ 85 passed |
+| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
+| `cargo test -p directory-core` | ✅ 87 passed |
 | Vitest | ✅ 39 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
 | `npm run test:browser` (headless Edge, virtual passkey) | ✅ 19/19 |
@@ -69,8 +71,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Offline: links, pinning, journal delete, and inbox triage need a
   connection. A new edit queued in the instant between a replay finishing
   and the open editor learning the new version can show a spurious
-  conflict (resolved with "keep mine"). A project deleted offline leaves its tasks showing the old
-  project until the next sync refresh.
+  conflict (resolved with "keep mine"). A project deleted offline leaves
+  its tasks showing the old project until the next sync refresh.
 - `wrangler dev` must be restarted after rebuilding `apps/web/dist`.
 - The repo lives under OneDrive, which slows down and locks `node_modules` and
   `target`.
@@ -94,14 +96,32 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. JARVIS: project and link commands (M2 "more commands").
-2. M4 start: Habits (daily check-ins, streaks), then Calendar.
-3. Remaining owner decisions: deploy approval, voice, AI provider, reader
+1. M4 start: Habits (daily check-ins, streaks), then Calendar.
+2. Remaining owner decisions: deploy approval, voice, AI provider, reader
    dependency.
 
 ---
 
 ## Log
+
+### 2026-10-22 — M2 slice: JARVIS project commands
+- **Core:**
+  - `CreateProject`, and `ListProjects`. Progress counts top-level,
+    non-cancelled tasks, as on the Projects screen.
+  - `CreateTask` gains an optional project (`project`/`project_id`). Serde
+    defaults keep stored plans readable.
+  - The project is resolved at plan time: an exact match first, then a
+    unique partial match. If several match, the candidates are listed.
+  - A project created by an earlier step of the same plan is resolved by its
+    exact name when the plan runs.
+  - `CommandTargets` gains `projects`, with shared `pick`/`ambiguity` helpers.
+- **Parser:** `new project <name>`, `list projects`, and
+  `add task <title> in|to|for project <name> [due …]`. The date may come
+  before or after the project clause.
+- **Tests:**
+  - core 87: parser clauses, resolution, forward reference.
+  - smoke: a project and its task created in one plan on D1, progress
+    listing, and an unresolved project returning 422.
 
 ### 2026-10-22 — M3 slice: Wiki links and backlinks (D-019)
 - **Core:** `notes::wiki_links` (targets of `[[Title]]` / `[[Title|label]]`),
