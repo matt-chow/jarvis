@@ -1,11 +1,10 @@
 import { useCallback, useEffect } from "react";
-import { api, isNetworkError } from "../lib/api";
-import { localDb } from "../lib/db";
-import { applyLocally, clientId, type Op } from "../lib/sync";
+import { api } from "../lib/api";
+import { applyLocally, clientId } from "../lib/sync";
 import type { NewTask, Task, TaskPatch } from "../lib/tasks";
-import { describeError, useCachedList } from "./useCachedList";
-import { reportIfUnauthorized } from "./useSession";
-import { OUTBOX_EVENT, SYNCED_EVENT } from "./useSync";
+import { runOrQueue } from "./offline";
+import { useCachedList } from "./useCachedList";
+import { SYNCED_EVENT } from "./useSync";
 
 export interface TasksState {
   tasks?: Task[];
@@ -21,13 +20,10 @@ export interface TasksState {
 
 const fetchAll = () => api.tasks("all");
 
-/**
- * Server-backed task list that keeps working offline: edits made without a
- * connection apply locally and queue in the outbox (DECISIONS D-017).
- */
+/** Server-backed task list that keeps working offline (DECISIONS D-017). */
 export function useTasks(online: boolean): TasksState {
   const list = useCachedList<Task>("tasks:last", "task", fetchAll, online);
-  const { latest, replace, setError, reload } = list;
+  const { reload } = list;
 
   // Server data changed by a replay: refresh from the source of truth.
   useEffect(() => {
@@ -35,70 +31,51 @@ export function useTasks(online: boolean): TasksState {
     return () => window.removeEventListener(SYNCED_EVENT, reload);
   }, [reload]);
 
-  /** Try the server; queue instead when offline or when earlier changes are still queued (keeps order). */
-  const run = useCallback(
-    async <R,>(op: Op, server: () => Promise<R>, fromServer: (cur: Task[], r: R) => Task[], local: (cur: Task[]) => R) => {
-      setError(undefined);
-      const db = await localDb();
-      const queued = (await db.outbox()).length > 0;
-      if (navigator.onLine && !queued) {
-        try {
-          const r = await server();
-          replace(fromServer(latest(), r));
-          return r;
-        } catch (e) {
-          if (!isNetworkError(e)) {
-            reportIfUnauthorized(e);
-            setError(describeError(e, "task"));
-            return undefined;
-          }
-        }
-      }
-      await db.enqueue(op);
-      const next = applyLocally(latest(), op);
-      replace(next);
-      window.dispatchEvent(new Event(OUTBOX_EVENT));
-      return local(next);
-    },
-    [latest, replace, setError],
-  );
-
   const create = useCallback(
     (t: NewTask) => {
       const task = { ...t, id: clientId() };
-      return run(
-        { kind: "task.create", task },
-        () => api.createTask(task),
-        (cur, created) => [...cur, created],
-        (cur) => cur.find((x) => x.id === task.id)!,
-      );
+      return runOrQueue({
+        list,
+        noun: "task",
+        op: { kind: "task.create", task },
+        server: () => api.createTask(task),
+        fromServer: (cur, created) => [...cur, created],
+        applyLocal: applyLocally,
+        local: (cur) => cur.find((x) => x.id === task.id)!,
+      });
     },
-    [run],
+    [list],
   );
 
   const update = useCallback(
     (id: string, patch: TaskPatch) =>
-      run(
-        { kind: "task.update", id, patch },
-        () => api.updateTask(id, patch),
-        (cur, u) => cur.map((t) => (t.id === id ? u : t)),
-        (cur) => cur.find((t) => t.id === id)!,
-      ),
-    [run],
+      runOrQueue({
+        list,
+        noun: "task",
+        op: { kind: "task.update", id, patch },
+        server: () => api.updateTask(id, patch),
+        fromServer: (cur, u) => cur.map((t) => (t.id === id ? u : t)),
+        applyLocal: applyLocally,
+        local: (cur) => cur.find((t) => t.id === id)!,
+      }),
+    [list],
   );
 
   const remove = useCallback(
     async (id: string) =>
-      (await run(
-        { kind: "task.delete", id },
-        async () => {
+      (await runOrQueue({
+        list,
+        noun: "task",
+        op: { kind: "task.delete", id },
+        server: async () => {
           await api.deleteTask(id);
           return true;
         },
-        (cur) => cur.filter((t) => t.id !== id && t.parent_id !== id),
-        () => true,
-      )) ?? false,
-    [run],
+        fromServer: (cur) => cur.filter((t) => t.id !== id && t.parent_id !== id),
+        applyLocal: applyLocally,
+        local: () => true,
+      })) ?? false,
+    [list],
   );
 
   return { tasks: list.items, loading: list.loading, stale: list.stale, error: list.error, reload: list.reload, create, update, remove };

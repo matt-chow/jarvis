@@ -14,6 +14,7 @@ fn inbox_error(e: InboxError) -> Result<Response> {
         InboxError::Invalid(field, why) => {
             error_with(400, "invalid_input", format!("{field}: {why}"))
         }
+        InboxError::Exists => error(409, "exists"),
         InboxError::NotFound => error(404, "not_found"),
         InboxError::Backend(detail) => {
             worker::console_error!("inbox backend error: {detail}");

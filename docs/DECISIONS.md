@@ -137,7 +137,7 @@ operations are ordered so that a failure can only leave a duplicate source
   rather than guessed.
 
 ## D-017 — Offline edits through a replayable outbox
-**Status:** accepted (Tasks first)
+**Status:** accepted (Tasks; Inbox capture and discard)
 - **Queueing:** offline changes apply to the local copy immediately and are
   queued in an IndexedDB `outbox` (schema v2), then replayed in order on load,
   on reconnect, and after each enqueue. While anything is queued, new edits
@@ -150,8 +150,9 @@ operations are ordered so that a failure can only leave a duplicate source
   the queue. Other 4xx errors drop that change and show a visible "couldn't
   …" message.
 - **Not yet covered:** notes and journal stay read-only offline; their
-  versioned conflict flow (D-014) needs a queued-conflict UI. Projects,
-  inbox, and links come next.
+  versioned conflict flow (D-014) needs a queued-conflict UI. Inbox triage
+  stays online-only because it creates items in other modules. Projects and
+  links come next.
 
 ## D-013 — Provisional UI until Paper designs land
 **Status:** accepted

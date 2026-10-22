@@ -598,7 +598,13 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                 Err(e) => journal_failure(e),
             },
             Command::Capture { text } => match InboxService::new(t.inbox, self.entropy, self.now)
-                .capture(p, Capture { text: text.clone() })
+                .capture(
+                    p,
+                    Capture {
+                        id: None,
+                        text: text.clone(),
+                    },
+                )
                 .await
             {
                 Ok(_) => ActionResult {

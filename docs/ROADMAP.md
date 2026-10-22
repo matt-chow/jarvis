@@ -55,8 +55,8 @@ part of every slice, not deferred to the end.
 
 ## M3 Knowledge & Offline Beta (P3)
 - ✅ Private file management (folders, streamed content, quota).
-- ✅ Offline editing for Tasks via a replayable outbox (D-017). Other
-  modules are next.
+- ✅ Offline editing for Tasks via a replayable outbox (D-017), plus
+  offline Inbox capture and discard. Projects, notes, and journal are next.
 - ✅ PDF/ePub library with manual reading progress. An in-app reader
   (pdf.js / epub.js) needs a dependency decision and would enable automatic
   progress.

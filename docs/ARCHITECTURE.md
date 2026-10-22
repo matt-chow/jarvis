@@ -94,7 +94,7 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | GET | `/api/v1/links?kind=task|note|project|journal&id=` | session or token | Items linked to an entity, with resolved titles. Links whose other end was deleted are dropped and removed. |
 | POST | `/api/v1/links` | session or token | `{ from: {kind,id}, to: {kind,id} }` → `201 { link_id, kind, id, title }`. Idempotent and symmetric; both ends must exist and be owned. |
 | DELETE | `/api/v1/links/{id}` | session or token | Unlink |
-| GET / POST | `/api/v1/inbox` | session or token | List (oldest first), or capture `{ text }` (≤ 2,000 chars) |
+| GET / POST | `/api/v1/inbox` | session or token | List (oldest first), or capture `{ text, id? }` (≤ 2,000 chars; an optional client-chosen 32-hex `id` makes offline replays idempotent: a repeat → `409 exists`) |
 | DELETE | `/api/v1/inbox/{id}` | session or token | Discard |
 | POST | `/api/v1/inbox/{id}/triage` | session or token | `{ to: task|note|journal, date? }` → `{ kind, task|note|entry }`. Goes through the target module's service; the target is created before the item is removed. |
 | GET | `/api/v1/journal?from=&to=` | session or token | Summaries (`date, excerpt, mood`) for a range of at most 366 days, newest first |

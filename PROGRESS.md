@@ -3,7 +3,7 @@
 Canonical implementation tracker. Newest entries first. Milestones are defined in
 [docs/ROADMAP.md](docs/ROADMAP.md).
 
-## Current state (2026-10-21)
+## Current state (2026-10-22)
 
 - **Milestone:** M1 Private Alpha is **feature-complete locally**. All M1
   slices are done and `npm run ci` is green. The first deploy is **blocked on
@@ -43,11 +43,11 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 | Command | Result (2026-10-21) |
 | --- | --- |
-| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 1,247 KiB / 401 KiB gzipped |
-| `cargo test -p directory-core` | ✅ 79 passed |
-| Vitest | ✅ 26 passed (9 files) |
-| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 27/27 |
-| `npm run test:browser` (headless Edge 155, virtual passkey) | ✅ 16/16 |
+| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass (2026-10-22). Worker upload 1,323 KiB / 424 KiB gzipped |
+| `cargo test -p directory-core` | ✅ 81 passed |
+| Vitest | ✅ 33 passed |
+| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
+| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 18/18 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -60,8 +60,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Search uses SQLite `LIKE`, which is case-insensitive for ASCII only, and
   reads whole note and journal bodies for snippets. Move to FTS5 when data
   grows.
-- Offline editing works for Tasks only; notes, journal, projects, and inbox
-  are read-only offline.
+- Offline editing covers Tasks and Inbox capture/discard; notes, journal,
+  and projects are read-only offline, and inbox triage needs a connection.
 - `wrangler dev` must be restarted after rebuilding `apps/web/dist`.
 - The repo lives under OneDrive, which slows down and locks `node_modules` and
   `target`.
@@ -85,14 +85,27 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. Extend offline editing to Projects and Inbox capture (same outbox pattern).
-   Then notes and journal with a queued-conflict UI (D-014 + D-017).
+1. Extend offline editing to Projects (same outbox pattern). Then notes and
+   journal with a queued-conflict UI (D-014 + D-017).
 2. Wiki: notes with `[[wiki links]]` and backlinks (reuse links).
 3. Remaining owner decisions: deploy approval, voice, AI provider.
 
 ---
 
 ## Log
+
+### 2026-10-22 — M3 slice: Offline Inbox capture
+- **Core:** `Capture.id` (optional client id; `InboxError::Exists` → 409).
+- **Web:**
+  - `hooks/offline.ts`: shared `runOrQueue` (server first, else apply
+    locally and queue). `useTasks` was refactored onto it.
+  - `lib/sync.ts`: `inbox.capture` / `inbox.delete` ops and
+    `applyInboxLocally`.
+  - `useInbox`: capture and discard queue offline; triage stays online-only.
+    The Inbox and Home capture boxes stay enabled offline.
+- **Tests:** core 81, web 33 (inbox replay test), smoke (inbox client-id
+  replay → 409, discard replay → 404), browser e2e 18/18 (the offline step
+  now also captures to the inbox and checks it reaches the server).
 
 ### 2026-10-22 — M3 slice: Offline edits for Tasks
 - **Core:** `NewTask.id` (an optional client id; `TaskError::Exists` → 409).

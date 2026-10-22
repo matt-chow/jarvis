@@ -25,7 +25,8 @@ export function Inbox({ online }: ModuleProps) {
   const inbox = useInbox(online);
   const [busy, setBusy] = useState<string>();
   const [result, setResult] = useState<{ text: string; route: string }>();
-  const readOnly = inbox.stale || !online;
+  // Capture and discard work offline (queued); triage needs the server.
+  const offline = inbox.stale || !online;
 
   const triage = async (id: string, to: "task" | "note" | "journal") => {
     setBusy(id);
@@ -37,7 +38,7 @@ export function Inbox({ online }: ModuleProps) {
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5">
       <Panel title={`inbox${inbox.items ? ` · ${inbox.items.length}` : ""}`}>
-        <CaptureBox disabled={readOnly} onCapture={(t) => inbox.capture(t)} />
+        <CaptureBox disabled={!inbox.items} onCapture={(t) => inbox.capture(t)} />
         {result && (
           <p role="status" className="mt-3 text-sm text-muted">
             {result.text}{" "}
@@ -46,12 +47,14 @@ export function Inbox({ online }: ModuleProps) {
             </a>
           </p>
         )}
-        {inbox.error && !readOnly && (
+        {inbox.error && !offline && (
           <p role="alert" className="mt-3 text-sm text-bad">
             {inbox.error}
           </p>
         )}
-        {readOnly && inbox.items && <p className="mt-3 text-sm text-muted">Offline: capture and triage resume when you reconnect.</p>}
+        {offline && inbox.items && (
+          <p className="mt-3 text-sm text-muted">Offline: captures are saved on this device and sync when you reconnect. Sorting needs a connection.</p>
+        )}
 
         {inbox.loading && !inbox.items ? (
           <p className="mt-4 text-sm text-muted">Loading…</p>
@@ -73,19 +76,19 @@ export function Inbox({ online }: ModuleProps) {
                   <span className="mr-auto font-mono text-[11px] text-muted">
                     {formatDate(item.created_at)} {formatTime(item.created_at)}
                   </span>
-                  <Button className={small} disabled={readOnly || busy === item.id} onClick={() => void triage(item.id, "task")}>
+                  <Button className={small} disabled={offline || busy === item.id} onClick={() => void triage(item.id, "task")}>
                     → task
                   </Button>
-                  <Button className={small} disabled={readOnly || busy === item.id} onClick={() => void triage(item.id, "note")}>
+                  <Button className={small} disabled={offline || busy === item.id} onClick={() => void triage(item.id, "note")}>
                     → note
                   </Button>
-                  <Button className={small} disabled={readOnly || busy === item.id} onClick={() => void triage(item.id, "journal")}>
+                  <Button className={small} disabled={offline || busy === item.id} onClick={() => void triage(item.id, "journal")}>
                     → journal
                   </Button>
                   <Button
                     variant="danger"
                     className={small}
-                    disabled={readOnly || busy === item.id}
+                    disabled={busy === item.id}
                     aria-label={`Discard “${item.text.slice(0, 40)}”`}
                     onClick={() => void inbox.remove(item.id)}
                   >

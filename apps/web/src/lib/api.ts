@@ -143,7 +143,8 @@ export class Api {
 
   // ---- Inbox ----
   inbox = async () => (await this.call<{ items: InboxItem[] }>("GET", "/api/v1/inbox")).items;
-  capture = (text: string) => this.call<InboxItem>("POST", "/api/v1/inbox", { text });
+  /** `id`: client-chosen id for offline captures (replays answer 409). */
+  capture = (text: string, id?: string) => this.call<InboxItem>("POST", "/api/v1/inbox", { text, id });
   deleteInboxItem = (id: string) => this.call<void>("DELETE", `/api/v1/inbox/${encodeURIComponent(id)}`);
   /** `date` (local YYYY-MM-DD) is required when triaging to the journal. */
   triage = (id: string, to: TriageTarget, date?: string) =>

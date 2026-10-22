@@ -2,7 +2,7 @@ import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import { LocalDb } from "./db";
-import { applyLocally, clientId, replay, type Op, type SyncApi } from "./sync";
+import { applyInboxLocally, applyLocally, clientId, replay, type Op, type SyncApi } from "./sync";
 import type { Task } from "./tasks";
 
 const task = (id: string, over: Partial<Task> = {}): Task => ({
@@ -32,6 +32,8 @@ function fakeApi(fail: (op: string) => unknown = () => undefined) {
     createTask: (t) => run(`create:${t.id}`),
     updateTask: (id) => run(`update:${id}`),
     deleteTask: async (id) => void (await run(`delete:${id}`)),
+    capture: async (_text, id) => ({ id: (await run(`capture:${id}`)).id, text: "", created_at: 0 }),
+    deleteInboxItem: async (id) => void (await run(`discard:${id}`)),
   };
   return { api, calls };
 }
@@ -95,5 +97,17 @@ describe("applyLocally", () => {
 
   it("generates server-compatible ids", () => {
     expect(clientId()).toMatch(/^[0-9a-f]{32}$/);
+  });
+});
+
+describe("inbox ops", () => {
+  it("replays captures idempotently and applies locally", async () => {
+    const db = await outboxWith([{ kind: "inbox.capture", item: { id: "i1", text: "thought" } }, { kind: "inbox.delete", id: "i0" }]);
+    const { api, calls } = fakeApi((op) => (op === "capture:i1" ? new ApiError(409, "exists") : op === "discard:i0" ? new ApiError(404, "not_found") : undefined));
+    expect(await replay(db, api)).toMatchObject({ applied: 2, rejected: [] });
+    expect(calls).toEqual(["capture:i1", "discard:i0"]);
+    const items = applyInboxLocally([], { kind: "inbox.capture", item: { id: "i1", text: " thought " } }, 3);
+    expect(items).toEqual([{ id: "i1", text: "thought", created_at: 3 }]);
+    expect(applyInboxLocally(items, { kind: "inbox.delete", id: "i1" })).toEqual([]);
   });
 });

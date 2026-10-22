@@ -24,6 +24,9 @@ pub struct InboxItem {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Capture {
+    /// Client-chosen id (offline capture); must be a fresh 32-hex id.
+    #[serde(default)]
+    pub id: Option<String>,
     pub text: String,
 }
 
@@ -55,6 +58,8 @@ pub enum Triaged {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InboxError {
     Invalid(&'static str, &'static str),
+    /// A client-supplied id is already in use (a replayed offline capture).
+    Exists,
     NotFound,
     Backend(String),
 }
@@ -157,8 +162,25 @@ impl<'a, R: InboxRepository, E: Entropy + ?Sized> InboxService<'a, R, E> {
         if text.is_empty() {
             return Err(InboxError::Invalid("text", "required"));
         }
+        let id = match input.id {
+            Some(id) if !is_id(&id) => {
+                return Err(InboxError::Invalid("id", "expected 32 hex characters"))
+            }
+            Some(id)
+                if self
+                    .repo
+                    .get(&p.user_id, &id)
+                    .await
+                    .map_err(backend)?
+                    .is_some() =>
+            {
+                return Err(InboxError::Exists)
+            }
+            Some(id) => id,
+            None => new_id(self.entropy),
+        };
         let item = InboxItem {
-            id: new_id(self.entropy),
+            id,
             owner_id: p.user_id.clone(),
             text,
             created_at: self.now,
@@ -317,7 +339,14 @@ mod tests {
             }
         }
         fn capture(&self, text: &str) -> InboxItem {
-            block_on(self.svc().capture(&me(), Capture { text: text.into() })).unwrap()
+            block_on(self.svc().capture(
+                &me(),
+                Capture {
+                    id: None,
+                    text: text.into(),
+                },
+            ))
+            .unwrap()
         }
         fn triage(
             &self,
@@ -344,6 +373,7 @@ mod tests {
             block_on(f.svc().capture(
                 &me(),
                 Capture {
+                    id: None,
                     text: "  \n ".into()
                 }
             ))
@@ -354,6 +384,7 @@ mod tests {
             block_on(f.svc().capture(
                 &me(),
                 Capture {
+                    id: None,
                     text: "x".repeat(MAX_TEXT + 1)
                 }
             )),
@@ -418,5 +449,32 @@ mod tests {
         assert_eq!(t.title.chars().count(), tasks::MAX_TITLE);
         assert_eq!(t.notes.as_deref(), Some(long.as_str()));
         assert_eq!(task_from_text("just a title").notes, None);
+    }
+
+    #[test]
+    fn client_ids_make_offline_captures_idempotent() {
+        let f = F::new();
+        let id = "e".repeat(32);
+        let first = block_on(f.svc().capture(
+            &me(),
+            Capture {
+                id: Some(id.clone()),
+                text: "offline thought".into(),
+            },
+        ))
+        .unwrap();
+        assert_eq!(first.id, id);
+        assert_eq!(
+            block_on(f.svc().capture(
+                &me(),
+                Capture {
+                    id: Some(id),
+                    text: "offline thought".into()
+                }
+            ))
+            .unwrap_err(),
+            InboxError::Exists
+        );
+        assert_eq!(block_on(f.svc().list(&me())).unwrap().len(), 1);
     }
 }

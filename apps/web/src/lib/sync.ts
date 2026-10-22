@@ -7,12 +7,15 @@
  * deletes treat 404 as already done.
  */
 import { ApiError, isNetworkError } from "./api";
+import type { InboxItem } from "./inbox";
 import type { NewTask, Task, TaskPatch } from "./tasks";
 
 export type Op =
   | { kind: "task.create"; task: NewTask & { id: string } }
   | { kind: "task.update"; id: string; patch: TaskPatch }
-  | { kind: "task.delete"; id: string };
+  | { kind: "task.delete"; id: string }
+  | { kind: "inbox.capture"; item: { id: string; text: string } }
+  | { kind: "inbox.delete"; id: string };
 
 export interface Outbox {
   outbox(): Promise<{ seq?: number; op: unknown }[]>;
@@ -23,6 +26,8 @@ export interface SyncApi {
   createTask(t: NewTask & { id: string }): Promise<Task>;
   updateTask(id: string, patch: TaskPatch): Promise<Task>;
   deleteTask(id: string): Promise<void>;
+  capture(text: string, id?: string): Promise<InboxItem>;
+  deleteInboxItem(id: string): Promise<void>;
 }
 
 export interface SyncResult {
@@ -52,11 +57,19 @@ async function apply(api: SyncApi, op: Op): Promise<void> {
       case "task.delete":
         await api.deleteTask(op.id);
         return;
+      case "inbox.capture":
+        await api.capture(op.item.text, op.item.id);
+        return;
+      case "inbox.delete":
+        await api.deleteInboxItem(op.id);
+        return;
     }
   } catch (e) {
     // Already applied by an earlier, interrupted replay.
-    if (e instanceof ApiError && op.kind === "task.create" && e.code === "exists") return;
-    if (e instanceof ApiError && op.kind === "task.delete" && e.status === 404) return;
+    const isCreate = op.kind === "task.create" || op.kind === "inbox.capture";
+    const isDelete = op.kind === "task.delete" || op.kind === "inbox.delete";
+    if (e instanceof ApiError && isCreate && e.code === "exists") return;
+    if (e instanceof ApiError && isDelete && e.status === 404) return;
     throw e;
   }
 }
@@ -69,6 +82,10 @@ function describeOp(op: Op): string {
       return "update a task";
     case "task.delete":
       return "delete a task";
+    case "inbox.capture":
+      return `capture “${op.item.text.slice(0, 40)}”`;
+    case "inbox.delete":
+      return "discard an inbox item";
   }
 }
 
@@ -128,5 +145,19 @@ export function applyLocally(tasks: Task[], op: Op, now = Date.now()): Task[] {
       });
     case "task.delete":
       return tasks.filter((t) => t.id !== op.id && t.parent_id !== op.id);
+    default:
+      return tasks;
+  }
+}
+
+/** Apply an inbox op to a local inbox list. */
+export function applyInboxLocally(items: InboxItem[], op: Op, now = Date.now()): InboxItem[] {
+  switch (op.kind) {
+    case "inbox.capture":
+      return [...items, { id: op.item.id, text: op.item.text.trim(), created_at: now }];
+    case "inbox.delete":
+      return items.filter((i) => i.id !== op.id);
+    default:
+      return items;
   }
 }

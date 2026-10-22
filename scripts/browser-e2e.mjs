@@ -181,7 +181,7 @@ try {
     await page.waitForText("Meeting notes");
   });
 
-  await step("Offline edits: a task added offline is queued, then synced on reconnect", async () => {
+  await step("Offline edits: a task and an inbox capture made offline are queued, then synced", async () => {
     await page.hash("/tasks");
     await waitFor("tasks loaded", () => page.evaluate(`!!document.querySelector('input[aria-label="New task"]')`));
     await page.send("Network.enable", {});
@@ -193,10 +193,20 @@ try {
     await page.click("add");
     await page.waitForText("Written offline");
     await page.waitForText("1 pending");
+    await page.hash("/inbox");
+    await page.waitForText("captures are saved on this device");
+    await page.fill("Capture to inbox", "Idea from the train");
+    await page.click("capture");
+    await page.waitForText("Idea from the train");
+    await page.waitForText("2 pending");
     await net(false);
     await waitFor("synced", async () => !(await page.text()).includes("pending"), 30_000);
     const tasks = await page.evaluate(`fetch("/api/v1/tasks").then((r) => r.json())`);
     if (!tasks.tasks.some((t) => t.title === "Written offline")) throw new Error("offline task not on server");
+    const inbox = await page.evaluate(`fetch("/api/v1/inbox").then((r) => r.json())`);
+    if (!inbox.items.some((i) => i.text === "Idea from the train")) throw new Error("offline capture not on server");
+    // Leave the inbox empty for later steps.
+    await page.evaluate(`fetch("/api/v1/inbox").then((r) => r.json()).then((b) => Promise.all(b.items.map((i) => fetch("/api/v1/inbox/" + i.id, { method: "DELETE", headers: { Origin: location.origin } }))))`);
   });
 
   await step("Projects: create, add a task from the project, progress updates", async () => {

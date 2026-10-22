@@ -37,7 +37,7 @@ export function Home({ online, health, sw, session, navigate }: ModuleProps) {
           ) : undefined
         }
       >
-        <CaptureBox disabled={!online || inbox.stale} onCapture={(t) => inbox.capture(t)} />
+        <CaptureBox disabled={!inbox.items} onCapture={(t) => inbox.capture(t)} />
       </Panel>
 
       <Panel

@@ -453,7 +453,7 @@ async function local() {
       expect((await api.req("GET", "/api/v1/library")).json.items.length === 0, "library empties with files");
     });
 
-    await check("offline sync support: client-chosen task ids make replayed creates idempotent", async () => {
+    await check("offline sync support: client-chosen task and inbox ids make replayed creates idempotent", async () => {
       const id = "ab".repeat(16);
       const first = await api.req("POST", "/api/v1/tasks", { body: { id, title: "From the outbox" } });
       expect(first.status === 201 && first.json.id === id, `create → ${first.text}`);
@@ -461,6 +461,14 @@ async function local() {
       expect(replayed.status === 409 && replayed.json.error === "exists", `replay → ${replayed.status}`);
       expect((await api.req("POST", "/api/v1/tasks", { body: { id: "zz", title: "x" } })).status === 400, "malformed id");
       await api.req("DELETE", `/api/v1/tasks/${id}`);
+
+      const iid = "cd".repeat(16);
+      const cap = await api.req("POST", "/api/v1/inbox", { body: { id: iid, text: "Captured offline" } });
+      expect(cap.status === 201 && cap.json.id === iid, `capture → ${cap.status} ${cap.text}`);
+      const again = await api.req("POST", "/api/v1/inbox", { body: { id: iid, text: "Captured offline" } });
+      expect(again.status === 409 && again.json.error === "exists", `capture replay → ${again.status}`);
+      expect((await api.req("DELETE", `/api/v1/inbox/${iid}`)).status === 204, "discard");
+      expect((await api.req("DELETE", `/api/v1/inbox/${iid}`)).status === 404, "discard replay → 404");
     });
 
     await check("device API token: create (shown once), use as bearer, cannot manage credentials", async () => {
