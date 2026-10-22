@@ -3,7 +3,7 @@
 //   npm run smoke
 //     Starts an isolated `wrangler dev` (fresh local D1/R2), then exercises owner
 //     setup, passkey login (software authenticator), sessions, CSRF origin checks,
-//     device tokens, private storage, and static assets.
+//     device tokens, private files, and static assets.
 //
 //   BASE_URL=https://directory.<you>.workers.dev DIRECTORY_API_TOKEN=dir_... npm run smoke
 //     Read-mostly checks against a deployed Worker using a device API token.
@@ -100,7 +100,7 @@ async function local() {
     });
 
     await check("private routes reject anonymous callers", async () => {
-      for (const [m, p] of [["GET", "/api/v1/storage/objects"], ["GET", "/api/v1/auth/passkeys"], ["GET", "/api/v1/auth/tokens"]]) {
+      for (const [m, p] of [["GET", "/api/v1/files"], ["GET", "/api/v1/auth/passkeys"], ["GET", "/api/v1/auth/tokens"]]) {
         const r = await api.req(m, p);
         expect(r.status === 401, `${m} ${p} → ${r.status}`);
       }
@@ -129,36 +129,52 @@ async function local() {
       expect(r.status === 409 && r.json.error === "setup_unavailable", `${r.status}`);
     });
 
-    const objectKey = `smoke/check-${Date.now()}.txt`;
     const payload = `directory smoke ${new Date().toISOString()}`;
 
     await check("cookie-authenticated write without Origin → 403", async () => {
-      const r = await api.req("PUT", `/api/v1/storage/objects/${objectKey}`, { body: payload, origin: false });
+      const r = await api.req("POST", "/api/v1/tasks", { body: { title: "csrf" }, origin: false });
       expect(r.status === 403 && r.json.error === "origin_not_allowed", `${r.status}`);
-      const evil = await fetch(`${baseUrl}/api/v1/storage/objects/${objectKey}`, {
-        method: "PUT",
-        headers: { Cookie: api.cookie, Origin: "https://evil.example" },
-        body: payload,
+      const evil = await fetch(`${baseUrl}/api/v1/tasks`, {
+        method: "POST",
+        headers: { Cookie: api.cookie, Origin: "https://evil.example", "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "csrf" }),
       });
       expect(evil.status === 403, `foreign origin → ${evil.status}`);
     });
 
-    await check("storage round trip with session: PUT, LIST, GET (attachment), DELETE", async () => {
-      const put = await api.req("PUT", `/api/v1/storage/objects/${objectKey}`, {
-        body: payload,
-        headers: { "Content-Type": "text/plain; charset=utf-8" },
-      });
-      expect(put.status === 201 && put.json.key === objectKey, `put ${put.status} ${put.text}`);
-      const list = await api.req("GET", "/api/v1/storage/objects?prefix=smoke/");
-      expect(list.json.objects.some((o) => o.key === objectKey), "listed with logical key");
-      const get = await api.req("GET", `/api/v1/storage/objects/${objectKey}`);
-      expect(get.status === 200 && get.text === payload, "body");
-      expect(get.headers.get("content-disposition") === "attachment", "attachment");
-      const bad = await api.req("GET", "/api/v1/storage/objects/bad%20key");
-      expect(bad.status === 400, `invalid key → ${bad.status}`);
-      const del = await api.req("DELETE", `/api/v1/storage/objects/${objectKey}`);
-      expect(del.status === 204, `delete ${del.status}`);
-      expect((await api.req("GET", `/api/v1/storage/objects/${objectKey}`)).status === 404, "gone");
+    await check("files: streamed upload, folders, download (attachment), rename/move, conflicts, quota, delete", async () => {
+      const upload = (folder, name, body, type = "text/plain; charset=utf-8") =>
+        api.req("POST", `/api/v1/files?folder=${encodeURIComponent(folder)}&name=${encodeURIComponent(name)}`, {
+          body,
+          headers: { "Content-Type": type },
+        });
+      const up = await upload("docs/2026", "Résumé.txt", payload);
+      expect(up.status === 201 && up.json.size === Buffer.byteLength(payload) && up.json.content_type === "text/plain", `upload → ${up.text}`);
+      expect((await upload("docs/2026", "Résumé.txt", "dup")).status === 409, "duplicate name");
+      expect((await upload("", "../evil", "x")).status === 400, "bad name");
+
+      const root = await api.req("GET", "/api/v1/files");
+      expect(root.json.folders.includes("docs") && root.json.files.length === 0, `root → ${root.text}`);
+      const docs = await api.req("GET", "/api/v1/files?folder=docs");
+      expect(docs.json.folders.join() === "2026", "nested folder");
+
+      const get = await api.req("GET", `/api/v1/files/${up.json.id}/content`);
+      expect(get.status === 200 && get.text === payload, "content streamed back");
+      expect(/^attachment; filename="R_sum_\.txt"; filename\*=UTF-8''R%C3%A9sum%C3%A9\.txt$/.test(get.headers.get("content-disposition")), get.headers.get("content-disposition"));
+      expect(get.headers.get("content-security-policy").includes("sandbox"), "sandboxed");
+
+      const moved = await api.req("PATCH", `/api/v1/files/${up.json.id}`, { body: { folder: "archive", name: "cv.txt" } });
+      expect(moved.json.folder === "archive" && moved.json.name === "cv.txt", `move → ${moved.text}`);
+      expect((await api.req("GET", `/api/v1/files/${up.json.id}/content`)).text === payload, "content survives move");
+
+      const usage = await api.req("GET", "/api/v1/files/usage");
+      expect(usage.json.used === Buffer.byteLength(payload) && usage.json.quota === 1_000_000, `usage → ${usage.text}`);
+      const big = await upload("", "big.bin", new Uint8Array(1_100_000), "application/octet-stream");
+      expect(big.status === 507 && big.json.error === "quota_exceeded", `over quota → ${big.status}`);
+
+      expect((await api.req("DELETE", `/api/v1/files/${up.json.id}`)).status === 204, "delete");
+      expect((await api.req("GET", `/api/v1/files/${up.json.id}/content`)).status === 404, "gone");
+      expect((await api.req("GET", "/api/v1/files/usage")).json.used === 0, "usage released");
     });
 
     await check("tasks: create, validate, subtasks one level deep, filters, completion, clear due date, cascade delete", async () => {
@@ -323,7 +339,7 @@ async function local() {
       const note = (await api.req("POST", "/api/v1/notes", { body: { body: "Exported note body" } })).json;
       await api.req("POST", "/api/v1/links", { body: { from: { kind: "task", id: task.id }, to: { kind: "note", id: note.id } } });
       await api.req("POST", "/api/v1/inbox", { body: { text: "still in the inbox" } });
-      await api.req("PUT", "/api/v1/storage/objects/export/check.txt", { body: "file", headers: { "Content-Type": "text/plain" } });
+      const file = (await api.req("POST", "/api/v1/files?folder=export&name=check.txt", { body: "file", headers: { "Content-Type": "text/plain" } })).json;
 
       const r = await api.req("GET", "/api/v1/export");
       expect(r.status === 200 && /attachment; filename="directory-export-\d{4}-\d{2}-\d{2}\.json"/.test(r.headers.get("content-disposition")), "download headers");
@@ -333,11 +349,11 @@ async function local() {
       expect(doc.tasks.some((t) => t.id === task.id) && doc.notes.some((n) => n.body === "Exported note body"), "tasks + full note bodies");
       expect(doc.journal.some((e) => e.date === "2026-10-21" && e.body.length > 0), "journal with bodies");
       expect(doc.links.length >= 1 && doc.inbox.some((i) => i.text === "still in the inbox"), "links + inbox");
-      expect(doc.files.some((f) => f.key === "export/check.txt"), "file metadata");
+      expect(doc.files.some((f) => f.folder === "export" && f.name === "check.txt"), "file metadata");
       for (const secret of ["token_hash", "public_key", "sign_count", "owner_id", "dir_", "__Host-"]) {
         expect(!r.text.includes(secret), `leaked ${secret}`);
       }
-      await api.req("DELETE", "/api/v1/storage/objects/export/check.txt");
+      await api.req("DELETE", `/api/v1/files/${file.id}`);
     });
 
     await check("jarvis: read plans run now; write plans need approval, run once; cancel; history; parse errors", async () => {
@@ -416,14 +432,14 @@ async function local() {
       deviceSecret = r.json.secret;
       deviceTokenId = r.json.token.id;
       const bearer = new Client(baseUrl);
-      const list = await bearer.req("GET", "/api/v1/storage/objects", { headers: { Authorization: `Bearer ${deviceSecret}` } });
+      const list = await bearer.req("GET", "/api/v1/files", { headers: { Authorization: `Bearer ${deviceSecret}` } });
       expect(list.status === 200, `bearer list ${list.status}`);
       const mint = await bearer.req("POST", "/api/v1/auth/tokens", {
         body: {},
         headers: { Authorization: `Bearer ${deviceSecret}` },
       });
       expect(mint.status === 403 && mint.json.error === "session_required", `mint via bearer → ${mint.status}`);
-      const wrong = await bearer.req("GET", "/api/v1/storage/objects", { headers: { Authorization: "Bearer dir_wrong" } });
+      const wrong = await bearer.req("GET", "/api/v1/files", { headers: { Authorization: "Bearer dir_wrong" } });
       expect(wrong.status === 401, `wrong bearer → ${wrong.status}`);
     });
 
@@ -432,7 +448,7 @@ async function local() {
       const r = await api.req("POST", "/api/v1/auth/logout");
       expect(r.status === 204, `${r.status}`);
       expect(r.setCookie.some((c) => /Max-Age=0/.test(c)), "cookie cleared");
-      const replay = await fetch(`${baseUrl}/api/v1/storage/objects`, { headers: { Cookie: oldCookie } });
+      const replay = await fetch(`${baseUrl}/api/v1/files`, { headers: { Cookie: oldCookie } });
       expect(replay.status === 401, `old cookie → ${replay.status}`);
     });
 
@@ -480,7 +496,7 @@ async function local() {
     await check("revoked device token stops working", async () => {
       const del = await api.req("DELETE", `/api/v1/auth/tokens/${deviceTokenId}`);
       expect(del.status === 204, `revoke ${del.status}`);
-      const r = await fetch(`${baseUrl}/api/v1/storage/objects`, { headers: { Authorization: `Bearer ${deviceSecret}` } });
+      const r = await fetch(`${baseUrl}/api/v1/files`, { headers: { Authorization: `Bearer ${deviceSecret}` } });
       expect(r.status === 401, `after revoke → ${r.status}`);
     });
 
@@ -513,20 +529,20 @@ async function remote(base) {
     expect(r.status === 200 && r.json.status === "ok", `${r.status} ${r.text}`);
   });
   await check("anonymous access to private routes → 401", async () => {
-    expect((await api.req("GET", "/api/v1/storage/objects")).status === 401, "storage");
+    expect((await api.req("GET", "/api/v1/files")).status === 401, "files");
   });
   if (token) {
-    await check("device token storage round trip", async () => {
+    await check("device token file round trip", async () => {
       const auth = { Authorization: `Bearer ${token}` };
-      const key = `smoke/remote-${Date.now()}.txt`;
-      const put = await api.req("PUT", `/api/v1/storage/objects/${key}`, { body: "remote smoke", headers: auth });
-      expect(put.status === 201, `put ${put.status}`);
-      const get = await api.req("GET", `/api/v1/storage/objects/${key}`, { headers: auth });
+      const name = `remote-${Date.now()}.txt`;
+      const put = await api.req("POST", `/api/v1/files?folder=smoke&name=${name}`, { body: "remote smoke", headers: { ...auth, "Content-Type": "text/plain" } });
+      expect(put.status === 201, `upload ${put.status}`);
+      const get = await api.req("GET", `/api/v1/files/${put.json.id}/content`, { headers: auth });
       expect(get.text === "remote smoke", "body");
-      expect((await api.req("DELETE", `/api/v1/storage/objects/${key}`, { headers: auth })).status === 204, "delete");
+      expect((await api.req("DELETE", `/api/v1/files/${put.json.id}`, { headers: auth })).status === 204, "delete");
     });
   } else {
-    console.log("  skip storage round trip (set DIRECTORY_API_TOKEN to a device token)");
+    console.log("  skip file round trip (set DIRECTORY_API_TOKEN to a device token)");
   }
   await staticChecks(base);
 }

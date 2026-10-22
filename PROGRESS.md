@@ -84,23 +84,30 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-**M3 slice: private file management.** This upgrades the R2 proof of
-concept into a Files module:
-- Folders (key prefixes), with a metadata table in D1 (name, size, type,
-  created, folder) as the list source, so listing costs no R2 Class A
-  operations.
-- Rename and move (metadata only; the stable object id is the key).
-- Streaming upload and download, so bodies aren't buffered: `R2 put` from the
-  request stream with `Content-Length` enforcement, and `get` streamed to the
-  response.
-- Per-owner storage quota in core, with a free-tier-safe default of 1 GB and
-  a usage display.
-- Then: PDF/ePub library with reading progress (built on Files), and offline
-  sync design.
+1. Update docs/ARCHITECTURE.md and docs/MODULES.md for the files API (see
+   the last log entry).
+2. M3: PDF/ePub library with reading progress (built on Files), then the
+   offline sync design.
 
 ---
 
 ## Log
+
+### 2026-10-21 — M3 slice: Private file management
+- **Core:** a `files` module (folder and name validation, quota 1 GiB
+  default, 95 MiB per-file cap, metadata-only rename and move, an RFC 6266
+  `content_disposition`). The legacy `storage` module was removed, and export
+  now lists file metadata.
+- **Worker:** migration `0012_files.sql` (schema v12) and `d1/files.rs`.
+  `r2.rs` is now `R2Blobs`. `/api/v1/files` streams uploads from the request
+  body into R2 and downloads via the runtime (no buffering). The
+  `/api/v1/storage/*` routes were removed. `DIRECTORY_QUOTA_BYTES` var is
+  optional.
+- **Web:** Files module with breadcrumbs (`#/files?folder=`), new folder,
+  multi/drag-drop upload, a usage bar, rename/move/delete, and download links.
+- **Tests:** core 76, web 26, smoke 27/27, browser e2e 16/16.
+- **Docs not yet updated for this slice:** ARCHITECTURE API table (replace
+  the storage rows with files rows) and MODULES (files row).
 
 ### 2026-10-21 — Universal search (+ JARVIS find)
 - **Core:** `search` module: validation, LIKE escaping, Unicode-safe

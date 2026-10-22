@@ -1,10 +1,11 @@
 //! `ExportSource` over the D1 repositories (no new SQL beyond each module's).
 
 use super::{
-    D1InboxRepository, D1JournalRepository, D1LinkRepository, D1NoteRepository,
+    D1FileRepository, D1InboxRepository, D1JournalRepository, D1LinkRepository, D1NoteRepository,
     D1ProjectRepository, D1TaskRepository,
 };
 use directory_core::export::ExportSource;
+use directory_core::files::FileEntry;
 use directory_core::inbox::{InboxItem, InboxRepository};
 use directory_core::journal::Entry;
 use directory_core::links::Link;
@@ -22,6 +23,7 @@ pub struct D1ExportSource {
     pub journal: D1JournalRepository,
     pub inbox: D1InboxRepository,
     pub links: D1LinkRepository,
+    pub files: D1FileRepository,
 }
 
 impl ExportSource for D1ExportSource {
@@ -42,5 +44,8 @@ impl ExportSource for D1ExportSource {
     }
     async fn links(&self, owner_id: &str) -> Result<Vec<Link>, String> {
         self.links.all(owner_id).await
+    }
+    async fn files(&self, owner_id: &str) -> Result<Vec<FileEntry>, String> {
+        self.files.all(owner_id).await
     }
 }

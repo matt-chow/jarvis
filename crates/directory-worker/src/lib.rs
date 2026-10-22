@@ -13,7 +13,7 @@ mod http;
 mod r2;
 
 use http::{
-    auth, export, health, inbox, jarvis, journal, links, notes, projects, search, storage, tasks,
+    auth, export, files, health, inbox, jarvis, journal, links, notes, projects, search, tasks,
 };
 
 #[event(fetch)]
@@ -83,11 +83,13 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get_async("/api/v1/tasks/:id", tasks::get)
         .patch_async("/api/v1/tasks/:id", tasks::update)
         .delete_async("/api/v1/tasks/:id", tasks::delete)
-        // Files (R2)
-        .get_async("/api/v1/storage/objects", storage::list_objects)
-        .put_async("/api/v1/storage/objects/*key", storage::put_object)
-        .get_async("/api/v1/storage/objects/*key", storage::get_object)
-        .delete_async("/api/v1/storage/objects/*key", storage::delete_object)
+        // Files: metadata in D1, content streamed via R2
+        .get_async("/api/v1/files", files::list)
+        .post_async("/api/v1/files", files::upload)
+        .get_async("/api/v1/files/usage", files::usage)
+        .get_async("/api/v1/files/:id/content", files::content)
+        .patch_async("/api/v1/files/:id", files::update)
+        .delete_async("/api/v1/files/:id", files::delete)
         .or_else_any_method_async("/api/*rest", |_, _| async { http::error(404, "not_found") })
         .run(req, env)
         .await

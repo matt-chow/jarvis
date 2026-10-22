@@ -1,6 +1,7 @@
 //! D1-backed implementations of core repositories.
 
 mod export;
+mod files;
 mod identity;
 mod inbox;
 mod jarvis;
@@ -14,6 +15,7 @@ mod search;
 mod tasks;
 
 pub use export::D1ExportSource;
+pub use files::D1FileRepository;
 pub use identity::D1IdentityRepository;
 pub use inbox::D1InboxRepository;
 pub use jarvis::D1JarvisRepository;

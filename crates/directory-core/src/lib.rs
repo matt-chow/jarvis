@@ -11,6 +11,7 @@
 pub mod encoding;
 pub mod entropy;
 pub mod export;
+pub mod files;
 pub mod health;
 pub mod identity;
 pub mod inbox;
@@ -21,7 +22,6 @@ pub mod notes;
 pub mod projects;
 pub mod rate_limit;
 pub mod search;
-pub mod storage;
 pub mod system;
 pub mod tasks;
 pub mod validate;

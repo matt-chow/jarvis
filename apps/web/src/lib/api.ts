@@ -3,6 +3,7 @@
  * The browser authenticates with the HttpOnly session cookie (same origin);
  * native clients can pass a device token instead.
  */
+import type { FileEntry, Listing, Usage } from "./files";
 import type { InboxItem, Triaged, TriageTarget } from "./inbox";
 import type { Plan, Preset } from "./jarvis";
 import type { JournalEntry, JournalSummary, PutJournal } from "./journal";
@@ -24,13 +25,6 @@ export interface HealthReport {
   service: string;
   version: string;
   checks: HealthCheck[];
-}
-
-export interface ObjectInfo {
-  key: string;
-  size: number;
-  content_type: string | null;
-  uploaded_at: string | null;
 }
 
 export interface SessionUser {
@@ -74,11 +68,6 @@ type Fetch = typeof fetch;
 
 /** Empty = same origin. Native clients can point this at the deployed Worker. */
 const BASE = (import.meta.env?.VITE_API_BASE as string | undefined) ?? "";
-
-/** Encode each path segment so keys like `a/b c.txt` survive the URL. */
-export function objectPath(key: string): string {
-  return `/api/v1/storage/objects/${key.split("/").map(encodeURIComponent).join("/")}`;
-}
 
 async function fail(res: Response): Promise<never> {
   let code = "request_failed";
@@ -218,42 +207,27 @@ export class Api {
   }
 
   // ---- Files ----
-  async listObjects(prefix?: string): Promise<ObjectInfo[]> {
-    const q = prefix ? `?prefix=${encodeURIComponent(prefix)}` : "";
-    return (await this.call<{ objects: ObjectInfo[] }>("GET", `/api/v1/storage/objects${q}`)).objects;
-  }
-
-  async upload(key: string, body: Blob): Promise<ObjectInfo> {
-    const res = await this.send("PUT", objectPath(key), {
-      body,
-      headers: { "Content-Type": body.type || "application/octet-stream" },
+  files = (folder = "") => this.call<Listing>("GET", `/api/v1/files?folder=${encodeURIComponent(folder)}`);
+  fileUsage = () => this.call<Usage>("GET", "/api/v1/files/usage");
+  /** Streams the file as the request body (the browser sets Content-Length). */
+  async uploadFile(folder: string, file: File): Promise<FileEntry> {
+    const q = `folder=${encodeURIComponent(folder)}&name=${encodeURIComponent(file.name)}`;
+    const res = await this.send("POST", `/api/v1/files?${q}`, {
+      body: file,
+      headers: { "Content-Type": file.type || "application/octet-stream" },
     });
     if (!res.ok) return fail(res);
-    return (await res.json()) as ObjectInfo;
+    return (await res.json()) as FileEntry;
   }
-
-  async download(key: string): Promise<Blob> {
-    const res = await this.send("GET", objectPath(key));
-    if (!res.ok) return fail(res);
-    return res.blob();
-  }
-
-  removeObject = (key: string) => this.call<void>("DELETE", objectPath(key));
+  updateFile = (id: string, patch: { name?: string; folder?: string }) =>
+    this.call<FileEntry>("PATCH", `/api/v1/files/${encodeURIComponent(id)}`, patch);
+  deleteFile = (id: string) => this.call<void>("DELETE", `/api/v1/files/${encodeURIComponent(id)}`);
+  /** Same-origin URL; the session cookie authorizes the download. */
+  fileContentUrl = (id: string) => `${this.base}/api/v1/files/${encodeURIComponent(id)}/content`;
 }
 
 /** Shared client for the web app. */
 export const api = new Api();
-
-/** Turn a file name into a valid storage key (see core `ObjectKey`). */
-export function toObjectKey(fileName: string, folder = "uploads"): string {
-  const safe = fileName
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "") // drop accents: é → e
-    .replace(/[^A-Za-z0-9._-]+/g, "-")
-    .replace(/^[-.]+|-+$/g, "")
-    .slice(0, 200);
-  return `${folder}/${safe || "file"}`;
-}
 
 /** True when the request never reached the server (offline, DNS, CORS…). */
 export function isNetworkError(e: unknown): boolean {

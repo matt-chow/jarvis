@@ -1,87 +1,42 @@
-//! R2-backed `ObjectStore`. The bucket has no public access; objects are only
-//! reachable through authenticated Worker routes.
+//! Private R2 bucket access for file content. The bucket has no public access;
+//! content is only reachable through authenticated Worker routes.
 
-use directory_core::storage::{ObjectInfo, ObjectKey, ObjectStore, StorageError, StoredObject};
-use worker::{js_sys, Bucket, HttpMetadata, Object};
+use worker::{Bucket, Data, HttpMetadata, Object};
 
-pub struct R2ObjectStore {
+pub struct R2Blobs {
     bucket: Bucket,
 }
 
-impl R2ObjectStore {
+impl R2Blobs {
     pub fn new(bucket: Bucket) -> Self {
         Self { bucket }
     }
-}
 
-fn backend(e: worker::Error) -> StorageError {
-    StorageError::Backend(e.to_string())
-}
-
-fn info(obj: &Object) -> ObjectInfo {
-    let uploaded: js_sys::Date = obj.uploaded().into();
-    ObjectInfo {
-        key: obj.key(),
-        size: obj.size(),
-        content_type: obj.http_metadata().content_type,
-        uploaded_at: Some(String::from(uploaded.to_iso_string())),
-    }
-}
-
-impl ObjectStore for R2ObjectStore {
-    async fn put(
-        &self,
-        key: &ObjectKey,
-        body: Vec<u8>,
-        content_type: &str,
-    ) -> Result<ObjectInfo, StorageError> {
-        let obj = self
-            .bucket
-            .put(key.as_str(), body)
+    /// Store content. A streamed body must have a known length (a request
+    /// body with Content-Length).
+    pub async fn put(&self, key: &str, body: Data, content_type: &str) -> Result<(), String> {
+        self.bucket
+            .put(key, body)
             .http_metadata(HttpMetadata {
                 content_type: Some(content_type.into()),
                 ..Default::default()
             })
             .execute()
             .await
-            .map_err(backend)?
-            // `None` only happens when an `only_if` precondition fails; we set none.
-            .ok_or_else(|| StorageError::Backend("put returned no object".into()))?;
-        Ok(info(&obj))
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "put returned no object".to_string())?;
+        Ok(())
     }
 
-    async fn get(&self, key: &ObjectKey) -> Result<Option<StoredObject>, StorageError> {
-        let Some(obj) = self
-            .bucket
-            .get(key.as_str())
+    pub async fn get(&self, key: &str) -> Result<Option<Object>, String> {
+        self.bucket
+            .get(key)
             .execute()
             .await
-            .map_err(backend)?
-        else {
-            return Ok(None);
-        };
-        let meta = info(&obj);
-        let body = match obj.body() {
-            Some(b) => b.bytes().await.map_err(backend)?,
-            None => Vec::new(),
-        };
-        Ok(Some(StoredObject { info: meta, body }))
+            .map_err(|e| e.to_string())
     }
 
-    async fn delete(&self, key: &ObjectKey) -> Result<(), StorageError> {
-        self.bucket.delete(key.as_str()).await.map_err(backend)
-    }
-
-    async fn list(
-        &self,
-        prefix: Option<&str>,
-        limit: u32,
-    ) -> Result<Vec<ObjectInfo>, StorageError> {
-        let mut req = self.bucket.list().limit(limit);
-        if let Some(p) = prefix {
-            req = req.prefix(p);
-        }
-        let objects = req.execute().await.map_err(backend)?;
-        Ok(objects.objects().iter().map(info).collect())
+    pub async fn delete(&self, key: &str) -> Result<(), String> {
+        self.bucket.delete(key).await.map_err(|e| e.to_string())
     }
 }

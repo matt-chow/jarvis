@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { Api, ApiError, objectPath, toObjectKey, type HealthReport } from "./api";
+import { Api, ApiError, type HealthReport } from "./api";
 
 const report: HealthReport = {
   status: "degraded",
@@ -51,10 +51,10 @@ describe("requests", () => {
   });
 
   it("uses a bearer token when given (native clients)", async () => {
-    const { fetchImpl, calls } = recorder(() => json(200, { objects: [] }));
-    await new Api(fetchImpl, "https://example.test", "dir_secret").listObjects("docs/");
+    const { fetchImpl, calls } = recorder(() => json(200, { folder: "docs", folders: [], files: [] }));
+    await new Api(fetchImpl, "https://example.test", "dir_secret").files("docs");
     const [url, init] = calls[0];
-    expect(url).toBe("https://example.test/api/v1/storage/objects?prefix=docs%2F");
+    expect(url).toBe("https://example.test/api/v1/files?folder=docs");
     expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer dir_secret");
   });
 
@@ -65,18 +65,5 @@ describe("requests", () => {
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect(err).toMatchObject({ status: 409, code: "last_passkey" });
-  });
-});
-
-describe("keys", () => {
-  it("builds encoded object paths", () => {
-    expect(objectPath("uploads/a b.txt")).toBe("/api/v1/storage/objects/uploads/a%20b.txt");
-  });
-
-  it("sanitizes file names into valid keys", () => {
-    expect(toObjectKey("My Résumé (final).pdf")).toBe("uploads/My-Resume-final-.pdf");
-    expect(toObjectKey("../../etc/passwd")).toBe("uploads/etc-passwd");
-    expect(toObjectKey("???")).toBe("uploads/file");
-    expect(toObjectKey("ok_name-1.txt")).toMatch(/^uploads\/[A-Za-z0-9._-]+$/);
   });
 });

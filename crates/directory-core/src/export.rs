@@ -1,13 +1,13 @@
 //! Full data export: one JSON document with every record the owner has.
 //! Contains no credential material (sessions, passkeys, device tokens).
 
+use crate::files::FileEntry;
 use crate::identity::User;
 use crate::inbox::InboxItem;
 use crate::journal::Entry;
 use crate::links::{EntityRef, Link};
 use crate::notes::Note;
 use crate::projects::Project;
-use crate::storage::ObjectInfo;
 use crate::tasks::Task;
 use serde::Serialize;
 
@@ -47,8 +47,8 @@ pub struct Export {
     pub journal: Vec<Entry>,
     pub inbox: Vec<InboxItem>,
     pub links: Vec<LinkRecord>,
-    /// File metadata only; download contents via the storage API.
-    pub files: Vec<ObjectInfo>,
+    /// File metadata only; download contents via the files API.
+    pub files: Vec<FileEntry>,
 }
 
 /// Everything owned by `owner_id`, per module.
@@ -59,12 +59,12 @@ pub trait ExportSource {
     async fn journal(&self, owner_id: &str) -> Result<Vec<Entry>, String>;
     async fn inbox(&self, owner_id: &str) -> Result<Vec<InboxItem>, String>;
     async fn links(&self, owner_id: &str) -> Result<Vec<Link>, String>;
+    async fn files(&self, owner_id: &str) -> Result<Vec<FileEntry>, String>;
 }
 
 pub async fn export<S: ExportSource>(
     source: &S,
     user: User,
-    files: Vec<ObjectInfo>,
     schema_version: u32,
     now: i64,
 ) -> Result<Export, String> {
@@ -85,7 +85,7 @@ pub async fn export<S: ExportSource>(
             .into_iter()
             .map(LinkRecord::from)
             .collect(),
-        files,
+        files: source.files(&owner).await?,
         user,
     })
 }
@@ -141,6 +141,9 @@ mod tests {
                 created_at: 2,
             }])
         }
+        async fn files(&self, _: &str) -> Result<Vec<FileEntry>, String> {
+            Ok(vec![])
+        }
     }
 
     #[test]
@@ -150,7 +153,7 @@ mod tests {
             display_name: "Owner".into(),
             created_at: 0,
         };
-        let doc = block_on(export(&Fake, user, vec![], 9, 100)).unwrap();
+        let doc = block_on(export(&Fake, user, 9, 100)).unwrap();
         let json = serde_json::to_value(&doc).unwrap();
         assert_eq!(json["format"], FORMAT);
         assert_eq!(json["schema_version"], 9);

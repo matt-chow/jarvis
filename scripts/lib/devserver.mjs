@@ -42,7 +42,13 @@ export async function startDevServer({ port = 8790, name = "smoke" } = {}) {
   const envFile = join(ROOT, ".wrangler", `${name}.env`);
   writeFileSync(
     envFile,
-    [`DIRECTORY_SETUP_TOKEN=${setupToken}`, "DIRECTORY_RP_ID=localhost", `DIRECTORY_ORIGINS=${origin}`].join("\n"),
+    [
+      `DIRECTORY_SETUP_TOKEN=${setupToken}`,
+      "DIRECTORY_RP_ID=localhost",
+      `DIRECTORY_ORIGINS=${origin}`,
+      // Small quota so tests can exercise the limit.
+      "DIRECTORY_QUOTA_BYTES=1000000",
+    ].join("\n"),
   );
 
   const migrate = wrangler(["d1", "migrations", "apply", "DB", "--local", "--persist-to", stateDir]);

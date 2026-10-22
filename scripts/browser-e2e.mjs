@@ -108,9 +108,16 @@ try {
     const file = join(dir, "hello e2e.txt");
     writeFileSync(file, "uploaded from the browser e2e test");
     await page.hash("/files");
-    await page.waitForText("Choose a file to upload");
+    await page.waitForText("No files yet");
+    await page.click("new folder");
+    await page.fill("Folder name", "uploads");
+    await page.click("create");
+    await page.waitForText("This folder is empty");
     await page.setFile('input[type="file"]', file);
-    await page.waitForText("Uploaded uploads/hello-e2e.txt");
+    await page.waitForText("Uploaded 1 file.");
+    await page.waitForText("hello e2e.txt");
+    const text = await page.evaluate(`fetch(document.querySelector('a[download="hello e2e.txt"]').href).then((r) => r.text())`);
+    if (text !== "uploaded from the browser e2e test") throw new Error(`download: ${text}`);
   });
 
   await step("Tasks: quick add, subtask, complete, filters", async () => {
@@ -235,9 +242,9 @@ try {
     }
     const secret = await page.evaluate(`document.querySelector("code.select-all")?.innerText`);
     if (!secret?.startsWith("dir_")) throw new Error(`secret: ${secret}`);
-    const r = await fetch(`${server.origin}/api/v1/storage/objects`, { headers: { Authorization: `Bearer ${secret}` } });
+    const r = await fetch(`${server.origin}/api/v1/files?folder=uploads`, { headers: { Authorization: `Bearer ${secret}` } });
     const body = await r.json();
-    if (!body.objects?.some((o) => o.key === "uploads/hello-e2e.txt")) throw new Error(`token list: ${JSON.stringify(body)}`);
+    if (!body.files?.some((f) => f.name === "hello e2e.txt")) throw new Error(`token list: ${JSON.stringify(body)}`);
   });
 
   await step("sign out returns to the sign-in screen", async () => {

@@ -3,6 +3,7 @@
 
 pub mod auth;
 pub mod export;
+pub mod files;
 pub mod health;
 pub mod inbox;
 pub mod jarvis;
@@ -11,7 +12,6 @@ pub mod links;
 pub mod notes;
 pub mod projects;
 pub mod search;
-pub mod storage;
 pub mod tasks;
 
 use serde::de::DeserializeOwned;
