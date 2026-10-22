@@ -1,9 +1,11 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ModuleProps } from "../App";
 import { ConflictBanner } from "../components/ConflictBanner";
+import { LinkedSection } from "../components/LinkedSection";
 import { Button, Panel, inputClass } from "../components/ui";
 import { SAVE_STATUS_TEXT, useAutosaveDoc } from "../hooks/useAutosaveDoc";
 import { useCachedList, type CachedList } from "../hooks/useCachedList";
+import { useHashParam } from "../hooks/useHashParam";
 import { reportIfUnauthorized } from "../hooks/useSession";
 import { api } from "../lib/api";
 import {
@@ -44,6 +46,15 @@ export function Journal({ online }: ModuleProps) {
     setDate(d);
     setMonth(monthOf(d));
   };
+
+  // Deep link (#/journal?date=YYYY-MM-DD).
+  const deepDate = useHashParam("date");
+  useEffect(() => {
+    if (deepDate && /^d{4}-d{2}-d{2}$/.test(deepDate)) {
+      setDate(deepDate);
+      setMonth(monthOf(deepDate));
+    }
+  }, [deepDate]);
 
   return (
     <div className="grid items-start gap-5 md:grid-cols-[17rem_minmax(0,1fr)]">
@@ -221,6 +232,11 @@ function DayEditor(props: {
             placeholder="How was your day?"
             className={`${inputClass} min-h-[45vh] w-full resize-y py-3 leading-relaxed`}
           />
+          {exists && (
+            <div className="mt-3">
+              <LinkedSection entity={{ kind: "journal", id: date }} disabled={locked} />
+            </div>
+          )}
           {exists && (
             <div className="mt-3 flex justify-end">
               {confirmDelete ? (

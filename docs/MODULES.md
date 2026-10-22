@@ -16,6 +16,11 @@ JARVIS commands will refer to them.
 | `jarvis` | JARVIS | planned | — | — | Status screen only; M2. |
 | `settings` | Settings | ready | no | `/api/v1/auth/*` | Passkeys, device tokens, sign-out. |
 
+**Links** aren't a module either. The `LinkedSection` component appears in the
+task, note, journal-day, and project editors. **Deep links** open an item
+directly: `#/tasks?task=`, `#/notes?note=`, `#/journal?date=`,
+`#/projects?project=` (`lib/links.ts › entityRoute`).
+
 Identity is not a navigable module. The auth gate (`components/AuthScreen.tsx`)
 wraps the shell, and core `identity` provides `Principal` to every module API.
 

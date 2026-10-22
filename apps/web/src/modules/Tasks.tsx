@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { ModuleProps } from "../App";
+import { LinkedSection } from "../components/LinkedSection";
 import { Button, Panel, inputClass } from "../components/ui";
+import { useHashParam } from "../hooks/useHashParam";
 import { useProjects } from "../hooks/useProjects";
 import { useTasks, type TasksState } from "../hooks/useTasks";
 import { hashParam } from "../lib/modules";
@@ -64,6 +66,16 @@ export function Tasks({ online }: ModuleProps) {
   const activeProjects = useMemo(() => (projects ?? []).filter((p) => p.status === "active" || p.id === project), [projects, project]);
   const selectedNode = useMemo(() => taskTree(state.tasks ?? [], "all").find((n) => n.task.id === selected), [state.tasks, selected]);
   const readOnly = state.stale || !online;
+
+  // Deep link (#/tasks?task=…): open that task (or a subtask's parent).
+  const deepTask = useHashParam("task");
+  useEffect(() => {
+    if (!deepTask || !state.tasks) return;
+    const t = state.tasks.find((x) => x.id === deepTask);
+    if (!t) return;
+    setFilter("all");
+    setSelected(t.parent_id ?? t.id);
+  }, [deepTask, state.tasks]);
 
   // Drop the selection if the task disappears (deleted elsewhere).
   useEffect(() => {
@@ -383,6 +395,8 @@ function TaskDetail(props: { node: TaskNode; state: TasksState; projects: Projec
             className={`${inputClass} resize-y py-2 leading-relaxed`}
           />
         </label>
+
+        <LinkedSection entity={{ kind: "task", id: task.id }} disabled={readOnly} />
 
         {!task.parent_id && (
           <div>

@@ -5,6 +5,7 @@
  */
 import type { InboxItem, Triaged, TriageTarget } from "./inbox";
 import type { JournalEntry, JournalSummary, PutJournal } from "./journal";
+import type { EntityRef, Linked } from "./links";
 import type { Note, NotePatch, NoteSummary } from "./notes";
 import type { NewProject, Project, ProjectPatch } from "./projects";
 import type { NewTask, Task, TaskFilter, TaskPatch } from "./tasks";
@@ -141,6 +142,12 @@ export class Api {
   tokens = async () => (await this.call<{ tokens: DeviceToken[] }>("GET", "/api/v1/auth/tokens")).tokens;
   createToken = (name: string) => this.call<{ token: DeviceToken; secret: string }>("POST", "/api/v1/auth/tokens", { name });
   deleteToken = (id: string) => this.call<void>("DELETE", `/api/v1/auth/tokens/${encodeURIComponent(id)}`);
+
+  // ---- Links ----
+  links = async (e: EntityRef) =>
+    (await this.call<{ links: Linked[] }>("GET", `/api/v1/links?kind=${e.kind}&id=${encodeURIComponent(e.id)}`)).links;
+  link = (from: EntityRef, to: EntityRef) => this.call<Linked>("POST", "/api/v1/links", { from, to });
+  unlink = (linkId: string) => this.call<void>("DELETE", `/api/v1/links/${encodeURIComponent(linkId)}`);
 
   // ---- Inbox ----
   inbox = async () => (await this.call<{ items: InboxItem[] }>("GET", "/api/v1/inbox")).items;

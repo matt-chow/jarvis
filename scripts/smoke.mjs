@@ -287,6 +287,37 @@ async function local() {
       await api.req("DELETE", `/api/v1/notes/${n.json.note.id}`);
     });
 
+    await check("links: connect task, note, project, journal; symmetric, idempotent, titles resolved, cleaned on delete", async () => {
+      const task = (await api.req("POST", "/api/v1/tasks", { body: { title: "Draft talk" } })).json;
+      const note = (await api.req("POST", "/api/v1/notes", { body: { body: "# Talk outline\nintro" } })).json;
+      const proj = (await api.req("POST", "/api/v1/projects", { body: { name: "Conference" } })).json;
+      await api.req("PUT", "/api/v1/journal/2026-10-21", { body: { body: "worked on the talk" } });
+      const link = (from, to) => api.req("POST", "/api/v1/links", { body: { from, to } });
+
+      const l1 = await link({ kind: "task", id: task.id }, { kind: "note", id: note.id });
+      expect(l1.status === 201 && l1.json.title === "Talk outline" && l1.json.kind === "note", `task→note → ${l1.text}`);
+      const again = await link({ kind: "note", id: note.id }, { kind: "task", id: task.id });
+      expect(again.json.link_id === l1.json.link_id, "reverse is the same link");
+      await link({ kind: "task", id: task.id }, { kind: "project", id: proj.id });
+      await link({ kind: "journal", id: "2026-10-21" }, { kind: "task", id: task.id });
+
+      const fromTask = await api.req("GET", `/api/v1/links?kind=task&id=${task.id}`);
+      expect(fromTask.json.links.map((l) => `${l.kind}:${l.title}`).join() === "journal:2026-10-21,note:Talk outline,project:Conference", `list → ${fromTask.text}`);
+      const fromNote = await api.req("GET", `/api/v1/links?kind=note&id=${note.id}`);
+      expect(fromNote.json.links[0].title === "Draft talk", "visible from the other end");
+
+      expect((await link({ kind: "task", id: task.id }, { kind: "task", id: task.id })).status === 400, "self link");
+      expect((await link({ kind: "task", id: task.id }, { kind: "note", id: "e".repeat(32) })).status === 400, "unknown target");
+      expect((await api.req("GET", "/api/v1/links?kind=bogus&id=x")).status === 400, "bad kind");
+
+      await api.req("DELETE", `/api/v1/notes/${note.id}`);
+      const afterDelete = await api.req("GET", `/api/v1/links?kind=task&id=${task.id}`);
+      expect(!afterDelete.json.links.some((l) => l.kind === "note"), "dangling link hidden");
+      expect((await api.req("DELETE", `/api/v1/links/${l1.json.link_id}`)).status === 404, "and cleaned up");
+      await api.req("DELETE", `/api/v1/tasks/${task.id}`);
+      await api.req("DELETE", `/api/v1/projects/${proj.id}`);
+    });
+
     await check("device API token: create (shown once), use as bearer, cannot manage credentials", async () => {
       const r = await api.req("POST", "/api/v1/auth/tokens", { body: { name: "Smoke device" } });
       expect(r.status === 201 && r.json.secret.startsWith("dir_"), `${r.status} ${r.text}`);

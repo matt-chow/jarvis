@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import type { ModuleProps } from "../App";
 import { ConflictBanner } from "../components/ConflictBanner";
+import { LinkedSection } from "../components/LinkedSection";
 import { Button, Panel, inputClass } from "../components/ui";
 import { SAVE_STATUS_TEXT, useAutosaveDoc } from "../hooks/useAutosaveDoc";
+import { useHashParam } from "../hooks/useHashParam";
 import { useNotes, type NotesState } from "../hooks/useNotes";
 import { reportIfUnauthorized } from "../hooks/useSession";
 import { api } from "../lib/api";
@@ -17,6 +19,11 @@ export function Notes({ online }: ModuleProps) {
   const state = useNotes(online);
   const [selected, setSelected] = useState<string>();
   const readOnly = state.stale || !online;
+
+  const deepNote = useHashParam("note");
+  useEffect(() => {
+    if (deepNote) setSelected(deepNote);
+  }, [deepNote]);
 
   useEffect(() => {
     if (!selected && state.notes?.length) setSelected(state.notes[0].id);
@@ -176,6 +183,9 @@ function NoteEditor({ id, state, readOnly }: { id: string; state: NotesState; re
         placeholder="Start typing…"
         className={`${inputClass} min-h-[50vh] w-full resize-y py-3 font-mono leading-relaxed`}
       />
+      <div className="mt-3">
+        <LinkedSection entity={{ kind: "note", id }} disabled={locked} />
+      </div>
       <div className="mt-3 flex items-center justify-between">
         <span className="font-mono text-[11px] text-muted">created {formatDate(note.created_at)}</span>
         {confirmDelete ? (

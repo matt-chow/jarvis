@@ -3,6 +3,7 @@
 mod identity;
 mod inbox;
 mod journal;
+mod links;
 mod notes;
 mod projects;
 mod rate_limit;
@@ -11,6 +12,7 @@ mod tasks;
 pub use identity::D1IdentityRepository;
 pub use inbox::D1InboxRepository;
 pub use journal::D1JournalRepository;
+pub use links::D1LinkRepository;
 pub use notes::D1NoteRepository;
 pub use projects::D1ProjectRepository;
 pub use rate_limit::D1RateLimitStore;

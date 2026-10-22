@@ -14,6 +14,7 @@ pub mod health;
 pub mod identity;
 pub mod inbox;
 pub mod journal;
+pub mod links;
 pub mod notes;
 pub mod projects;
 pub mod rate_limit;

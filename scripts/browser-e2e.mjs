@@ -139,6 +139,23 @@ try {
     }
   });
 
+  await step("Links: link a note to a task via the picker, follow the deep link, see the back-link", async () => {
+    await page.hash("/notes");
+    await page.click("Meeting notes");
+    await page.waitForText("Nothing linked yet");
+    await page.click("+ link");
+    await page.fill("Link to", "quarterly");
+    await page.click("Write the quarterly report");
+    await waitFor("link saved", () =>
+      page.evaluate(`[...document.querySelectorAll("a")].some((a) => a.innerText === "Write the quarterly report")`),
+    );
+    await page.evaluate(`[...document.querySelectorAll("a")].find((a) => a.innerText === "Write the quarterly report").click()`);
+    await waitFor("task detail via deep link", () =>
+      page.evaluate(`[...document.querySelectorAll("input")].some((i) => i.value === "Write the quarterly report")`),
+    );
+    await page.waitForText("Meeting notes");
+  });
+
   await step("Projects: create, add a task from the project, progress updates", async () => {
     await page.hash("/projects");
     await page.waitForText("No active projects");

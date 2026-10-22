@@ -5,6 +5,7 @@ pub mod auth;
 pub mod health;
 pub mod inbox;
 pub mod journal;
+pub mod links;
 pub mod notes;
 pub mod projects;
 pub mod storage;

@@ -6,8 +6,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ## Current state (2026-10-21)
 
 - **Milestone:** M1 Private Alpha, in progress. Auth ✅, rate limiting ✅,
-  Tasks ✅, Projects ✅, Notes ✅, Journal ✅, Inbox ✅. Next: **Entity
-  linking**, then export and the M1 exit review.
+  Tasks ✅, Projects ✅, Notes ✅, Journal ✅, Inbox ✅, Links ✅. Next: **Data
+  export**, then the M1 exit review.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
   - Device tokens for native clients and scripts.
@@ -23,6 +23,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
     navigation.
   - Inbox: quick capture (on Home and in Inbox) and triage into a task, a
     note, or today's journal.
+  - Links between tasks, notes, projects, and journal days, with a
+    cross-module picker and deep links.
   - PWA install and offline relaunch with the saved session.
   - Health dashboard.
 - **Not deployed.** Nothing has run on Cloudflare yet; that needs owner approval
@@ -34,11 +36,11 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 | Command | Result (2026-10-21) |
 | --- | --- |
-| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 999 KiB / 333 KiB gzipped |
-| `cargo test -p directory-core` | ✅ 56 passed |
-| Vitest | ✅ 24 passed (8 files) |
-| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 22/22 |
-| `npm run test:browser` (headless Edge 155, virtual passkey) | ✅ 13/13 |
+| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 1,050 KiB / 349 KiB gzipped |
+| `cargo test -p directory-core` | ✅ 59 passed |
+| Vitest | ✅ 26 passed (9 files) |
+| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 23/23 |
+| `npm run test:browser` (headless Edge 155, virtual passkey) | ✅ 14/14 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -66,22 +68,33 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-**Entity linking slice (M1).**
-- Core `links` module: typed references between owned entities (task, note,
-  project, journal day), stored once as an undirected pair, with both ends
-  validated as existing and owned via each module's repository. Duplicate
-  links are idempotent.
-- Migration `0009`.
-- `/api/v1/links?type=&id=` (list both directions), `POST /api/v1/links`,
-  and `DELETE /api/v1/links/{id}`.
-- UI: a "Linked" section in the task, note, and journal editors, with a picker
-  that searches titles across modules (client-side over cached lists for now)
-  and navigation to the linked item.
-- Then: JSON data export, and the M1 exit review (deploy readiness checklist).
+**Data export (M1).**
+- `GET /api/v1/export` (session only): one JSON document with schema
+  version, exported-at, and every owned record (tasks, projects, notes,
+  journal, inbox, links, and the file metadata list). No secrets: no session,
+  passkey, or token material.
+- A Settings "Export my data" button that downloads the JSON.
+- A smoke check confirming the export round-trips the counts and holds no
+  secret fields.
+- Then: the **M1 exit review**, a deploy readiness checklist in
+  docs/ARCHITECTURE.md › Deployment, after which deploy needs owner approval.
 
 ---
 
 ## Log
+
+### 2026-10-21 — M1 slice: Entity linking
+- **Core:** `links` module: `EntityRef` (task, note, project, journal day),
+  normalized pairs, idempotent symmetric linking, both ends validated as
+  existing and owned, and lazy cleanup of dangling links.
+- **Worker:** `d1/links.rs` (titles resolved per kind; note titles via the
+  core summary derivation), `http/links.rs`. Migration `0009_links.sql`
+  (schema v9).
+- **Web:** `LinkedSection` (list, unlink, and a picker over tasks, notes,
+  projects, and dates) in all four editors. Deep links with `useHashParam` in
+  Tasks, Notes, Journal, and Projects.
+- **Tests:** 3 core link tests, web route and filter tests, a smoke links
+  check, and a browser e2e step (picker, deep link, back-link).
 
 ### 2026-10-21 — M1 slice: Universal inbox
 - **Core:** `inbox` module: capture validation, and triage into a task

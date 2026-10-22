@@ -25,8 +25,9 @@ part of every slice, not deferred to the end.
 | Universal inbox (quick capture → triage into task/note/journal) | ✅ done |
 | Notes: server persistence, autosave, conflict detection, legacy migration | ✅ done |
 | Journal (dated entries, mood) | ✅ done |
-| Entity linking (task ↔ note ↔ project ↔ journal) | next |
-| Data export (JSON) | planned |
+| Entity linking (task ↔ note ↔ project ↔ journal) | ✅ done |
+| Data export (JSON) | next |
+| M1 exit review (deploy readiness) | planned |
 
 **Exit criteria:**
 - All P1 slices are done to the Definition of Done in AGENTS.md.

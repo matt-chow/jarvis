@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { ModuleProps } from "../App";
+import { LinkedSection } from "../components/LinkedSection";
 import { Button, Panel, inputClass } from "../components/ui";
+import { useHashParam } from "../hooks/useHashParam";
 import { useProjects, type ProjectsState } from "../hooks/useProjects";
 import { useTasks } from "../hooks/useTasks";
 import { percent, projectProgress, type Progress, type Project } from "../lib/projects";
@@ -40,6 +42,15 @@ export function Projects({ online }: ModuleProps) {
   const active = useMemo(() => (state.projects ?? []).filter((p) => p.status === "active"), [state.projects]);
   const archived = useMemo(() => (state.projects ?? []).filter((p) => p.status === "archived"), [state.projects]);
   const current = state.projects?.find((p) => p.id === selected);
+
+  // Deep link (#/projects?project=…).
+  const deepProject = useHashParam("project");
+  useEffect(() => {
+    const p = deepProject && state.projects?.find((x) => x.id === deepProject);
+    if (!p) return;
+    setSelected(p.id);
+    if (p.status === "archived") setShowArchived(true);
+  }, [deepProject, state.projects]);
 
   useEffect(() => {
     if (selected && state.projects && !current) setSelected(undefined);
@@ -204,6 +215,7 @@ function ProjectDetail(props: {
           <p className="mt-1 font-mono text-[11px] text-muted">{progress.open} open</p>
         </div>
         <Button onClick={props.onViewTasks}>view tasks →</Button>
+        <LinkedSection entity={{ kind: "project", id: project.id }} disabled={readOnly} />
 
         <div className="flex items-center justify-between gap-2 border-t border-line pt-3">
           <Button

@@ -83,6 +83,9 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | DELETE | `/api/v1/auth/passkeys/{id}` | session only | `409 last_passkey` for the final one |
 | GET / POST | `/api/v1/auth/tokens` | session only | List / create device token (secret returned once) |
 | DELETE | `/api/v1/auth/tokens/{id}` | session only | Revoke |
+| GET | `/api/v1/links?kind=task|note|project|journal&id=` | session or token | Items linked to an entity, with resolved titles. Links whose other end was deleted are dropped and removed. |
+| POST | `/api/v1/links` | session or token | `{ from: {kind,id}, to: {kind,id} }` → `201 { link_id, kind, id, title }`. Idempotent and symmetric; both ends must exist and be owned. |
+| DELETE | `/api/v1/links/{id}` | session or token | Unlink |
 | GET / POST | `/api/v1/inbox` | session or token | List (oldest first), or capture `{ text }` (≤ 2,000 chars) |
 | DELETE | `/api/v1/inbox/{id}` | session or token | Discard |
 | POST | `/api/v1/inbox/{id}/triage` | session or token | `{ to: task|note|journal, date? }` → `{ kind, task|note|entry }`. Goes through the target module's service; the target is created before the item is removed. |
@@ -109,7 +112,7 @@ JSON bodies are capped at 64 KiB.
 ## Data
 
 - **D1** migrations live in `migrations/NNNN_name.sql` and are append-only.
-  `system_meta.schema_version` must equal `EXPECTED_SCHEMA_VERSION` (now **8**).
+  `system_meta.schema_version` must equal `EXPECTED_SCHEMA_VERSION` (now **9**).
   - `0001`: `system_meta`
   - `0002`: `users`, `passkeys`, `auth_challenges`, `sessions`, `api_tokens`.
     Times are epoch milliseconds; secrets are stored only as SHA-256 hex.
@@ -122,6 +125,7 @@ JSON bodies are capped at 64 KiB.
   - `0007`: `journal_entries` (primary key `owner_id, date`; creates use
     `ON CONFLICT DO NOTHING`).
   - `0008`: `inbox_items`.
+  - `0009`: `links` (normalized pair `a < b`, unique per owner).
 - **R2** bucket `directory-files` is private, with no r2.dev URL or custom domain.
   Object keys are `u/<user_id>/<key>`.
 - **IndexedDB** database `directory` (v1) has a `kv` store with cached
