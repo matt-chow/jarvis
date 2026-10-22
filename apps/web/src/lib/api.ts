@@ -3,6 +3,7 @@
  * The browser authenticates with the HttpOnly session cookie (same origin);
  * native clients can pass a device token instead.
  */
+import type { InboxItem, Triaged, TriageTarget } from "./inbox";
 import type { JournalEntry, JournalSummary, PutJournal } from "./journal";
 import type { Note, NotePatch, NoteSummary } from "./notes";
 import type { NewProject, Project, ProjectPatch } from "./projects";
@@ -140,6 +141,14 @@ export class Api {
   tokens = async () => (await this.call<{ tokens: DeviceToken[] }>("GET", "/api/v1/auth/tokens")).tokens;
   createToken = (name: string) => this.call<{ token: DeviceToken; secret: string }>("POST", "/api/v1/auth/tokens", { name });
   deleteToken = (id: string) => this.call<void>("DELETE", `/api/v1/auth/tokens/${encodeURIComponent(id)}`);
+
+  // ---- Inbox ----
+  inbox = async () => (await this.call<{ items: InboxItem[] }>("GET", "/api/v1/inbox")).items;
+  capture = (text: string) => this.call<InboxItem>("POST", "/api/v1/inbox", { text });
+  deleteInboxItem = (id: string) => this.call<void>("DELETE", `/api/v1/inbox/${encodeURIComponent(id)}`);
+  /** `date` (local YYYY-MM-DD) is required when triaging to the journal. */
+  triage = (id: string, to: TriageTarget, date?: string) =>
+    this.call<Triaged>("POST", `/api/v1/inbox/${encodeURIComponent(id)}/triage`, { to, date });
 
   // ---- Journal ----
   journal = async (from: string, to: string) =>

@@ -88,6 +88,21 @@ try {
     await shot("journal");
   });
 
+  await step("Inbox: capture from Home, triage into a note", async () => {
+    await page.hash("/home");
+    await page.fill("Capture to inbox", "Gift ideas for Mum");
+    await page.click("capture");
+    await page.waitForText("1 in inbox");
+    await page.click("1 in inbox");
+    await page.waitForText("Gift ideas for Mum");
+    await shot("inbox");
+    await page.click("→ note");
+    await page.waitForText("Saved as a note.");
+    await page.waitForText("Inbox zero");
+    const notes = await page.evaluate(`fetch("/api/v1/notes").then((r) => r.json())`);
+    if (!notes.notes.some((n) => n.title === "Gift ideas for Mum")) throw new Error("note not created");
+  });
+
   await step("Files: upload lists the file", async () => {
     const dir = mkdtempSync(join(tmpdir(), "directory-upload-"));
     const file = join(dir, "hello e2e.txt");

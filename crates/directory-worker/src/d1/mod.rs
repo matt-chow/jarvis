@@ -1,6 +1,7 @@
 //! D1-backed implementations of core repositories.
 
 mod identity;
+mod inbox;
 mod journal;
 mod notes;
 mod projects;
@@ -8,6 +9,7 @@ mod rate_limit;
 mod tasks;
 
 pub use identity::D1IdentityRepository;
+pub use inbox::D1InboxRepository;
 pub use journal::D1JournalRepository;
 pub use notes::D1NoteRepository;
 pub use projects::D1ProjectRepository;

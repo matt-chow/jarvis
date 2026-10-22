@@ -8,6 +8,7 @@ import { useServiceWorker, type SwState } from "./hooks/useServiceWorker";
 import { MODULES, moduleFromHash, type ModuleId } from "./lib/modules";
 import { Files } from "./modules/Files";
 import { Home } from "./modules/Home";
+import { Inbox } from "./modules/Inbox";
 import { Jarvis } from "./modules/Jarvis";
 import { Journal } from "./modules/Journal";
 import { Notes } from "./modules/Notes";
@@ -25,6 +26,7 @@ export interface ModuleProps {
 
 const VIEWS: Record<ModuleId, ComponentType<ModuleProps>> = {
   home: Home,
+  inbox: Inbox,
   tasks: Tasks,
   projects: Projects,
   notes: Notes,

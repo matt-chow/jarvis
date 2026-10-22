@@ -112,6 +112,15 @@ and the user chooses "use theirs" or "keep mine" (a forced write with no
 expected version). Versions strictly increase even within one millisecond.
 Short fields (tasks, projects) stay last-write-wins until M3 sync.
 
+## D-015 — Cross-module operations go through module services
+**Status:** accepted
+The inbox triages through `TaskService`, `NoteService`, and `JournalService`
+(the same validation and ownership rules) via a `Targets` struct of
+repositories, never through another module's tables. This is the pattern
+JARVIS commands will follow in M2. There are no cross-module D1 transactions:
+operations are ordered so that a failure can only leave a duplicate source
+(e.g. an inbox item still present), never lose data.
+
 ## D-013 — Provisional UI until Paper designs land
 **Status:** accepted
 No `DESIGN_HANDOFF.md` exists yet. New screens reuse the existing `Panel`,

@@ -263,6 +263,30 @@ async function local() {
       expect((await api.req("DELETE", "/api/v1/journal/2026-11-01")).status === 204, "delete");
     });
 
+    await check("inbox: capture, triage into task / note / journal (item removed), validation", async () => {
+      expect((await api.req("POST", "/api/v1/inbox", { body: { text: "   " } })).status === 400, "blank capture");
+      const cap = async (text) => (await api.req("POST", "/api/v1/inbox", { body: { text } })).json;
+      const a = await cap("Renew passport\nform is on the desk");
+      const b = await cap("Idea: weekly review template");
+      const c = await cap("Saw a heron by the river");
+      const list = await api.req("GET", "/api/v1/inbox");
+      expect(list.json.items.map((i) => i.id).join() === [a.id, b.id, c.id].join(), "oldest first");
+
+      const t = await api.req("POST", `/api/v1/inbox/${a.id}/triage`, { body: { to: "task" } });
+      expect(t.status === 200 && t.json.kind === "task" && t.json.task.title === "Renew passport" && t.json.task.notes === "form is on the desk", `task → ${t.text}`);
+      const n = await api.req("POST", `/api/v1/inbox/${b.id}/triage`, { body: { to: "note" } });
+      expect(n.json.kind === "note" && n.json.note.body.startsWith("Idea:"), `note → ${n.text}`);
+      const noDate = await api.req("POST", `/api/v1/inbox/${c.id}/triage`, { body: { to: "journal" } });
+      expect(noDate.status === 400, "journal needs a date");
+      const j = await api.req("POST", `/api/v1/inbox/${c.id}/triage`, { body: { to: "journal", date: "2026-10-21" } });
+      expect(j.json.kind === "journal" && j.json.entry.body.endsWith("\n\nSaw a heron by the river"), `journal append → ${j.text}`);
+
+      expect((await api.req("GET", "/api/v1/inbox")).json.items.length === 0, "inbox empty");
+      expect((await api.req("POST", `/api/v1/inbox/${a.id}/triage`, { body: { to: "task" } })).status === 404, "already triaged");
+      await api.req("DELETE", `/api/v1/tasks/${t.json.task.id}`);
+      await api.req("DELETE", `/api/v1/notes/${n.json.note.id}`);
+    });
+
     await check("device API token: create (shown once), use as bearer, cannot manage credentials", async () => {
       const r = await api.req("POST", "/api/v1/auth/tokens", { body: { name: "Smoke device" } });
       expect(r.status === 201 && r.json.secret.startsWith("dir_"), `${r.status} ${r.text}`);

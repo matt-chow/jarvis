@@ -232,14 +232,19 @@ impl<'a, R: JournalRepository> JournalService<'a, R> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod testing {
+    pub use super::tests::Memory as MemoryJournal;
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
     use super::*;
     use crate::identity::AuthMethod;
     use crate::test_util::block_on;
     use std::cell::RefCell;
 
     #[derive(Default)]
-    struct Memory(RefCell<Vec<Entry>>);
+    pub struct Memory(RefCell<Vec<Entry>>);
 
     impl JournalRepository for Memory {
         async fn list(

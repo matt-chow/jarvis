@@ -235,7 +235,12 @@ impl<'a, R: NoteRepository, E: Entropy + ?Sized> NoteService<'a, R, E> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod testing {
+    pub use super::tests::Memory as MemoryNotes;
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
     use super::*;
     use crate::entropy::testing::CountingEntropy;
     use crate::identity::AuthMethod;
@@ -243,7 +248,7 @@ mod tests {
     use std::cell::RefCell;
 
     #[derive(Default)]
-    struct Memory(RefCell<Vec<Note>>);
+    pub struct Memory(RefCell<Vec<Note>>);
 
     impl NoteRepository for Memory {
         async fn list(&self, owner_id: &str, limit: u32) -> Result<Vec<NoteHead>, String> {

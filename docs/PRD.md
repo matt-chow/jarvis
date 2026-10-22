@@ -19,6 +19,7 @@ usable offline, with an AI assistant later.
 | F11 | Tasks with subtasks, status, priority, due dates | ✅ M1 |
 | F12 | Projects grouping tasks, with progress and archiving | ✅ M1 |
 | F13 | Daily journal with mood | ✅ M1 |
+| F14 | Universal inbox: capture and triage | ✅ M1 |
 | F8 | Additional modules (tasks, bookmarks, journal, …) | Planned |
 | F9 | JARVIS: voice input and natural-language commands across modules | Planned |
 | F10 | Windows and iPhone clients using the same API | Planned |

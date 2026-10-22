@@ -1,5 +1,7 @@
 import type { ModuleProps } from "../App";
+import { CaptureBox } from "../components/CaptureBox";
 import { Button, Panel, StageTag } from "../components/ui";
+import { useInbox } from "../hooks/useInbox";
 import { formatTime } from "../lib/format";
 import { MODULES } from "../lib/modules";
 
@@ -13,6 +15,7 @@ const SW_TEXT: Record<ModuleProps["sw"]["kind"], string> = {
 };
 
 export function Home({ online, health, sw, session, navigate }: ModuleProps) {
+  const inbox = useInbox(online);
   const { report } = health;
   return (
     <div className="grid gap-5 lg:grid-cols-5">
@@ -21,11 +24,21 @@ export function Home({ online, health, sw, session, navigate }: ModuleProps) {
         <h2 className="mt-1 text-2xl font-semibold tracking-tight md:text-3xl">
           Good to see you{session.status.kind === "signed-in" ? `, ${session.status.user.displayName.split(" ")[0]}` : ""}.
         </h2>
-        <p className="mt-2 max-w-2xl text-sm text-muted">
-          Directory is your modular personal workspace. This is the Sprint 00 foundation: the shell, offline cache,
-          on-device storage, and the private cloud API.
-        </p>
       </div>
+
+      <Panel
+        title="capture"
+        className="lg:col-span-5"
+        actions={
+          inbox.items && inbox.items.length > 0 ? (
+            <a href="#/inbox" className="font-mono text-[11px] text-accent underline-offset-4 hover:underline">
+              {inbox.items.length} in inbox →
+            </a>
+          ) : undefined
+        }
+      >
+        <CaptureBox disabled={!online || inbox.stale} onCapture={(t) => inbox.capture(t)} />
+      </Panel>
 
       <Panel
         title="system status"
