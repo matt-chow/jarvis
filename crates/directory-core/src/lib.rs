@@ -12,6 +12,7 @@ pub mod encoding;
 pub mod entropy;
 pub mod health;
 pub mod identity;
+pub mod projects;
 pub mod rate_limit;
 pub mod storage;
 pub mod system;

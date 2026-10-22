@@ -10,6 +10,7 @@ import { Files } from "./modules/Files";
 import { Home } from "./modules/Home";
 import { Jarvis } from "./modules/Jarvis";
 import { Notes } from "./modules/Notes";
+import { Projects } from "./modules/Projects";
 import { Settings } from "./modules/Settings";
 import { Tasks } from "./modules/Tasks";
 
@@ -24,6 +25,7 @@ export interface ModuleProps {
 const VIEWS: Record<ModuleId, ComponentType<ModuleProps>> = {
   home: Home,
   tasks: Tasks,
+  projects: Projects,
   notes: Notes,
   files: Files,
   jarvis: Jarvis,
@@ -171,9 +173,9 @@ export function App() {
           aria-label="Modules"
           className="pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-line bg-panel/95 backdrop-blur md:hidden"
         >
-          <ul className="grid grid-cols-6">
+          <ul className="flex overflow-x-auto">
             {MODULES.map((m) => (
-              <li key={m.id}>
+              <li key={m.id} className="min-w-[4.25rem] flex-1">
                 <a
                   href={`#/${m.id}`}
                   aria-current={m.id === active ? "page" : undefined}

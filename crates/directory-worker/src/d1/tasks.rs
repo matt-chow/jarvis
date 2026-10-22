@@ -1,4 +1,4 @@
-//! D1 implementation of `TaskRepository` (migration 0004).
+//! D1 implementation of `TaskRepository` (migrations 0004, 0005).
 
 use super::{changes, err, int, opt_int, opt_text, stmt, text};
 use directory_core::tasks::{Filter, Priority, Status, Task, TaskRepository};
@@ -16,7 +16,7 @@ impl D1TaskRepository {
 }
 
 const COLUMNS: &str =
-    "id, owner_id, parent_id, title, notes, status, priority, due_date, created_at, updated_at, completed_at";
+    "id, owner_id, parent_id, title, notes, status, priority, due_date, created_at, updated_at, completed_at, project_id";
 
 #[derive(Deserialize)]
 struct Row {
@@ -31,6 +31,7 @@ struct Row {
     created_at: f64,
     updated_at: f64,
     completed_at: Option<f64>,
+    project_id: Option<String>,
 }
 
 impl TryFrom<Row> for Task {
@@ -42,6 +43,7 @@ impl TryFrom<Row> for Task {
             id: r.id,
             owner_id: r.owner_id,
             parent_id: r.parent_id,
+            project_id: r.project_id,
             title: r.title,
             notes: r.notes,
             due_date: r.due_date,
@@ -85,7 +87,7 @@ impl TaskRepository for D1TaskRepository {
 
     async fn insert(&self, t: &Task) -> Result<(), String> {
         let sql = format!(
-            "INSERT INTO tasks ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"
+            "INSERT INTO tasks ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"
         );
         stmt(
             &self.db,
@@ -102,6 +104,7 @@ impl TaskRepository for D1TaskRepository {
                 int(t.created_at),
                 int(t.updated_at),
                 opt_int(t.completed_at),
+                opt_text(t.project_id.as_deref()),
             ],
         )?
         .run()
@@ -114,7 +117,7 @@ impl TaskRepository for D1TaskRepository {
         let r = stmt(
             &self.db,
             "UPDATE tasks SET title = ?3, notes = ?4, status = ?5, priority = ?6, due_date = ?7,
-                    updated_at = ?8, completed_at = ?9
+                    updated_at = ?8, completed_at = ?9, project_id = ?10
               WHERE owner_id = ?1 AND id = ?2",
             &[
                 text(&t.owner_id),
@@ -126,6 +129,7 @@ impl TaskRepository for D1TaskRepository {
                 opt_text(t.due_date.as_deref()),
                 int(t.updated_at),
                 opt_int(t.completed_at),
+                opt_text(t.project_id.as_deref()),
             ],
         )?
         .run()
@@ -153,5 +157,17 @@ impl TaskRepository for D1TaskRepository {
             .await
             .map_err(err)?;
         Ok(results.get(1).is_some_and(|r| changes(r) > 0))
+    }
+
+    async fn project_exists(&self, owner_id: &str, project_id: &str) -> Result<bool, String> {
+        let n = stmt(
+            &self.db,
+            "SELECT COUNT(*) AS n FROM projects WHERE owner_id = ?1 AND id = ?2",
+            &[text(owner_id), text(project_id)],
+        )?
+        .first::<f64>(Some("n"))
+        .await
+        .map_err(err)?;
+        Ok(n.unwrap_or(0.0) > 0.0)
     }
 }

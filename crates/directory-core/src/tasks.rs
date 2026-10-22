@@ -80,6 +80,8 @@ pub struct Task {
     #[serde(skip)]
     pub owner_id: String,
     pub parent_id: Option<String>,
+    /// Top-level tasks only; subtasks belong to their parent's project.
+    pub project_id: Option<String>,
     pub title: String,
     pub notes: String,
     pub status: Status,
@@ -124,6 +126,8 @@ pub struct NewTask {
     pub due_date: Option<String>,
     #[serde(default)]
     pub parent_id: Option<String>,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 /// Partial update. For nullable fields, `Some(None)` (JSON `null`) clears.
@@ -139,6 +143,8 @@ pub struct TaskPatch {
     pub priority: Option<Priority>,
     #[serde(default, deserialize_with = "double_option")]
     pub due_date: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub project_id: Option<Option<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -157,6 +163,8 @@ pub trait TaskRepository {
     async fn update(&self, task: &Task) -> Result<bool, String>;
     /// Delete a task and its subtasks; `false` if no such task for this owner.
     async fn delete(&self, owner_id: &str, id: &str) -> Result<bool, String>;
+    /// Whether `project_id` is a project owned by `owner_id`.
+    async fn project_exists(&self, owner_id: &str, project_id: &str) -> Result<bool, String>;
 }
 
 fn backend(e: String) -> TaskError {
@@ -196,6 +204,20 @@ impl<'a, R: TaskRepository, E: Entropy + ?Sized> TaskService<'a, R, E> {
             .ok_or(TaskError::NotFound)
     }
 
+    async fn check_project(&self, p: &Principal, project_id: &str) -> Result<(), TaskError> {
+        if is_id(project_id)
+            && self
+                .repo
+                .project_exists(&p.user_id, project_id)
+                .await
+                .map_err(backend)?
+        {
+            Ok(())
+        } else {
+            Err(TaskError::Invalid("project_id", "not found"))
+        }
+    }
+
     pub async fn create(&self, p: &Principal, input: NewTask) -> Result<Task, TaskError> {
         let title = field("title", validate::line(&input.title, MAX_TITLE))?;
         let notes = field(
@@ -221,10 +243,20 @@ impl<'a, R: TaskRepository, E: Entropy + ?Sized> TaskService<'a, R, E> {
                 ));
             }
         }
+        if let Some(project_id) = &input.project_id {
+            if input.parent_id.is_some() {
+                return Err(TaskError::Invalid(
+                    "project_id",
+                    "subtasks use their parent's project",
+                ));
+            }
+            self.check_project(p, project_id).await?;
+        }
         let task = Task {
             id: new_id(self.entropy),
             owner_id: p.user_id.clone(),
             parent_id: input.parent_id,
+            project_id: input.project_id,
             title,
             notes,
             status: Status::Todo,
@@ -261,6 +293,18 @@ impl<'a, R: TaskRepository, E: Entropy + ?Sized> TaskService<'a, R, E> {
                 .transpose()
                 .map_err(|w| TaskError::Invalid("due_date", w))?;
         }
+        if let Some(project) = patch.project_id {
+            if task.parent_id.is_some() {
+                return Err(TaskError::Invalid(
+                    "project_id",
+                    "subtasks use their parent's project",
+                ));
+            }
+            if let Some(id) = &project {
+                self.check_project(p, id).await?;
+            }
+            task.project_id = project;
+        }
         if let Some(status) = patch.status {
             if status != task.status {
                 task.completed_at = (!status.is_open()).then_some(self.now);
@@ -288,8 +332,9 @@ pub(crate) mod memory {
     use super::*;
     use std::cell::RefCell;
 
+    /// Tasks, plus the `(owner_id, project_id)` pairs that exist.
     #[derive(Default)]
-    pub struct MemoryTasks(pub RefCell<Vec<Task>>);
+    pub struct MemoryTasks(pub RefCell<Vec<Task>>, pub RefCell<Vec<(String, String)>>);
 
     impl TaskRepository for MemoryTasks {
         async fn list(
@@ -345,6 +390,13 @@ pub(crate) mod memory {
             });
             Ok(all.len() < before)
         }
+        async fn project_exists(&self, owner_id: &str, project_id: &str) -> Result<bool, String> {
+            Ok(self
+                .1
+                .borrow()
+                .iter()
+                .any(|(o, p)| o == owner_id && p == project_id))
+        }
     }
 }
 
@@ -370,7 +422,61 @@ mod tests {
             priority: None,
             due_date: None,
             parent_id: None,
+            project_id: None,
         }
+    }
+
+    #[test]
+    fn project_assignment_is_owner_checked_and_top_level_only() {
+        let f = F::new();
+        let me = owner("u1");
+        let project = "a".repeat(32);
+        f.repo.1.borrow_mut().push(("u1".into(), project.clone()));
+        let svc = f.at(1);
+        let in_project = |title: &str| NewTask {
+            project_id: Some(project.clone()),
+            ..new(title)
+        };
+
+        let t = block_on(svc.create(&me, in_project("In project"))).unwrap();
+        assert_eq!(t.project_id.as_deref(), Some(project.as_str()));
+        assert_eq!(
+            block_on(svc.create(&owner("u2"), in_project("Other owner"))).unwrap_err(),
+            TaskError::Invalid("project_id", "not found")
+        );
+        let sub_with_project = NewTask {
+            parent_id: Some(t.id.clone()),
+            ..in_project("Sub")
+        };
+        assert!(matches!(
+            block_on(svc.create(&me, sub_with_project)),
+            Err(TaskError::Invalid("project_id", _))
+        ));
+        let sub = block_on(svc.create(
+            &me,
+            NewTask {
+                parent_id: Some(t.id.clone()),
+                ..new("Sub")
+            },
+        ))
+        .unwrap();
+        let assign: TaskPatch =
+            serde_json::from_str(&format!(r#"{{"project_id":"{project}"}}"#)).unwrap();
+        assert!(matches!(
+            block_on(svc.update(&me, &sub.id, assign)),
+            Err(TaskError::Invalid("project_id", _))
+        ));
+
+        let clear: TaskPatch = serde_json::from_str(r#"{"project_id":null}"#).unwrap();
+        assert_eq!(
+            block_on(svc.update(&me, &t.id, clear)).unwrap().project_id,
+            None
+        );
+        let bogus: TaskPatch = serde_json::from_str(r#"{"project_id":"nope"}"#).unwrap();
+        assert_eq!(
+            block_on(svc.update(&me, &t.id, bogus)).unwrap_err(),
+            TaskError::Invalid("project_id", "not found")
+        );
     }
 
     struct F {

@@ -6,13 +6,15 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ## Current state (2026-10-21)
 
 - **Milestone:** M1 Private Alpha, in progress. Auth ✅, rate limiting ✅,
-  Tasks ✅. Next: **Projects**.
+  Tasks ✅, Projects ✅. Next: **Notes (server-backed)**.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
   - Device tokens for native clients and scripts.
   - Settings: passkeys and tokens.
   - Tasks with one level of subtasks: status, priority, due date, notes,
-    Open/Done/All filters, and a read-only offline copy.
+    Open/Done/All filters, a project filter, and a read-only offline copy.
+  - Projects: create, rename, describe, archive, delete (tasks are kept),
+    progress bars, and a link to the project's tasks.
   - Owner-scoped private file upload, list, download, and delete.
   - Device-local Scratchpad.
   - PWA install and offline relaunch with the saved session.
@@ -26,11 +28,11 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 | Command | Result (2026-10-21) |
 | --- | --- |
-| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 850 KiB / 289 KiB gzipped |
-| `cargo test -p directory-core` | ✅ 43 passed |
-| Vitest | ✅ 18 passed (5 files) |
-| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 18/18 |
-| `npm run test:browser` (headless Edge 155, virtual passkey) | ✅ 9/9 |
+| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 886 KiB / 298 KiB gzipped |
+| `cargo test -p directory-core` | ✅ 45 passed |
+| Vitest | ✅ 20 passed (6 files) |
+| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 19/19 |
+| `npm run test:browser` (headless Edge 155, virtual passkey) | ✅ 10/10 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -49,7 +51,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ### Design dependencies
 - Paper designs or `docs/DESIGN_HANDOFF.md` for the shell, auth, Tasks, Files,
-  Settings, and the upcoming Projects, Inbox, Journal, and Notes screens.
+  Projects, Settings, and the upcoming Inbox, Journal, and Notes screens.
 
 ### Unresolved decisions (need the owner)
 - Approve the first Cloudflare deploy: R2 activation and the production
@@ -57,19 +59,38 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-**Projects slice (M1).**
-- Core `projects` module: name, description, status (active/archived), and an
-  owner-scoped repository.
-- Migration `0005`: `projects` table, plus a nullable `tasks.project_id` (ALTER
-  TABLE ADD COLUMN).
-- `/api/v1/projects` CRUD, and `project_id` on task create/patch with
-  ownership validation.
-- UI: a Projects view with progress, plus a project picker and filter in Tasks.
-- Smoke and browser e2e steps.
+**Notes slice (M1): server-backed notes that replace the device-only Scratchpad.**
+- Core `notes` module: title (optional, derived from the first line), Markdown
+  body (≤ 100 KB), pinned, and timestamps. Owner-scoped repository.
+- Migration `0006`: `notes`.
+- `/api/v1/notes` CRUD with a list that returns summaries (no body), sorted by
+  `updated_at`.
+- Web: a Notes module using the API, with debounced autosave and save-state
+  indicators. Migrate existing device-local Scratchpad notes into the account
+  (one-time, on first load, then clear them locally). Read-only offline cache.
+- Then: Journal, Inbox, Linking.
 
 ---
 
 ## Log
+
+### 2026-10-21 — M1 slice: Projects
+- **Core:**
+  - `projects` module (validation, archive, owner scoping).
+  - Tasks gain `project_id`: top-level only, checked against owned projects
+    via `TaskRepository::project_exists`, clearable by PATCH `null`.
+- **Worker:** `d1/projects.rs` (delete unassigns tasks in the same batch),
+  `http/projects.rs`, and a shared `auth::principal` guard. Migration
+  `0005_projects.sql` (schema v5).
+- **Web:**
+  - Generic `useCachedList` hook (server list + offline cache), now used by
+    `useTasks` and `useProjects`.
+  - Projects module with progress bars.
+  - Tasks: a project filter in the URL (`#/tasks?project=`), quick add into
+    the filtered project, and a project picker in the detail panel.
+  - The phone tab bar now scrolls horizontally.
+- **Tests:** core project tests and task-project tests, web progress and hash
+  tests, a smoke projects check, and a browser e2e Projects step.
 
 ### 2026-10-21 — M1 slice: Tasks
 - **Core:**

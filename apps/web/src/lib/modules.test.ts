@@ -15,3 +15,12 @@ describe("module registry", () => {
     expect(moduleFromHash("#/unknown")).toBe(DEFAULT_MODULE);
   });
 });
+
+describe("hash params", () => {
+  it("reads query parameters from hash routes", async () => {
+    const { hashParam } = await import("./modules");
+    expect(hashParam("#/tasks?project=abc", "project")).toBe("abc");
+    expect(hashParam("#/tasks", "project")).toBeUndefined();
+    expect(hashParam("#/tasks?x=1", "project")).toBeUndefined();
+  });
+});

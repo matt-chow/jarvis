@@ -6,6 +6,8 @@ export type TaskPriority = "none" | "low" | "medium" | "high";
 export interface Task {
   id: string;
   parent_id: string | null;
+  /** Top-level tasks only; subtasks follow their parent. */
+  project_id: string | null;
   title: string;
   notes: string;
   status: TaskStatus;
@@ -22,10 +24,11 @@ export interface NewTask {
   priority?: TaskPriority;
   due_date?: string | null;
   parent_id?: string;
+  project_id?: string;
 }
 
 /** Fields omitted are unchanged; `due_date: null` clears. */
-export type TaskPatch = Partial<Pick<Task, "title" | "notes" | "status" | "priority" | "due_date">>;
+export type TaskPatch = Partial<Pick<Task, "title" | "notes" | "status" | "priority" | "due_date" | "project_id">>;
 
 export type TaskFilter = "open" | "closed" | "all";
 

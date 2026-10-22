@@ -21,9 +21,9 @@ part of every slice, not deferred to the end.
 | App shell (auth gate, offline session, module registry) | ✅ done (provisional design) |
 | Security: auth rate limiting | ✅ done |
 | Tasks: CRUD, status, due date, priority, subtasks (one level) | ✅ done |
-| Projects (group tasks; progress) | next |
-| Universal inbox (quick capture → triage into task/note/journal) | planned |
-| Notes: server persistence (replacing device-only Scratchpad) | planned |
+| Projects (group tasks; progress) | ✅ done |
+| Universal inbox (quick capture → triage into task/note/journal) | after Notes and Journal |
+| Notes: server persistence (replacing device-only Scratchpad) | next |
 | Journal (dated entries) | planned |
 | Entity linking (task ↔ note ↔ project ↔ journal) | planned |
 

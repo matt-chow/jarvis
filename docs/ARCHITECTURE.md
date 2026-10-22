@@ -83,9 +83,12 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | DELETE | `/api/v1/auth/passkeys/{id}` | session only | `409 last_passkey` for the final one |
 | GET / POST | `/api/v1/auth/tokens` | session only | List / create device token (secret returned once) |
 | DELETE | `/api/v1/auth/tokens/{id}` | session only | Revoke |
+| GET | `/api/v1/projects[?include=archived]` | session or token | Owner's projects (active only by default) |
+| POST | `/api/v1/projects` | session or token | `{ name, description? }` → `201` |
+| GET / PATCH / DELETE | `/api/v1/projects/{id}` | session or token | PATCH `name, description, status`. DELETE keeps the project's tasks and unassigns them. |
 | GET | `/api/v1/tasks?status=all|open|closed` | session or token | Owner's tasks and subtasks (max 1000) |
-| POST | `/api/v1/tasks` | session or token | `{ title, notes?, priority?, due_date?, parent_id? }` → `201`. Subtasks are one level deep. |
-| GET / PATCH / DELETE | `/api/v1/tasks/{id}` | session or token | PATCH: any of `title, notes, status, priority, due_date` (`null` clears due date). DELETE cascades to subtasks. |
+| POST | `/api/v1/tasks` | session or token | `{ title, notes?, priority?, due_date?, parent_id?, project_id? }` → `201`. Subtasks are one level deep and can't set `project_id`. |
+| GET / PATCH / DELETE | `/api/v1/tasks/{id}` | session or token | PATCH: any of `title, notes, status, priority, due_date, project_id` (`null` clears the due date or project). DELETE cascades to subtasks. |
 | GET | `/api/v1/storage/objects?prefix=&limit=` | session or token | List the owner's objects (max 1000) |
 | PUT / GET / DELETE | `/api/v1/storage/objects/{key}` | session or token | Body ≤ 10 MB. GET is `attachment` with CSP `sandbox`. |
 
@@ -98,18 +101,20 @@ JSON bodies are capped at 64 KiB.
 ## Data
 
 - **D1** migrations live in `migrations/NNNN_name.sql` and are append-only.
-  `system_meta.schema_version` must equal `EXPECTED_SCHEMA_VERSION` (now **4**).
+  `system_meta.schema_version` must equal `EXPECTED_SCHEMA_VERSION` (now **5**).
   - `0001`: `system_meta`
   - `0002`: `users`, `passkeys`, `auth_challenges`, `sessions`, `api_tokens`.
     Times are epoch milliseconds; secrets are stored only as SHA-256 hex.
   - `0003`: `rate_limits` (fixed-window counters).
   - `0004`: `tasks` (`owner_id`, `parent_id`, status, priority, `due_date`
     as `YYYY-MM-DD`, timestamps, `completed_at`).
+  - `0005`: `projects`, plus `tasks.project_id` (top-level tasks only).
 - **R2** bucket `directory-files` is private, with no r2.dev URL or custom domain.
   Object keys are `u/<user_id>/<key>`.
 - **IndexedDB** database `directory` (v1) has a `notes` store (keyPath `id`,
   index `updatedAt`) and a `kv` store (cached health report, the last verified
-  session user, and the last task list for read-only offline viewing).
+  session user, and the last task and project lists for read-only offline
+  viewing).
 
 ## Offline / PWA
 

@@ -1,6 +1,6 @@
 //! Task routes. Every route requires an authenticated owner.
 
-use super::auth::{authenticate, Identity};
+use super::auth::principal;
 use super::{error, error_with, json, no_content, read_json};
 use crate::{bindings, d1::D1TaskRepository, entropy::WebCryptoEntropy, try_or_respond};
 use directory_core::identity::Principal;
@@ -37,7 +37,7 @@ impl Ctx {
 }
 
 async fn ctx(req: &Request, rc: &RouteContext<()>) -> Result<std::result::Result<Ctx, Response>> {
-    let principal = match authenticate(req, &Identity::from_env(&rc.env)?).await? {
+    let principal = match principal(req, &rc.env).await? {
         Ok(p) => p,
         Err(resp) => return Ok(Err(resp)),
     };

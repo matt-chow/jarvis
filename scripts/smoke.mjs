@@ -194,6 +194,32 @@ async function local() {
       expect((await fetch(`${baseUrl}/api/v1/tasks`)).status === 401, "anonymous → 401");
     });
 
+    await check("projects: create, assign tasks (top-level only), archive, delete unassigns tasks", async () => {
+      expect((await api.req("POST", "/api/v1/projects", { body: { name: "" } })).status === 400, "blank name");
+      const proj = await api.req("POST", "/api/v1/projects", { body: { name: "Kitchen remodel", description: "Q1" } });
+      expect(proj.status === 201 && proj.json.status === "active", `create → ${proj.status} ${proj.text}`);
+      const task = await api.req("POST", "/api/v1/tasks", { body: { title: "Get quotes", project_id: proj.json.id } });
+      expect(task.status === 201 && task.json.project_id === proj.json.id, `assigned → ${task.text}`);
+      const unknown = await api.req("POST", "/api/v1/tasks", { body: { title: "x", project_id: "f".repeat(32) } });
+      expect(unknown.status === 400 && /project_id/.test(unknown.json.message), `unknown project → ${unknown.status}`);
+      const sub = await api.req("POST", "/api/v1/tasks", {
+        body: { title: "Call contractor", parent_id: task.json.id, project_id: proj.json.id },
+      });
+      expect(sub.status === 400, `subtask with project → ${sub.status}`);
+
+      const archived = await api.req("PATCH", `/api/v1/projects/${proj.json.id}`, { body: { status: "archived" } });
+      expect(archived.json.status === "archived", "archive");
+      const active = await api.req("GET", "/api/v1/projects");
+      expect(!active.json.projects.some((p) => p.id === proj.json.id), "archived hidden by default");
+      const all = await api.req("GET", "/api/v1/projects?include=archived");
+      expect(all.json.projects.some((p) => p.id === proj.json.id), "include=archived");
+
+      expect((await api.req("DELETE", `/api/v1/projects/${proj.json.id}`)).status === 204, "delete project");
+      const kept = await api.req("GET", `/api/v1/tasks/${task.json.id}`);
+      expect(kept.status === 200 && kept.json.project_id === null, `task kept, unassigned → ${kept.text}`);
+      await api.req("DELETE", `/api/v1/tasks/${task.json.id}`);
+    });
+
     await check("device API token: create (shown once), use as bearer, cannot manage credentials", async () => {
       const r = await api.req("POST", "/api/v1/auth/tokens", { body: { name: "Smoke device" } });
       expect(r.status === 201 && r.json.secret.startsWith("dir_"), `${r.status} ${r.text}`);

@@ -1,6 +1,6 @@
 //! Private file storage routes (R2). Every route requires an authenticated owner.
 
-use super::auth::{authenticate, Identity};
+use super::auth::principal;
 use super::{error, error_with, harden, json, no_content};
 use crate::{bindings, r2::R2ObjectStore, try_or_respond};
 use directory_core::identity::Principal;
@@ -30,20 +30,13 @@ fn key_param(ctx: &RouteContext<()>) -> String {
     ctx.param("key").cloned().unwrap_or_default()
 }
 
-async fn owner(
-    req: &Request,
-    ctx: &RouteContext<()>,
-) -> Result<std::result::Result<Principal, Response>> {
-    authenticate(req, &Identity::from_env(&ctx.env)?).await
-}
-
 #[derive(Serialize)]
 struct ListBody {
     objects: Vec<ObjectInfo>,
 }
 
 pub async fn list_objects(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let p = try_or_respond!(owner(&req, &ctx).await?);
+    let p = try_or_respond!(principal(&req, &ctx.env).await?);
     let url = req.url()?;
     let mut prefix = None;
     let mut limit = None;
@@ -61,7 +54,7 @@ pub async fn list_objects(req: Request, ctx: RouteContext<()>) -> Result<Respons
 }
 
 pub async fn put_object(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let p = try_or_respond!(owner(&req, &ctx).await?);
+    let p = try_or_respond!(principal(&req, &ctx.env).await?);
     let content_type = req.headers().get("Content-Type")?;
     let body = req.bytes().await?;
     match storage(&ctx, &p)?
@@ -74,7 +67,7 @@ pub async fn put_object(mut req: Request, ctx: RouteContext<()>) -> Result<Respo
 }
 
 pub async fn get_object(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let p = try_or_respond!(owner(&req, &ctx).await?);
+    let p = try_or_respond!(principal(&req, &ctx.env).await?);
     match storage(&ctx, &p)?.get(&key_param(&ctx)).await {
         Ok(Some(obj)) => {
             let mut resp = Response::from_bytes(obj.body)?;
@@ -98,7 +91,7 @@ pub async fn get_object(req: Request, ctx: RouteContext<()>) -> Result<Response>
 }
 
 pub async fn delete_object(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    let p = try_or_respond!(owner(&req, &ctx).await?);
+    let p = try_or_respond!(principal(&req, &ctx.env).await?);
     match storage(&ctx, &p)?.delete(&key_param(&ctx)).await {
         Ok(()) => no_content(),
         Err(e) => storage_error(e),

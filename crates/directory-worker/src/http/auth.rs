@@ -142,6 +142,14 @@ pub async fn authenticate(
     }
 }
 
+/// `authenticate` with identity built from the environment: the guard for data routes.
+pub async fn principal(
+    req: &Request,
+    env: &Env,
+) -> Result<std::result::Result<Principal, Response>> {
+    authenticate(req, &Identity::from_env(env)?).await
+}
+
 fn unauthorized() -> Result<Response> {
     let mut resp = error(401, "unauthorized")?;
     resp.headers_mut().set("WWW-Authenticate", "Bearer")?;

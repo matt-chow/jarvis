@@ -4,7 +4,7 @@
  * should share these ids.
  */
 
-export type ModuleId = "home" | "tasks" | "notes" | "files" | "jarvis" | "settings";
+export type ModuleId = "home" | "tasks" | "projects" | "notes" | "files" | "jarvis" | "settings";
 
 export interface ModuleMeta {
   id: ModuleId;
@@ -20,6 +20,7 @@ export interface ModuleMeta {
 export const MODULES: readonly ModuleMeta[] = [
   { id: "home", label: "Home", glyph: "~", summary: "System status and overview.", stage: "ready", offline: true },
   { id: "tasks", label: "Tasks", glyph: "☐", summary: "Tasks and subtasks with due dates and priorities.", stage: "preview", offline: false },
+  { id: "projects", label: "Projects", glyph: "▦", summary: "Group tasks and track progress.", stage: "preview", offline: false },
   { id: "notes", label: "Scratchpad", glyph: "¶", summary: "Quick notes stored on this device.", stage: "preview", offline: true },
   { id: "files", label: "Files", glyph: "▤", summary: "Private cloud storage.", stage: "preview", offline: false },
   { id: "jarvis", label: "JARVIS", glyph: "◉", summary: "Voice and AI assistant.", stage: "planned", offline: false },
@@ -32,4 +33,10 @@ export const DEFAULT_MODULE: ModuleId = "home";
 export function moduleFromHash(hash: string): ModuleId {
   const id = hash.replace(/^#\/?/, "").split(/[/?]/)[0];
   return MODULES.find((m) => m.id === id)?.id ?? DEFAULT_MODULE;
+}
+
+/** Read a query parameter from a hash route like `#/tasks?project=abc`. */
+export function hashParam(hash: string, name: string): string | undefined {
+  const q = hash.split("?")[1];
+  return q ? (new URLSearchParams(q).get(name) ?? undefined) : undefined;
 }

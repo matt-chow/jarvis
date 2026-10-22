@@ -84,6 +84,24 @@ try {
     }
   });
 
+  await step("Projects: create, add a task from the project, progress updates", async () => {
+    await page.hash("/projects");
+    await page.waitForText("No active projects");
+    await page.fill("New project", "Garden");
+    await page.click("create");
+    await page.waitForText("0/0 done");
+    await page.click("Garden");
+    await page.click("view tasks");
+    await page.waitForText("Add a task");
+    await page.fill("New task", "Plant tomatoes");
+    await page.click("add");
+    await page.waitForText("Plant tomatoes");
+    await page.click("Complete “Plant tomatoes”");
+    await page.hash("/projects");
+    await page.waitForText("1/1 done");
+    await shot("projects");
+  });
+
   await step("Settings lists one passkey; device token is shown once", async () => {
     await page.hash("/settings");
     await page.waitForText("PASSKEYS · 1");

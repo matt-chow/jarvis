@@ -8,6 +8,7 @@ JARVIS commands will refer to them.
 | --- | --- | --- | --- | --- | --- |
 | `home` | Home | ready | yes | `GET /api/v1/health` | Status dashboard; health cached in IndexedDB. |
 | `tasks` | Tasks | preview | read-only | `/api/v1/tasks` | Tasks and one-level subtasks, status, priority, due date, notes. Last list cached for offline viewing. |
+| `projects` | Projects | preview | read-only | `/api/v1/projects` | Group top-level tasks; progress, archive, and links into Tasks filtered by project. |
 | `notes` | Scratchpad | preview | yes | none yet | Device-local notes in IndexedDB. Server notes are an M1 slice. |
 | `files` | Files | preview | no | `/api/v1/storage/*` | Owner-scoped private R2 storage (10 MB cap, no folders yet). |
 | `jarvis` | JARVIS | planned | — | — | Status screen only; M2. |
@@ -28,6 +29,7 @@ provisional (DECISIONS D-013): built from the shared `Panel`, `Button`, and
 | Sign-in / first-run setup | `components/AuthScreen.tsx` | awaiting design integration |
 | Home | `modules/Home.tsx` | provisional |
 | Tasks | `modules/Tasks.tsx` | awaiting design integration |
+| Projects | `modules/Projects.tsx` | awaiting design integration |
 | Scratchpad | `modules/Notes.tsx` | provisional |
 | Files | `modules/Files.tsx` | awaiting design integration |
 | Settings | `modules/Settings.tsx` | awaiting design integration |

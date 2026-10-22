@@ -3,6 +3,7 @@
  * The browser authenticates with the HttpOnly session cookie (same origin);
  * native clients can pass a device token instead.
  */
+import type { NewProject, Project, ProjectPatch } from "./projects";
 import type { NewTask, Task, TaskFilter, TaskPatch } from "./tasks";
 import type { AssertionJson, CreationOptionsJson, RegistrationJson, RequestOptionsJson } from "./webauthn";
 
@@ -133,6 +134,14 @@ export class Api {
   tokens = async () => (await this.call<{ tokens: DeviceToken[] }>("GET", "/api/v1/auth/tokens")).tokens;
   createToken = (name: string) => this.call<{ token: DeviceToken; secret: string }>("POST", "/api/v1/auth/tokens", { name });
   deleteToken = (id: string) => this.call<void>("DELETE", `/api/v1/auth/tokens/${encodeURIComponent(id)}`);
+
+  // ---- Projects ----
+  projects = async (includeArchived = false) =>
+    (await this.call<{ projects: Project[] }>("GET", `/api/v1/projects${includeArchived ? "?include=archived" : ""}`)).projects;
+  createProject = (p: NewProject) => this.call<Project>("POST", "/api/v1/projects", p);
+  updateProject = (id: string, patch: ProjectPatch) =>
+    this.call<Project>("PATCH", `/api/v1/projects/${encodeURIComponent(id)}`, patch);
+  deleteProject = (id: string) => this.call<void>("DELETE", `/api/v1/projects/${encodeURIComponent(id)}`);
 
   // ---- Tasks ----
   tasks = async (filter: TaskFilter = "all") =>

@@ -7,6 +7,7 @@ function task(over: Partial<Task>): Task {
   return {
     id: `t${seq}`,
     parent_id: null,
+    project_id: null,
     title: `Task ${seq}`,
     notes: "",
     status: "todo",
