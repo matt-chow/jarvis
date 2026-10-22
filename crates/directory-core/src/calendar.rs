@@ -139,6 +139,8 @@ pub trait EventRepository {
     async fn list(&self, owner_id: &str, limit: u32) -> Result<Vec<Event>, String>;
     async fn get(&self, owner_id: &str, id: &str) -> Result<Option<Event>, String>;
     async fn insert(&self, event: &Event) -> Result<(), String>;
+    /// How many the owner has (create checks the cap; DECISIONS D-022).
+    async fn count(&self, owner_id: &str) -> Result<u32, String>;
     async fn update(&self, event: &Event) -> Result<bool, String>;
     async fn delete(&self, owner_id: &str, id: &str) -> Result<bool, String>;
 }
@@ -377,6 +379,12 @@ impl<'a, R: EventRepository, E: Entropy + ?Sized> CalendarService<'a, R, E> {
             created_at: self.now,
             updated_at: self.now,
         })?;
+        if self.repo.count(&p.user_id).await.map_err(backend)? >= MAX_EVENTS {
+            return Err(CalendarError::Invalid(
+                "events",
+                "limit of 2,000 events reached; delete some first",
+            ));
+        }
         self.repo.insert(&event).await.map_err(backend)?;
         Ok(event)
     }
@@ -468,6 +476,14 @@ pub(crate) mod memory {
                 .iter()
                 .find(|e| e.owner_id == owner_id && e.id == id)
                 .cloned())
+        }
+        async fn count(&self, owner_id: &str) -> Result<u32, String> {
+            Ok(self
+                .0
+                .borrow()
+                .iter()
+                .filter(|x| x.owner_id == owner_id)
+                .count() as u32)
         }
         async fn insert(&self, event: &Event) -> Result<(), String> {
             self.0.borrow_mut().push(event.clone());

@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 
 pub const MAX_TITLE: usize = 200;
 pub const MAX_BODY: usize = 100_000;
-pub const MAX_LIST: u32 = 1000;
+/// Most notes an owner can have; the list returns them all (D-022).
+pub const MAX_LIST: u32 = 2_000;
 /// Characters of body the repository returns for list excerpts.
 pub const HEAD_CHARS: usize = 400;
 const EXCERPT_CHARS: usize = 160;
@@ -156,6 +157,8 @@ pub trait NoteRepository {
     async fn list(&self, owner_id: &str, limit: u32) -> Result<Vec<NoteHead>, String>;
     async fn get(&self, owner_id: &str, id: &str) -> Result<Option<Note>, String>;
     async fn insert(&self, note: &Note) -> Result<(), String>;
+    /// How many the owner has (create checks the cap; DECISIONS D-022).
+    async fn count(&self, owner_id: &str) -> Result<u32, String>;
     /// Write `note` only if the stored `updated_at` equals `expected_updated_at`.
     /// Returns `false` when nothing matched (missing, or a concurrent change).
     async fn update_if(&self, note: &Note, expected_updated_at: i64) -> Result<bool, String>;
@@ -253,6 +256,12 @@ impl<'a, R: NoteRepository, E: Entropy + ?Sized> NoteService<'a, R, E> {
             created_at: self.now,
             updated_at: self.now,
         };
+        if self.repo.count(&p.user_id).await.map_err(backend)? >= MAX_LIST {
+            return Err(NoteError::Invalid(
+                "notes",
+                "limit of 2,000 notes reached; delete some first",
+            ));
+        }
         self.repo.insert(&note).await.map_err(backend)?;
         Ok(note)
     }
@@ -381,6 +390,14 @@ pub(crate) mod tests {
                 .iter()
                 .find(|n| n.owner_id == owner_id && n.id == id)
                 .cloned())
+        }
+        async fn count(&self, owner_id: &str) -> Result<u32, String> {
+            Ok(self
+                .0
+                .borrow()
+                .iter()
+                .filter(|x| x.owner_id == owner_id)
+                .count() as u32)
         }
         async fn insert(&self, note: &Note) -> Result<(), String> {
             self.0.borrow_mut().push(note.clone());

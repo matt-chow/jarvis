@@ -83,6 +83,8 @@ pub trait ProjectRepository {
     ) -> Result<Vec<Project>, String>;
     async fn get(&self, owner_id: &str, id: &str) -> Result<Option<Project>, String>;
     async fn insert(&self, project: &Project) -> Result<(), String>;
+    /// How many the owner has (create checks the cap; DECISIONS D-022).
+    async fn count(&self, owner_id: &str) -> Result<u32, String>;
     async fn update(&self, project: &Project) -> Result<bool, String>;
     /// Delete the project and unassign its tasks (tasks are kept).
     async fn delete(&self, owner_id: &str, id: &str) -> Result<bool, String>;
@@ -159,6 +161,12 @@ impl<'a, R: ProjectRepository, E: Entropy + ?Sized> ProjectService<'a, R, E> {
             created_at: self.now,
             updated_at: self.now,
         };
+        if self.repo.count(&p.user_id).await.map_err(backend)? >= MAX_LIST {
+            return Err(ProjectError::Invalid(
+                "projects",
+                "limit of 500 projects reached; delete some first",
+            ));
+        }
         self.repo.insert(&project).await.map_err(backend)?;
         Ok(project)
     }
@@ -229,6 +237,14 @@ pub(crate) mod memory {
                 .iter()
                 .find(|p| p.owner_id == owner_id && p.id == id)
                 .cloned())
+        }
+        async fn count(&self, owner_id: &str) -> Result<u32, String> {
+            Ok(self
+                .0
+                .borrow()
+                .iter()
+                .filter(|x| x.owner_id == owner_id)
+                .count() as u32)
         }
         async fn insert(&self, project: &Project) -> Result<(), String> {
             self.0.borrow_mut().push(project.clone());

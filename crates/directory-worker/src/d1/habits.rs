@@ -1,6 +1,6 @@
 //! D1 implementation of `HabitRepository` (migration 0014).
 
-use super::{changes, err, int, stmt, text};
+use super::{changes, count, err, int, stmt, text};
 use directory_core::habits::{days_to_mask, mask_to_days, CheckIn, Habit, HabitRepository};
 use serde::Deserialize;
 use worker::D1Database;
@@ -49,6 +49,15 @@ struct CheckInRow {
 }
 
 impl HabitRepository for D1HabitRepository {
+    async fn count(&self, owner_id: &str) -> Result<u32, String> {
+        count(
+            &self.db,
+            "SELECT COUNT(*) AS n FROM habits WHERE owner_id = ?1",
+            &[text(owner_id)],
+        )
+        .await
+    }
+
     async fn list(&self, owner_id: &str, limit: u32) -> Result<Vec<Habit>, String> {
         let sql = format!(
             "SELECT {COLUMNS} FROM habits WHERE owner_id = ?1 ORDER BY created_at LIMIT ?2"

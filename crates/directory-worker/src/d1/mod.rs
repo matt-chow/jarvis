@@ -67,6 +67,19 @@ pub(crate) fn stmt(
     db.prepare(sql).bind(args).map_err(err)
 }
 
+/// Run a `SELECT COUNT(*) AS n …` query.
+pub(crate) async fn count(db: &D1Database, sql: &str, args: &[JsValue]) -> Result<u32, String> {
+    #[derive(serde::Deserialize)]
+    struct N {
+        n: f64,
+    }
+    Ok(stmt(db, sql, args)?
+        .first::<N>(None)
+        .await
+        .map_err(err)?
+        .map_or(0, |r| r.n as u32))
+}
+
 /// Rows changed by a write.
 pub(crate) fn changes(result: &D1Result) -> usize {
     result

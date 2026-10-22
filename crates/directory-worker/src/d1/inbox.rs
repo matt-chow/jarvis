@@ -1,6 +1,6 @@
 //! D1 implementation of `InboxRepository` (migration 0008).
 
-use super::{changes, err, int, stmt, text};
+use super::{changes, count, err, int, stmt, text};
 use directory_core::inbox::{InboxItem, InboxRepository};
 use serde::Deserialize;
 use worker::D1Database;
@@ -35,6 +35,15 @@ impl From<Row> for InboxItem {
 }
 
 impl InboxRepository for D1InboxRepository {
+    async fn count(&self, owner_id: &str) -> Result<u32, String> {
+        count(
+            &self.db,
+            "SELECT COUNT(*) AS n FROM inbox_items WHERE owner_id = ?1",
+            &[text(owner_id)],
+        )
+        .await
+    }
+
     async fn list(&self, owner_id: &str, limit: u32) -> Result<Vec<InboxItem>, String> {
         Ok(stmt(
             &self.db,

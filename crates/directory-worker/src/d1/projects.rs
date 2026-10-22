@@ -1,6 +1,6 @@
 //! D1 implementation of `ProjectRepository` (migration 0005).
 
-use super::{changes, err, int, stmt, text};
+use super::{changes, count, err, int, stmt, text};
 use directory_core::projects::{Project, ProjectRepository, ProjectStatus};
 use serde::Deserialize;
 use worker::D1Database;
@@ -44,6 +44,15 @@ impl TryFrom<Row> for Project {
 }
 
 impl ProjectRepository for D1ProjectRepository {
+    async fn count(&self, owner_id: &str) -> Result<u32, String> {
+        count(
+            &self.db,
+            "SELECT COUNT(*) AS n FROM projects WHERE owner_id = ?1",
+            &[text(owner_id)],
+        )
+        .await
+    }
+
     async fn list(
         &self,
         owner_id: &str,

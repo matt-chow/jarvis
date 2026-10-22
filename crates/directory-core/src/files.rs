@@ -142,6 +142,8 @@ pub trait FileRepository {
     ) -> Result<(Vec<FileEntry>, Vec<String>), String>;
     async fn get(&self, owner_id: &str, id: &str) -> Result<Option<FileEntry>, String>;
     async fn exists(&self, owner_id: &str, folder: &str, name: &str) -> Result<bool, String>;
+    /// Files directly in `folder`.
+    async fn count_in_folder(&self, owner_id: &str, folder: &str) -> Result<u32, String>;
     /// `false` if (folder, name) is already taken.
     async fn insert(&self, entry: &FileEntry) -> Result<bool, String>;
     /// `false` if (folder, name) is already taken by another file.
@@ -264,6 +266,23 @@ impl<'a, R: FileRepository, E: Entropy + ?Sized> FileService<'a, R, E> {
         })
     }
 
+    /// A folder lists at most `MAX_LIST` files, so it can't hold more (D-022).
+    async fn check_folder_room(&self, p: &Principal, folder: &str) -> Result<(), FileError> {
+        if self
+            .repo
+            .count_in_folder(&p.user_id, folder)
+            .await
+            .map_err(backend)?
+            >= MAX_LIST
+        {
+            return Err(FileError::Invalid(
+                "folder",
+                "limit of 1,000 files per folder reached; use a subfolder",
+            ));
+        }
+        Ok(())
+    }
+
     /// Validate an upload and check limits. Nothing is stored yet.
     pub async fn prepare_upload(
         &self,
@@ -295,6 +314,7 @@ impl<'a, R: FileRepository, E: Entropy + ?Sized> FileService<'a, R, E> {
         {
             return Err(FileError::Exists);
         }
+        self.check_folder_room(p, &folder).await?;
         Ok(FileEntry {
             id: new_id(self.entropy),
             owner_id: p.user_id.clone(),
@@ -329,7 +349,11 @@ impl<'a, R: FileRepository, E: Entropy + ?Sized> FileService<'a, R, E> {
             entry.name = validate_name(&n)?;
         }
         if let Some(f) = patch.folder {
-            entry.folder = validate_folder(&f)?;
+            let folder = validate_folder(&f)?;
+            if folder != entry.folder {
+                self.check_folder_room(p, &folder).await?;
+            }
+            entry.folder = folder;
         }
         entry.updated_at = self.now;
         if self.repo.update(&entry).await.map_err(backend)? {
@@ -393,6 +417,14 @@ mod tests {
                 .borrow()
                 .iter()
                 .any(|f| f.owner_id == owner_id && f.folder == folder && f.name == name))
+        }
+        async fn count_in_folder(&self, owner_id: &str, folder: &str) -> Result<u32, String> {
+            Ok(self
+                .0
+                .borrow()
+                .iter()
+                .filter(|f| f.owner_id == owner_id && f.folder == folder)
+                .count() as u32)
         }
         async fn insert(&self, e: &FileEntry) -> Result<bool, String> {
             if self.exists(&e.owner_id, &e.folder, &e.name).await? {
@@ -512,6 +544,35 @@ X-Evil: 1"
             (["2026".to_string()].as_slice(), "cat.jpg")
         );
         assert_eq!(blob_key("u1", "abc"), "u/u1/f/abc");
+    }
+
+    #[test]
+    fn a_folder_holds_at_most_one_list_of_files() {
+        let repo = Memory::default();
+        let e = CountingEntropy::default();
+        let svc = FileService::new(&repo, &e, 1, u64::MAX);
+        // Uploaded first: the test entropy repeats ids after 256, and lookups find the first.
+        let other = upload(&svc, "scans/2026", "extra.pdf", 1).unwrap();
+        for i in 0..MAX_LIST {
+            upload(&svc, "scans", &format!("{i}.pdf"), 1).unwrap();
+        }
+        let full = FileError::Invalid(
+            "folder",
+            "limit of 1,000 files per folder reached; use a subfolder",
+        );
+        assert_eq!(upload(&svc, "scans", "extra.pdf", 1).unwrap_err(), full);
+        let into_full = FilePatch {
+            folder: Some("scans".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            block_on(svc.update(&me(), &other.id, into_full)).unwrap_err(),
+            full
+        );
+        assert_eq!(
+            block_on(svc.list(&me(), "scans")).unwrap().files.len(),
+            MAX_LIST as usize
+        );
     }
 
     #[test]

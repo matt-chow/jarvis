@@ -1,6 +1,6 @@
 //! D1 implementation of `NoteRepository` (migration 0006).
 
-use super::{changes, err, int, stmt, text};
+use super::{changes, count, err, int, stmt, text};
 use directory_core::notes::{Note, NoteHead, NoteRepository, HEAD_CHARS};
 use serde::Deserialize;
 use worker::D1Database;
@@ -68,6 +68,15 @@ struct HeadRow {
 }
 
 impl NoteRepository for D1NoteRepository {
+    async fn count(&self, owner_id: &str) -> Result<u32, String> {
+        count(
+            &self.db,
+            "SELECT COUNT(*) AS n FROM notes WHERE owner_id = ?1",
+            &[text(owner_id)],
+        )
+        .await
+    }
+
     async fn list(&self, owner_id: &str, limit: u32) -> Result<Vec<NoteHead>, String> {
         // Only the start of each body leaves the database for list views.
         Ok(stmt(

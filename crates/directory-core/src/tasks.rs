@@ -7,8 +7,11 @@ use serde::{Deserialize, Serialize};
 
 pub const MAX_TITLE: usize = 200;
 pub const MAX_NOTES: usize = 10_000;
-/// Upper bound for one list response (pagination arrives with sync in M3).
-pub const MAX_LIST: u32 = 1000;
+/// Most open tasks an owner can have; creating more is refused, so lists are
+/// never silently cut (DECISIONS D-022).
+pub const MAX_OPEN: u32 = 2_000;
+/// Closed tasks a list includes: the most recently completed.
+pub const MAX_RECENT_CLOSED: u32 = 500;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -161,7 +164,10 @@ pub enum TaskError {
 }
 
 pub trait TaskRepository {
+    /// Open tasks oldest first; closed tasks most recently completed first;
+    /// `All` oldest first (used for export).
     async fn list(&self, owner_id: &str, filter: Filter, limit: u32) -> Result<Vec<Task>, String>;
+    async fn count_open(&self, owner_id: &str) -> Result<u32, String>;
     async fn get(&self, owner_id: &str, id: &str) -> Result<Option<Task>, String>;
     async fn insert(&self, task: &Task) -> Result<(), String>;
     /// Replace all mutable fields; `false` if no such task for this owner.
@@ -191,11 +197,20 @@ impl<'a, R: TaskRepository, E: Entropy + ?Sized> TaskService<'a, R, E> {
         Self { repo, entropy, now }
     }
 
+    /// Every open task, plus the `MAX_RECENT_CLOSED` most recently closed.
     pub async fn list(&self, p: &Principal, filter: Filter) -> Result<Vec<Task>, TaskError> {
-        self.repo
-            .list(&p.user_id, filter, MAX_LIST)
-            .await
-            .map_err(backend)
+        let owner = &p.user_id;
+        let open = || self.repo.list(owner, Filter::Open, MAX_OPEN);
+        let closed = || self.repo.list(owner, Filter::Closed, MAX_RECENT_CLOSED);
+        Ok(match filter {
+            Filter::Open => open().await.map_err(backend)?,
+            Filter::Closed => closed().await.map_err(backend)?,
+            Filter::All => {
+                let mut all = open().await.map_err(backend)?;
+                all.extend(closed().await.map_err(backend)?);
+                all
+            }
+        })
     }
 
     pub async fn get(&self, p: &Principal, id: &str) -> Result<Task, TaskError> {
@@ -225,6 +240,12 @@ impl<'a, R: TaskRepository, E: Entropy + ?Sized> TaskService<'a, R, E> {
 
     pub async fn create(&self, p: &Principal, input: NewTask) -> Result<Task, TaskError> {
         let title = field("title", validate::line(&input.title, MAX_TITLE))?;
+        if self.repo.count_open(&p.user_id).await.map_err(backend)? >= MAX_OPEN {
+            return Err(TaskError::Invalid(
+                "tasks",
+                "limit of 2,000 open tasks reached; complete or delete some first",
+            ));
+        }
         let notes = field(
             "notes",
             validate::text(input.notes.as_deref().unwrap_or(""), MAX_NOTES),
@@ -366,7 +387,7 @@ pub(crate) mod memory {
             filter: Filter,
             limit: u32,
         ) -> Result<Vec<Task>, String> {
-            Ok(self
+            let mut out: Vec<Task> = self
                 .0
                 .borrow()
                 .iter()
@@ -376,9 +397,21 @@ pub(crate) mod memory {
                     Filter::Open => t.status.is_open(),
                     Filter::Closed => !t.status.is_open(),
                 })
-                .take(limit as usize)
                 .cloned()
-                .collect())
+                .collect();
+            if filter == Filter::Closed {
+                out.sort_by_key(|t| std::cmp::Reverse(t.completed_at));
+            }
+            out.truncate(limit as usize);
+            Ok(out)
+        }
+        async fn count_open(&self, owner_id: &str) -> Result<u32, String> {
+            Ok(self
+                .0
+                .borrow()
+                .iter()
+                .filter(|t| t.owner_id == owner_id && t.status.is_open())
+                .count() as u32)
         }
         async fn get(&self, owner_id: &str, id: &str) -> Result<Option<Task>, String> {
             Ok(self
@@ -448,6 +481,53 @@ mod tests {
             parent_id: None,
             project_id: None,
         }
+    }
+
+    #[test]
+    fn lists_never_drop_open_tasks_and_creates_stop_at_the_cap() {
+        let repo = MemoryTasks::default();
+        let e = CountingEntropy::default();
+        let svc = TaskService::new(&repo, &e, 1);
+        let me = owner("u1");
+        let task = |i: u32, status: Status| Task {
+            id: format!("{i:032x}"),
+            owner_id: "u1".into(),
+            parent_id: None,
+            project_id: None,
+            title: format!("t{i}"),
+            notes: String::new(),
+            status,
+            priority: Priority::None,
+            due_date: None,
+            created_at: i64::from(i),
+            updated_at: i64::from(i),
+            completed_at: (status == Status::Done).then_some(i64::from(i)),
+        };
+        // More closed tasks than a list returns, created before the open ones.
+        for i in 0..MAX_RECENT_CLOSED + 10 {
+            repo.0.borrow_mut().push(task(i, Status::Done));
+        }
+        for i in 0..MAX_OPEN {
+            repo.0.borrow_mut().push(task(10_000 + i, Status::Todo));
+        }
+        let all = block_on(svc.list(&me, Filter::All)).unwrap();
+        assert_eq!(all.len(), (MAX_OPEN + MAX_RECENT_CLOSED) as usize);
+        assert!(
+            all.iter()
+                .any(|t| t.title == format!("t{}", 10_000 + MAX_OPEN - 1)),
+            "newest open kept"
+        );
+        assert!(
+            !all.iter().any(|t| t.title == "t0"),
+            "oldest closed dropped"
+        );
+        assert_eq!(
+            block_on(svc.create(&me, new("one too many"))).unwrap_err(),
+            TaskError::Invalid(
+                "tasks",
+                "limit of 2,000 open tasks reached; complete or delete some first"
+            )
+        );
     }
 
     #[test]

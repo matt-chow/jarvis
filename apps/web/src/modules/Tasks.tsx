@@ -13,6 +13,7 @@ import {
   dueInfo,
   isOpen,
   localDate,
+  RECENT_CLOSED_SHOWN,
   taskTree,
   type Task,
   type TaskFilter,
@@ -166,6 +167,9 @@ export function Tasks({ online }: ModuleProps) {
               />
             ))}
           </ul>
+        )}
+        {filter !== "open" && (state.tasks ?? []).filter((t) => !isOpen(t)).length >= RECENT_CLOSED_SHOWN && (
+          <p className="mt-3 text-xs text-muted">Showing the {RECENT_CLOSED_SHOWN} most recently completed tasks. Older ones are in your data export.</p>
         )}
       </Panel>
 

@@ -1,6 +1,6 @@
 //! D1 implementation of `TaskRepository` (migrations 0004, 0005).
 
-use super::{changes, err, int, opt_int, opt_text, stmt, text};
+use super::{changes, count, err, int, opt_int, opt_text, stmt, text};
 use directory_core::tasks::{Filter, Priority, Status, Task, TaskRepository};
 use serde::Deserialize;
 use worker::D1Database;
@@ -56,13 +56,16 @@ impl TryFrom<Row> for Task {
 
 impl TaskRepository for D1TaskRepository {
     async fn list(&self, owner_id: &str, filter: Filter, limit: u32) -> Result<Vec<Task>, String> {
-        let status_clause = match filter {
-            Filter::All => "",
-            Filter::Open => "AND status IN ('todo', 'in_progress')",
-            Filter::Closed => "AND status IN ('done', 'cancelled')",
+        let (status_clause, order) = match filter {
+            Filter::All => ("", "created_at"),
+            Filter::Open => ("AND status IN ('todo', 'in_progress')", "created_at"),
+            Filter::Closed => (
+                "AND status IN ('done', 'cancelled')",
+                "completed_at DESC, updated_at DESC",
+            ),
         };
         let sql = format!(
-            "SELECT {COLUMNS} FROM tasks WHERE owner_id = ?1 {status_clause} ORDER BY created_at LIMIT ?2"
+            "SELECT {COLUMNS} FROM tasks WHERE owner_id = ?1 {status_clause} ORDER BY {order} LIMIT ?2"
         );
         stmt(&self.db, &sql, &[text(owner_id), int(limit.into())])?
             .all()
@@ -73,6 +76,15 @@ impl TaskRepository for D1TaskRepository {
             .into_iter()
             .map(Task::try_from)
             .collect()
+    }
+
+    async fn count_open(&self, owner_id: &str) -> Result<u32, String> {
+        count(
+            &self.db,
+            "SELECT COUNT(*) AS n FROM tasks WHERE owner_id = ?1 AND status IN ('todo', 'in_progress')",
+            &[text(owner_id)],
+        )
+        .await
     }
 
     async fn get(&self, owner_id: &str, id: &str) -> Result<Option<Task>, String> {

@@ -1,6 +1,6 @@
 //! D1 implementation of `EventRepository` (migration 0015).
 
-use super::{changes, err, int, opt_text, stmt, text};
+use super::{changes, count, err, int, opt_text, stmt, text};
 use directory_core::calendar::{Event, EventRepository, Repeat};
 use serde::Deserialize;
 use worker::D1Database;
@@ -56,6 +56,15 @@ impl TryFrom<Row> for Event {
 }
 
 impl EventRepository for D1EventRepository {
+    async fn count(&self, owner_id: &str) -> Result<u32, String> {
+        count(
+            &self.db,
+            "SELECT COUNT(*) AS n FROM events WHERE owner_id = ?1",
+            &[text(owner_id)],
+        )
+        .await
+    }
+
     async fn list(&self, owner_id: &str, limit: u32) -> Result<Vec<Event>, String> {
         let sql = format!(
             "SELECT {COLUMNS} FROM events WHERE owner_id = ?1 ORDER BY start_date, start_time LIMIT ?2"

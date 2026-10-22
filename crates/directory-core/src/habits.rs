@@ -80,6 +80,8 @@ pub trait HabitRepository {
     async fn list(&self, owner_id: &str, limit: u32) -> Result<Vec<Habit>, String>;
     async fn get(&self, owner_id: &str, id: &str) -> Result<Option<Habit>, String>;
     async fn insert(&self, habit: &Habit) -> Result<(), String>;
+    /// How many the owner has (create checks the cap; DECISIONS D-022).
+    async fn count(&self, owner_id: &str) -> Result<u32, String>;
     async fn update(&self, habit: &Habit) -> Result<bool, String>;
     /// Delete the habit and its check-ins.
     async fn delete(&self, owner_id: &str, id: &str) -> Result<bool, String>;
@@ -246,6 +248,12 @@ impl<'a, R: HabitRepository, E: Entropy + ?Sized> HabitService<'a, R, E> {
             created_at: self.now,
             updated_at: self.now,
         };
+        if self.repo.count(&p.user_id).await.map_err(backend)? >= MAX_HABITS {
+            return Err(HabitError::Invalid(
+                "habits",
+                "limit of 200 habits reached; delete some first",
+            ));
+        }
         self.repo.insert(&habit).await.map_err(backend)?;
         Ok(habit)
     }
@@ -331,6 +339,14 @@ pub(crate) mod memory {
                 .iter()
                 .find(|h| h.owner_id == owner_id && h.id == id)
                 .cloned())
+        }
+        async fn count(&self, owner_id: &str) -> Result<u32, String> {
+            Ok(self
+                .0
+                .borrow()
+                .iter()
+                .filter(|x| x.owner_id == owner_id)
+                .count() as u32)
         }
         async fn insert(&self, habit: &Habit) -> Result<(), String> {
             self.0.borrow_mut().push(habit.clone());
@@ -529,6 +545,30 @@ mod tests {
         assert_eq!(
             block_on(svc.delete(&me, &h.id)).unwrap_err(),
             HabitError::NotFound
+        );
+    }
+
+    #[test]
+    fn creates_stop_at_the_cap_so_lists_never_drop_habits() {
+        let repo = MemoryHabits::default();
+        let e = CountingEntropy::default();
+        let svc = HabitService::new(&repo, &e, NOW);
+        let new = |name: &str| NewHabit {
+            name: name.into(),
+            ..Default::default()
+        };
+        for i in 0..MAX_HABITS {
+            block_on(svc.create(&owner("u1"), new(&format!("h{i}")))).unwrap();
+        }
+        assert_eq!(
+            block_on(svc.create(&owner("u1"), new("one more"))).unwrap_err(),
+            HabitError::Invalid("habits", "limit of 200 habits reached; delete some first")
+        );
+        // Per owner.
+        block_on(svc.create(&owner("u2"), new("theirs"))).unwrap();
+        assert_eq!(
+            block_on(svc.list(&owner("u1"), TODAY, 1)).unwrap().len(),
+            MAX_HABITS as usize
         );
     }
 

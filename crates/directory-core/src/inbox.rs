@@ -68,6 +68,8 @@ pub trait InboxRepository {
     async fn list(&self, owner_id: &str, limit: u32) -> Result<Vec<InboxItem>, String>;
     async fn get(&self, owner_id: &str, id: &str) -> Result<Option<InboxItem>, String>;
     async fn insert(&self, item: &InboxItem) -> Result<(), String>;
+    /// How many the owner has (create checks the cap; DECISIONS D-022).
+    async fn count(&self, owner_id: &str) -> Result<u32, String>;
     async fn delete(&self, owner_id: &str, id: &str) -> Result<bool, String>;
 }
 
@@ -185,6 +187,12 @@ impl<'a, R: InboxRepository, E: Entropy + ?Sized> InboxService<'a, R, E> {
             text,
             created_at: self.now,
         };
+        if self.repo.count(&p.user_id).await.map_err(backend)? >= MAX_LIST {
+            return Err(InboxError::Invalid(
+                "inbox",
+                "limit of 500 items reached; sort or discard some first",
+            ));
+        }
         self.repo.insert(&item).await.map_err(backend)?;
         Ok(item)
     }
@@ -278,6 +286,14 @@ pub(crate) mod memory {
                 .iter()
                 .find(|i| i.owner_id == owner_id && i.id == id)
                 .cloned())
+        }
+        async fn count(&self, owner_id: &str) -> Result<u32, String> {
+            Ok(self
+                .0
+                .borrow()
+                .iter()
+                .filter(|x| x.owner_id == owner_id)
+                .count() as u32)
         }
         async fn insert(&self, item: &InboxItem) -> Result<(), String> {
             self.0.borrow_mut().push(item.clone());

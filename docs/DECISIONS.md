@@ -136,6 +136,24 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-022 — Lists are never silently cut: caps are enforced when creating
+**Status:** accepted
+- **Problem:** list queries had fixed `LIMIT`s (tasks 1,000 ordered oldest
+  first), but creates didn't check them. Past the limit, new items silently
+  disappeared from the app (still in D1 and the export).
+- **Tasks:** the list is every open task plus the 500 most recently closed
+  (by `completed_at`). Creating more than 2,000 open tasks is refused with
+  a clear message. The Done/All views say when they show only recent
+  completions.
+- **Other modules:** a create past the list cap is refused: notes 2,000
+  (raised from 1,000), events 2,000, projects 500, inbox 500, habits 200,
+  and files 1,000 per folder (uploads and moves into a full folder).
+  Presets already worked this way (50).
+- Caps are sized to keep a list response well within the Workers Free CPU
+  budget. Pagination is the path to larger datasets and would come with
+  sync paging.
+- Each check runs one `COUNT(*)` per create, on the existing owner indexes.
+
 ## D-021 — Calendar: local wall-clock events, repeats expanded on both sides
 **Status:** accepted
 - Events store local dates and `HH:MM` times with no time zone, which fits a

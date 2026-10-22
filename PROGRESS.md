@@ -55,7 +55,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | Command | Result (2026-10-22) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
-| `cargo test -p directory-core` | ✅ 95 passed |
+| `cargo test -p directory-core` | ✅ 98 passed |
 | Vitest | ✅ 49 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
 | `npm run test:browser` (headless Edge, virtual passkey) | ✅ 21/21 |
@@ -107,6 +107,21 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-22 — Hardening: no silent list truncation (D-022)
+- **Bug:** the tasks list was `ORDER BY created_at LIMIT 1000`. Past 1,000
+  tasks in total (including completed), new tasks would silently stop
+  appearing. Other lists had the same latent problem at their limits.
+- **Fix:**
+  - Tasks list every open task plus the 500 most recently closed;
+    creating more than 2,000 open tasks is refused.
+  - Notes (2,000), events (2,000), projects (500), inbox (500), habits
+    (200), and files per folder (1,000) refuse creates past their caps.
+    Each repository gains a `count` / `count_open` / `count_in_folder`;
+    D1 has a shared `count` helper.
+  - The Tasks UI notes when Done/All shows only recent completions.
+- **Tests:** core 98 (task list composition and cap, habit cap per owner,
+  folder cap on upload and move).
 
 ### 2026-10-22 — M2 slice: JARVIS agenda and habit check-ins
 - **Refactor:** `jarvis::CommandTargets` is now a trait with associated

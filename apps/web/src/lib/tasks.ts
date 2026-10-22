@@ -34,6 +34,9 @@ export type TaskPatch = Partial<Pick<Task, "title" | "notes" | "status" | "prior
 
 export type TaskFilter = "open" | "closed" | "all";
 
+/** The server lists every open task but only this many recently closed ones (DECISIONS D-022). */
+export const RECENT_CLOSED_SHOWN = 500;
+
 export const STATUS_LABELS: Record<TaskStatus, string> = {
   todo: "To do",
   in_progress: "In progress",

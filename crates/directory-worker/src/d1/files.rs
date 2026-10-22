@@ -1,6 +1,6 @@
 //! D1 implementation of `FileRepository` (migration 0012).
 
-use super::{changes, err, int, stmt, text};
+use super::{changes, count, err, int, stmt, text};
 use directory_core::files::{FileEntry, FileRepository};
 use serde::Deserialize;
 use worker::D1Database;
@@ -129,6 +129,15 @@ impl FileRepository for D1FileRepository {
         .await
         .map_err(err)?;
         Ok(n.unwrap_or(0.0) > 0.0)
+    }
+
+    async fn count_in_folder(&self, owner_id: &str, folder: &str) -> Result<u32, String> {
+        count(
+            &self.db,
+            "SELECT COUNT(*) AS n FROM files WHERE owner_id = ?1 AND folder = ?2",
+            &[text(owner_id), text(folder)],
+        )
+        .await
     }
 
     async fn insert(&self, f: &FileEntry) -> Result<bool, String> {
