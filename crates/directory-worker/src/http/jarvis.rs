@@ -8,12 +8,14 @@ use crate::d1::{
     D1TaskRepository,
 };
 use crate::{bindings, entropy::WebCryptoEntropy, try_or_respond};
+use directory_core::habits::HabitRepository;
 use directory_core::identity::Principal;
 use directory_core::jarvis::parser::{ParseError, EXAMPLES};
 use directory_core::jarvis::presets::{NewPreset, PresetError, PresetService};
 use directory_core::jarvis::{
-    CommandTargets, DeterministicParser, JarvisError, JarvisService, PlanRequest,
+    Command, CommandTargets, DeterministicParser, JarvisError, JarvisService, Plan, PlanRequest,
 };
+use directory_core::tasks::TaskRepository;
 use serde_json::json as body;
 use worker::{Date, Env, Request, Response, Result, RouteContext};
 
@@ -46,7 +48,7 @@ fn jarvis_error(e: JarvisError) -> Result<Response> {
 }
 
 /// Repositories commands execute through (one D1 handle each).
-struct Targets {
+pub(crate) struct Targets {
     tasks: D1TaskRepository,
     notes: D1NoteRepository,
     journal: D1JournalRepository,
@@ -58,7 +60,7 @@ struct Targets {
 }
 
 impl Targets {
-    fn from_env(env: &Env) -> Result<Self> {
+    pub(crate) fn from_env(env: &Env) -> Result<Self> {
         let db = || env.d1(bindings::DB);
         Ok(Self {
             tasks: D1TaskRepository::new(db()?),
@@ -160,8 +162,40 @@ pub async fn execute(req: Request, rc: RouteContext<()>) -> Result<Response> {
         .execute(&c.principal, &id_param(&rc), &targets)
         .await
     {
-        Ok(plan) => json(200, &plan),
+        Ok(plan) => {
+            fire_automations(&req, &rc.env, &c.principal, &plan, &targets).await;
+            json(200, &plan)
+        }
         Err(e) => jarvis_error(e),
+    }
+}
+
+/// Completions and check-ins made through JARVIS fire automations like the
+/// Tasks and Habits screens do (D-024). Automation actions never do.
+async fn fire_automations(req: &Request, env: &Env, p: &Principal, plan: &Plan, t: &Targets) {
+    for (action, result) in plan.actions.iter().zip(&plan.results) {
+        if !result.changed {
+            continue;
+        }
+        match &action.command {
+            Command::CompleteTask {
+                task_id: Some(id), ..
+            } => {
+                if let Ok(Some(task)) = t.tasks.get(&p.user_id, id).await {
+                    super::tasks::completed(req, env, p, &task).await;
+                }
+            }
+            Command::CheckHabit {
+                habit_id: Some(id),
+                date,
+                ..
+            } => {
+                if let Ok(Some(habit)) = t.habits.get(&p.user_id, id).await {
+                    super::habits::checked(env, p, &habit, date).await;
+                }
+            }
+            _ => {}
+        }
     }
 }
 

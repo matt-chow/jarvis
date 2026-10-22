@@ -1,5 +1,6 @@
 //! D1-backed implementations of core repositories.
 
+mod automations;
 mod events;
 mod export;
 mod files;
@@ -18,6 +19,7 @@ mod rate_limit;
 mod search;
 mod tasks;
 
+pub use automations::D1AutomationRepository;
 pub use events::D1EventRepository;
 pub use export::D1ExportSource;
 pub use files::D1FileRepository;

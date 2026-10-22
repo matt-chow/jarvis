@@ -1,12 +1,16 @@
 //! Task routes. Every route requires an authenticated owner.
 
 use super::auth::principal;
+use super::automations;
 use super::{error, error_with, json, no_content, read_json};
-use crate::{bindings, d1::D1TaskRepository, entropy::WebCryptoEntropy, try_or_respond};
+use crate::d1::{D1ProjectRepository, D1TaskRepository};
+use crate::{bindings, entropy::WebCryptoEntropy, try_or_respond};
+use directory_core::automations::Event;
 use directory_core::identity::Principal;
-use directory_core::tasks::{Filter, NewTask, TaskError, TaskPatch, TaskService};
+use directory_core::projects::ProjectRepository;
+use directory_core::tasks::{Filter, NewTask, Status, Task, TaskError, TaskPatch, TaskService};
 use serde::Serialize;
-use worker::{Date, Request, Response, Result, RouteContext};
+use worker::{Date, Env, Request, Response, Result, RouteContext};
 
 fn task_error(e: TaskError) -> Result<Response> {
     match e {
@@ -99,14 +103,41 @@ pub async fn get(req: Request, rc: RouteContext<()>) -> Result<Response> {
 pub async fn update(mut req: Request, rc: RouteContext<()>) -> Result<Response> {
     let c = try_or_respond!(ctx(&req, &rc).await?);
     let patch: TaskPatch = try_or_respond!(read_json(&mut req).await?);
-    match c
+    let id = id_param(&rc);
+    let was_open = c
         .service()
-        .update(&c.principal, &id_param(&rc), patch)
+        .get(&c.principal, &id)
         .await
-    {
-        Ok(task) => json(200, &task),
+        .is_ok_and(|t| t.status.is_open());
+    match c.service().update(&c.principal, &id, patch).await {
+        Ok(task) => {
+            if was_open && task.status == Status::Done {
+                completed(&req, &rc.env, &c.principal, &task).await;
+            }
+            json(200, &task)
+        }
         Err(e) => task_error(e),
     }
+}
+
+/// Fire "task completed" automations (D-024).
+pub(crate) async fn completed(req: &Request, env: &Env, p: &Principal, task: &Task) {
+    let project_name = match (&task.project_id, env.d1(bindings::DB)) {
+        (Some(id), Ok(db)) => D1ProjectRepository::new(db)
+            .get(&p.user_id, id)
+            .await
+            .ok()
+            .flatten()
+            .map(|pr| pr.name),
+        _ => None,
+    };
+    let event = Event::TaskCompleted {
+        title: task.title.clone(),
+        project_id: task.project_id.clone(),
+        project_name,
+        date: automations::local_date(req),
+    };
+    automations::fire(env, p, event).await;
 }
 
 pub async fn delete(req: Request, rc: RouteContext<()>) -> Result<Response> {

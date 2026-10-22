@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { ModuleProps } from "../App";
 import { Button, Panel, inputClass } from "../components/ui";
+import { AutomationsPanel } from "./AutomationsPanel";
 import { describeError } from "../hooks/useCachedList";
 import { reportIfUnauthorized } from "../hooks/useSession";
 import { api, ApiError } from "../lib/api";
@@ -269,6 +270,8 @@ export function Jarvis({ online }: ModuleProps) {
           </div>
         )}
       </Panel>
+
+      <AutomationsPanel online={online} />
 
       <Panel title={`history${history ? ` · ${history.length}` : ""}`}>
         {!history ? (

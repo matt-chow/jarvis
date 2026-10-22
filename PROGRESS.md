@@ -11,7 +11,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   Deployment). **M2 JARVIS Alpha:** command layer ✅, presets ✅, `find` ✅,
   project commands ✅.
   Voice is blocked on owner approval. **M3:** search ✅, files ✅, library ✅,
-  offline editing ✅, wiki ✅. **M4:** habits ✅, calendar ✅, dashboard ✅.
+  offline editing ✅, wiki ✅. **M4:** habits ✅, calendar ✅, dashboard ✅, automations ✅.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
   - Device tokens for native clients and scripts.
@@ -43,6 +43,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
     journal, capture, list, find) with preview,
     approve, results, history, and saved presets.
   - Universal search (`/` from anywhere), plus JARVIS `find`.
+  - Automations: when a task is completed or a habit is checked in, run a
+    saved command (journal, capture, note, add task).
   - PWA install and offline relaunch with the saved session.
   - Customizable Home dashboard (today, habits, recent notes, capture,
     status, modules), with the layout saved to the account.
@@ -56,10 +58,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | Command | Result (2026-10-22) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
-| `cargo test -p directory-core` | ✅ 100 passed |
+| `cargo test -p directory-core` | ✅ 104 passed |
 | Vitest | ✅ 51 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
-| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 22/22 |
+| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 23/23 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -100,15 +102,42 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. M4: automations (rule engine over module events, e.g. "when a task in
-   project X is done, journal it"). Design the trigger/action model first.
-2. Search over events and habits.
+1. M4: music library and playlists. This needs an owner decision on audio
+   storage size within R2's free tier, and on offline downloads.
+2. P5 hardening: backup restore (import from the export), error
+   monitoring, accessibility pass, iOS check.
+3. Search over events and habits.
 3. Remaining owner decisions: deploy approval, voice, AI provider, reader
    dependency, music storage (R2 quota).
 
 ---
 
 ## Log
+
+### 2026-10-22 — M4 slice: Automations (D-024)
+- **Migration 0017:** `automations`. Schema version 17.
+- **Core:**
+  - `automations` module: rules (≤ 20) with triggers (task completed,
+    optional project; habit checked, optional habit) and command templates.
+  - Templates are parsed, then filled (injection-safe); only additive
+    commands are allowed; `fire` records each rule's last run.
+  - `JarvisService::run_unattended`. `ActionResult.changed` (not stored)
+    marks state changes.
+  - `HabitService::set_check` returns whether anything changed.
+- **Worker:**
+  - `/api/v1/automations` CRUD.
+  - `fire` hooks in task update (open → done), habit check-in (new only),
+    and JARVIS execute (changed completions and check-ins).
+  - `?today=` local date on those routes.
+- **Web:** an Automations panel on the JARVIS screen (create with trigger,
+  filter, and command; on/off; delete; last-run status). Task updates and
+  JARVIS execute send `today`.
+- **Tests:**
+  - core 104: templates, restrictions, injection, matching, end-to-end
+    fire with a failing rule.
+  - smoke: validation, fires once from routes and JARVIS, no injection,
+    disabled rules, 401.
+  - browser e2e 23/23: create a rule, it runs, its status shows, delete.
 
 ### 2026-10-22 — M4 slice: Customizable dashboard (D-023)
 - **Migration 0016:** `preferences`. Schema version 16.

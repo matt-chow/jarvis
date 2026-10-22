@@ -3,6 +3,7 @@
  * The browser authenticates with the HttpOnly session cookie (same origin);
  * native clients can pass a device token instead.
  */
+import type { NewRule, Rule, RulePatch } from "./automations";
 import type { CalendarEvent, EventPatch, NewEvent } from "./calendar";
 import type { FileEntry, Listing, Usage } from "./files";
 import { HISTORY_DAYS, type Habit, type HabitPatch, type HabitView, type NewHabit } from "./habits";
@@ -15,7 +16,7 @@ import type { Note, NotePatch, NoteSummary } from "./notes";
 import type { Preferences, PreferencesPatch } from "./preferences";
 import type { NewProject, Project, ProjectPatch } from "./projects";
 import type { SearchHit } from "./search";
-import type { NewTask, Task, TaskFilter, TaskPatch } from "./tasks";
+import { localDate, type NewTask, type Task, type TaskFilter, type TaskPatch } from "./tasks";
 import type { AssertionJson, CreationOptionsJson, RegistrationJson, RequestOptionsJson } from "./webauthn";
 
 export interface HealthCheck {
@@ -178,6 +179,12 @@ export class Api {
   updateNote = (id: string, patch: NotePatch) => this.call<Note>("PATCH", `/api/v1/notes/${encodeURIComponent(id)}`, patch);
   deleteNote = (id: string) => this.call<void>("DELETE", `/api/v1/notes/${encodeURIComponent(id)}`);
 
+  // ---- Automations ----
+  automations = async () => (await this.call<{ automations: Rule[] }>("GET", "/api/v1/automations")).automations;
+  createAutomation = (r: NewRule) => this.call<Rule>("POST", "/api/v1/automations", r);
+  updateAutomation = (id: string, patch: RulePatch) => this.call<Rule>("PATCH", `/api/v1/automations/${encodeURIComponent(id)}`, patch);
+  deleteAutomation = (id: string) => this.call<void>("DELETE", `/api/v1/automations/${encodeURIComponent(id)}`);
+
   // ---- Preferences ----
   preferences = () => this.call<Preferences>("GET", "/api/v1/preferences");
   updatePreferences = (patch: PreferencesPatch) => this.call<Preferences>("PATCH", "/api/v1/preferences", patch);
@@ -211,13 +218,16 @@ export class Api {
   tasks = async (filter: TaskFilter = "all") =>
     (await this.call<{ tasks: Task[] }>("GET", `/api/v1/tasks?status=${filter}`)).tasks;
   createTask = (t: NewTask) => this.call<Task>("POST", "/api/v1/tasks", t);
-  updateTask = (id: string, patch: TaskPatch) => this.call<Task>("PATCH", `/api/v1/tasks/${encodeURIComponent(id)}`, patch);
+  /** `today` (local) dates any automations a completion fires. */
+  updateTask = (id: string, patch: TaskPatch) =>
+    this.call<Task>("PATCH", `/api/v1/tasks/${encodeURIComponent(id)}?today=${localDate()}`, patch);
   deleteTask = (id: string) => this.call<void>("DELETE", `/api/v1/tasks/${encodeURIComponent(id)}`);
 
   // ---- JARVIS ----
   /** Preview a command. Read-only plans come back already executed. */
   jarvisPlan = (input: string, today: string) => this.call<Plan>("POST", "/api/v1/jarvis/plan", { input, today });
-  jarvisExecute = (id: string) => this.call<Plan>("POST", `/api/v1/jarvis/plans/${encodeURIComponent(id)}/execute`);
+  /** `today` (local) dates any automations the plan fires. */
+  jarvisExecute = (id: string) => this.call<Plan>("POST", `/api/v1/jarvis/plans/${encodeURIComponent(id)}/execute?today=${localDate()}`);
   jarvisCancel = (id: string) => this.call<Plan>("POST", `/api/v1/jarvis/plans/${encodeURIComponent(id)}/cancel`);
   jarvisHistory = async () => (await this.call<{ plans: Plan[] }>("GET", "/api/v1/jarvis/history")).plans;
   presets = async () => (await this.call<{ presets: Preset[] }>("GET", "/api/v1/jarvis/presets")).presets;

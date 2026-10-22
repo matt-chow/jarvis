@@ -136,6 +136,31 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-024 — Automations: event-driven rules that run pre-approved JARVIS commands
+**Status:** accepted (extends D-016)
+- A rule is a trigger and a JARVIS command template. Triggers in v1: a task
+  moved to done (optionally in one project), and a new habit check-in
+  (optionally for one habit). They fire from the Tasks and Habits routes
+  (including offline replays) and from JARVIS completions and check-ins.
+- **Approval:** saving a rule approves its command in advance (it is
+  validated by the parser then). Only additive commands may run unattended:
+  add task, note, journal, and capture, at most 3 steps. Interactive JARVIS
+  writes still need per-plan approval.
+- **Safety:**
+  - Templates are parsed first and placeholders (`{title}`, `{project}`,
+    `{date}`) are substituted into the parsed text fields, so a value like
+    `x; capture y` can't add steps.
+  - Actions never fire rules, and the allowlist excludes completions and
+    check-ins, so there are no chains or loops.
+  - Repeats (an already-done task, a re-sent check-in) don't fire.
+- **Execution:** rules run in the same request, after the triggering change
+  has committed. Failures never fail that request; each rule records its
+  last run (ok/failed + message).
+- **Dates:** clients pass their local date as `?today=` on task updates and
+  JARVIS execute; otherwise the UTC date is used.
+- **Not yet:** scheduled (time-based) triggers. They need a Workers Cron
+  Trigger and per-owner time zones; deferred.
+
 ## D-023 — Preferences are one validated JSON document per owner
 **Status:** accepted
 - Settings that should follow the owner across devices, starting with the

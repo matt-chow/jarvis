@@ -184,6 +184,10 @@ pub struct ActionResult {
     /// The item created or changed, for linking in the UI.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entity: Option<EntityRef>,
+    /// A completion or check-in that changed state (so it may fire automations,
+    /// D-024). Not stored.
+    #[serde(skip)]
+    pub changed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -316,6 +320,7 @@ fn failure(message: String) -> ActionResult {
         ok: false,
         message,
         entity: None,
+        changed: false,
     }
 }
 
@@ -694,6 +699,34 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         Ok(plan.effective(self.now))
     }
 
+    /// Resolve and run commands the owner approved in advance (an automation
+    /// rule, DECISIONS D-024). No plan is stored; the caller records the outcome.
+    pub async fn run_unattended<C: CommandTargets>(
+        &self,
+        p: &Principal,
+        commands: Vec<Command>,
+        targets: &C,
+    ) -> (PlanStatus, Vec<ActionResult>) {
+        let mut actions = Vec::with_capacity(commands.len());
+        for command in commands {
+            match self.resolve(p, command, &actions, targets).await {
+                Ok(command) => actions.push(PlannedAction {
+                    summary: command.summary(),
+                    risk: command.risk(),
+                    command,
+                }),
+                Err(e) => {
+                    let message = match e {
+                        JarvisError::Unresolved(m) => m,
+                        _ => "A step couldn't be prepared.".into(),
+                    };
+                    return (PlanStatus::Failed, vec![failure(message)]);
+                }
+            }
+        }
+        self.run(p, &actions, targets).await
+    }
+
     /// Run actions in order; stop at the first failure.
     async fn run<C>(
         &self,
@@ -768,6 +801,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                             None => format!("Created task “{}”.", task.title),
                         },
                         entity: entity(EntityKind::Task, &task.id),
+                        changed: false,
                     },
                     Err(e) => task_failure(e),
                 }
@@ -786,6 +820,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                         ok: true,
                         message: format!("Created project “{}”.", pr.name),
                         entity: entity(EntityKind::Project, &pr.id),
+                        changed: false,
                     },
                     Err(e) => project_failure(e),
                 }
@@ -832,6 +867,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     ok: true,
                     message,
                     entity: None,
+                    changed: false,
                 }
             }
             Command::CompleteTask {
@@ -841,11 +877,13 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     status: Some(Status::Done),
                     ..Default::default()
                 };
+                let was_open = tasks.get(p, id).await.is_ok_and(|t| t.status.is_open());
                 match tasks.update(p, id, patch).await {
                     Ok(task) => ActionResult {
                         ok: true,
                         message: format!("Completed “{}”.", task.title),
                         entity: entity(EntityKind::Task, &task.id),
+                        changed: was_open,
                     },
                     Err(e) => task_failure(e),
                 }
@@ -868,6 +906,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                         ok: true,
                         message: "Created a note.".into(),
                         entity: entity(EntityKind::Note, &note.id),
+                        changed: false,
                     },
                     Err(e) => note_failure(e),
                 }
@@ -881,6 +920,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                         ok: true,
                         message: format!("Added to the journal for {}.", e.date),
                         entity: entity(EntityKind::Journal, &e.date),
+                        changed: false,
                     },
                     Err(e) => journal_failure(e),
                 }
@@ -899,6 +939,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     ok: true,
                     message: "Captured to your inbox.".into(),
                     entity: None,
+                    changed: false,
                 },
                 Err(e) => inbox_failure(e),
             },
@@ -907,6 +948,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     ok: true,
                     message: format!("Nothing matches “{query}”."),
                     entity: None,
+                    changed: false,
                 },
                 Ok(hits) => {
                     let names: Vec<String> = hits
@@ -924,6 +966,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                         ok: true,
                         message: format!("{} found: {}{more}.", hits.len(), names.join("; ")),
                         entity: entity(top.kind, &top.id),
+                        changed: false,
                     }
                 }
                 Err(SearchError::Invalid(why)) => failure(format!("Can't search for that: {why}.")),
@@ -941,10 +984,19 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                 ..
             } => {
                 let habits = HabitService::new(t.habits(), self.entropy, self.now);
-                if let Err(e) = habits.set_check(p, id, date, true).await {
-                    return habit_failure(e);
-                }
+                let changed = match habits.set_check(p, id, date, true).await {
+                    Ok((_, changed)) => changed,
+                    Err(e) => return habit_failure(e),
+                };
                 let name = name.as_deref().unwrap_or("the habit");
+                if !changed {
+                    return ActionResult {
+                        ok: true,
+                        message: format!("“{name}” was already checked in for {date}."),
+                        entity: None,
+                        changed: false,
+                    };
+                }
                 // The streak as of the checked day.
                 let streak = match habits.list(p, date, 1).await {
                     Ok(list) => list
@@ -962,6 +1014,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                         _ => format!("Checked in “{name}” for {date}."),
                     },
                     entity: None,
+                    changed: true,
                 }
             }
             Command::Agenda { date } => {
@@ -987,6 +1040,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     ok: true,
                     message: agenda_message(date, &events, &open, &habits),
                     entity: None,
+                    changed: false,
                 }
             }
             Command::ListTasks => match tasks.list(p, Filter::Open).await {
@@ -1022,6 +1076,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                         ok: true,
                         message,
                         entity: None,
+                        changed: false,
                     }
                 }
                 Err(e) => task_failure(e),

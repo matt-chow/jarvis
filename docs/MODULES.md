@@ -17,7 +17,7 @@ JARVIS commands will refer to them.
 | `journal` | Journal | preview | yes | `/api/v1/journal` | One entry per day with mood (1–5), autosave, month list, day navigation, and deep links (`#/journal?date=`). Editable offline (a new day saves create-only); deleting and links need a connection. |
 | `library` | Library | preview | no | `/api/v1/library` | PDFs/ePubs from Files with status and page progress. PDFs open in a new tab; ePubs download. No in-app reader yet. |
 | `files` | Files | preview | no | `/api/v1/files` | Folders (`#/files?folder=`), streamed multi/drag-drop upload, download, rename/move, delete, usage bar against the quota. |
-| `jarvis` | JARVIS | preview | no | `/api/v1/jarvis/*` | Text command console: preview → approve → results (with links to items), clickable examples, history, and presets (save from any plan, run from chips). Commands: tasks (add, optionally `in project …`; complete; list), projects (new, list with progress), agenda (`what's on [date]`: events, tasks due, overdue, habits left), habit check-ins (`check in <habit> [yesterday]`), note, journal, capture, find. Deterministic parser; no AI provider yet. |
+| `jarvis` | JARVIS | preview | no | `/api/v1/jarvis/*` | Text command console: preview → approve → results (with links to items), clickable examples, history, and presets (save from any plan, run from chips). Automations panel: rules that run a command when a task is completed or a habit is checked in (D-024). Commands: tasks (add, optionally `in project …`; complete; list), projects (new, list with progress), agenda (`what's on [date]`: events, tasks due, overdue, habits left), habit check-ins (`check in <habit> [yesterday]`), note, journal, capture, find. Deterministic parser; no AI provider yet. |
 | `settings` | Settings | ready | no | `/api/v1/auth/*` | Passkeys, device tokens, sign-out. |
 
 **Links** aren't a module either. The `LinkedSection` component appears in the
@@ -38,7 +38,8 @@ provisional (DECISIONS D-013): built from the shared `Panel`, `Button`, and
 | --- | --- | --- |
 | App shell (sidebar, header, tab bar) | `App.tsx` | provisional (Sprint 00 style) |
 | Sign-in / first-run setup | `components/AuthScreen.tsx` | awaiting design integration |
-| Home (status, capture, module grid) | `modules/Home.tsx` | provisional |
+| Home dashboard and widgets | `modules/Home.tsx`, `modules/widgets.tsx` | awaiting design integration |
+| JARVIS automations panel | `modules/AutomationsPanel.tsx` | awaiting design integration |
 | Search | `modules/Search.tsx` | awaiting design integration |
 | Inbox + capture box | `modules/Inbox.tsx`, `components/CaptureBox.tsx` | awaiting design integration |
 | Tasks | `modules/Tasks.tsx` | awaiting design integration |

@@ -69,7 +69,7 @@ part of every slice, not deferred to the end.
 | --- | --- |
 | Habits: weekday schedules, check-ins, streaks, offline (D-020) | ✅ done |
 | Calendar: month/day views, timed/all-day/multi-day/repeating events, tasks due, offline (D-021) | ✅ done |
-| Automation engine | planned |
+| Automations: event-driven rules running pre-approved JARVIS commands (D-024) | ✅ done; time-based triggers need Cron + time zones |
 | Music library, playlists, streaming and offline media | planned (R2 storage and quota implications need review) |
 | Customizable dashboard (widgets, layout saved to the account) | ✅ done |
 

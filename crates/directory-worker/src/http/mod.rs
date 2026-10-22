@@ -2,6 +2,7 @@
 //! No business rules here.
 
 pub mod auth;
+pub mod automations;
 pub mod events;
 pub mod export;
 pub mod files;

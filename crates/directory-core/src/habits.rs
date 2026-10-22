@@ -87,16 +87,16 @@ pub trait HabitRepository {
     async fn delete(&self, owner_id: &str, id: &str) -> Result<bool, String>;
     /// Check-ins of all the owner's habits from `from` to `to` (inclusive).
     async fn checkins(&self, owner_id: &str, from: &str, to: &str) -> Result<Vec<CheckIn>, String>;
-    /// Record a check-in; a repeat is a no-op.
+    /// Record a check-in; a repeat is a no-op. `true` if it was new.
     async fn check_in(
         &self,
         owner_id: &str,
         habit_id: &str,
         date: &str,
         now: i64,
-    ) -> Result<(), String>;
-    /// Remove a check-in; a missing one is a no-op.
-    async fn uncheck(&self, owner_id: &str, habit_id: &str, date: &str) -> Result<(), String>;
+    ) -> Result<bool, String>;
+    /// Remove a check-in; a missing one is a no-op. `true` if one was removed.
+    async fn uncheck(&self, owner_id: &str, habit_id: &str, date: &str) -> Result<bool, String>;
 }
 
 /// Weekday list → bit mask (bit 0 = Monday).
@@ -289,7 +289,8 @@ impl<'a, R: HabitRepository, E: Entropy + ?Sized> HabitService<'a, R, E> {
         }
     }
 
-    /// Mark `date` done (or not). Idempotent, so offline replays are safe.
+    /// Mark `date` done (or not). Idempotent, so offline replays are safe;
+    /// returns the habit and whether anything changed (a repeat changes nothing).
     /// Dates up to one day past the server's UTC date are accepted (time zones).
     pub async fn set_check(
         &self,
@@ -297,19 +298,20 @@ impl<'a, R: HabitRepository, E: Entropy + ?Sized> HabitService<'a, R, E> {
         id: &str,
         date: &str,
         done: bool,
-    ) -> Result<(), HabitError> {
+    ) -> Result<(Habit, bool), HabitError> {
         let date = validate::date(date).map_err(|w| HabitError::Invalid("date", w))?;
         let latest = validate::civil_from_days(self.now.div_euclid(MS_PER_DAY) + 1);
         if date > latest {
             return Err(HabitError::Invalid("date", "in the future"));
         }
-        self.get(p, id).await?;
-        let r = if done {
+        let habit = self.get(p, id).await?;
+        let changed = if done {
             self.repo.check_in(&p.user_id, id, &date, self.now).await
         } else {
             self.repo.uncheck(&p.user_id, id, &date).await
-        };
-        r.map_err(backend)
+        }
+        .map_err(backend)?;
+        Ok((habit, changed))
     }
 }
 
@@ -392,27 +394,33 @@ pub(crate) mod memory {
             habit_id: &str,
             date: &str,
             _now: i64,
-        ) -> Result<(), String> {
+        ) -> Result<bool, String> {
             let mut all = self.1.borrow_mut();
-            if !all
+            if all
                 .iter()
                 .any(|(_, c)| c.habit_id == habit_id && c.date == date)
             {
-                all.push((
-                    owner_id.into(),
-                    CheckIn {
-                        habit_id: habit_id.into(),
-                        date: date.into(),
-                    },
-                ));
+                return Ok(false);
             }
-            Ok(())
+            all.push((
+                owner_id.into(),
+                CheckIn {
+                    habit_id: habit_id.into(),
+                    date: date.into(),
+                },
+            ));
+            Ok(true)
         }
-        async fn uncheck(&self, _owner_id: &str, habit_id: &str, date: &str) -> Result<(), String> {
-            self.1
-                .borrow_mut()
-                .retain(|(_, c)| !(c.habit_id == habit_id && c.date == date));
-            Ok(())
+        async fn uncheck(
+            &self,
+            _owner_id: &str,
+            habit_id: &str,
+            date: &str,
+        ) -> Result<bool, String> {
+            let mut all = self.1.borrow_mut();
+            let before = all.len();
+            all.retain(|(_, c)| !(c.habit_id == habit_id && c.date == date));
+            Ok(all.len() < before)
         }
     }
 }

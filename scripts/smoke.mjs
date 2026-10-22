@@ -515,6 +515,54 @@ async function local() {
       await api.req("DELETE", `/api/v1/events/${event.id}`);
     });
 
+    await check("automations: validated rules fire on completions and check-ins (routes and JARVIS), once, without injection", async () => {
+      const rule = (body) => api.req("POST", "/api/v1/automations", { body });
+      const bad = await rule({ name: "x", trigger: { kind: "task_completed" }, command: "complete {title}" });
+      expect(bad.status === 400 && /only add task/.test(bad.json.message), `not allowed → ${bad.text}`);
+      expect((await rule({ name: "x", trigger: { kind: "task_completed" }, command: "capture {owner}" })).status === 400, "unknown placeholder");
+      const log = (await rule({ name: "Log wins", trigger: { kind: "task_completed" }, command: "journal Finished {title}" })).json;
+      const habitRule = (await rule({ name: "Habit note", trigger: { kind: "habit_checked" }, command: "capture did {title} on {date}" })).json;
+      const day = "2026-10-21";
+      const journal = async () => (await api.req("GET", `/api/v1/journal/${day}`)).json?.body ?? "";
+      const inbox = async () => (await api.req("GET", "/api/v1/inbox")).json.items.map((i) => i.text);
+
+      const task = (await api.req("POST", "/api/v1/tasks", { body: { title: "Ship it" } })).json;
+      const done = (id) => api.req("PATCH", `/api/v1/tasks/${id}?today=${day}`, { body: { status: "done" } });
+      await done(task.id);
+      expect((await journal()).endsWith("Finished Ship it"), `journal → ${await journal()}`);
+      await done(task.id); // already done: no second run
+      expect((await journal()).split("Finished Ship it").length === 2, "fired once");
+      const listed = (await api.req("GET", "/api/v1/automations")).json.automations.find((r) => r.id === log.id);
+      expect(listed.last_ok === true && listed.last_run_at > 0, `last run → ${JSON.stringify(listed)}`);
+
+      const tricky = (await api.req("POST", "/api/v1/tasks", { body: { title: "x; capture injected" } })).json;
+      await done(tricky.id);
+      expect((await journal()).endsWith("Finished x; capture injected") && !(await inbox()).includes("injected"), "values never add steps");
+
+      const habit = (await api.req("POST", "/api/v1/habits", { body: { name: "Floss" } })).json;
+      const check = () => api.req("PUT", `/api/v1/habits/${habit.id}/checkins/${day}`);
+      await check();
+      await check(); // replayed: no second run
+      expect((await inbox()).filter((t) => t === `did Floss on ${day}`).length === 1, `habit rule once → ${await inbox()}`);
+
+      const viaJarvis = (await api.req("POST", "/api/v1/tasks", { body: { title: "Call the bank" } })).json;
+      const plan = (await api.req("POST", "/api/v1/jarvis/plan", { body: { input: "complete call the bank", today: day } })).json;
+      await api.req("POST", `/api/v1/jarvis/plans/${plan.id}/execute?today=${day}`);
+      expect((await journal()).endsWith("Finished Call the bank"), "JARVIS completions fire too");
+
+      await api.req("PATCH", `/api/v1/automations/${log.id}`, { body: { enabled: false } });
+      const quiet = (await api.req("POST", "/api/v1/tasks", { body: { title: "Quiet one" } })).json;
+      await done(quiet.id);
+      expect(!(await journal()).includes("Quiet one"), "disabled rules don't run");
+
+      for (const id of [log.id, habitRule.id]) expect((await api.req("DELETE", `/api/v1/automations/${id}`)).status === 204, "delete rule");
+      for (const t of [task, tricky, viaJarvis, quiet]) await api.req("DELETE", `/api/v1/tasks/${t.id}`);
+      await api.req("DELETE", `/api/v1/habits/${habit.id}`);
+      await api.req("DELETE", `/api/v1/journal/${day}`);
+      for (const i of (await api.req("GET", "/api/v1/inbox")).json.items) await api.req("DELETE", `/api/v1/inbox/${i.id}`);
+      expect((await fetch(`${baseUrl}/api/v1/automations`)).status === 401, "anonymous → 401");
+    });
+
     await check("jarvis presets: save (validated by parsing), list, delete", async () => {
       const bad = await api.req("POST", "/api/v1/jarvis/presets", { body: { name: "Bad", input: "dance" } });
       expect(bad.status === 400 && bad.json.error === "not_understood", `unparseable → ${bad.status}`);

@@ -1,12 +1,16 @@
 //! Habit routes. Every route requires an authenticated owner.
 
 use super::auth::principal;
+use super::automations;
 use super::{error, error_with, json, no_content, read_json};
 use crate::{bindings, d1::D1HabitRepository, entropy::WebCryptoEntropy, try_or_respond};
-use directory_core::habits::{HabitError, HabitPatch, HabitService, NewHabit, DEFAULT_WINDOW_DAYS};
+use directory_core::automations::Event;
+use directory_core::habits::{
+    Habit, HabitError, HabitPatch, HabitService, NewHabit, DEFAULT_WINDOW_DAYS,
+};
 use directory_core::identity::Principal;
 use serde_json::json as body;
-use worker::{Date, Request, Response, Result, RouteContext};
+use worker::{Date, Env, Request, Response, Result, RouteContext};
 
 fn habit_error(e: HabitError) -> Result<Response> {
     match e {
@@ -102,14 +106,31 @@ pub async fn delete(req: Request, rc: RouteContext<()>) -> Result<Response> {
 
 async fn set_check(req: Request, rc: RouteContext<()>, done: bool) -> Result<Response> {
     let c = try_or_respond!(ctx(&req, &rc).await?);
+    let date = param(&rc, "date");
     match c
         .service()
-        .set_check(&c.principal, &param(&rc, "id"), &param(&rc, "date"), done)
+        .set_check(&c.principal, &param(&rc, "id"), &date, done)
         .await
     {
-        Ok(()) => no_content(),
+        Ok((habit, changed)) => {
+            // Only a new check-in fires automations, so replays don't repeat them.
+            if done && changed {
+                checked(&rc.env, &c.principal, &habit, &date).await;
+            }
+            no_content()
+        }
         Err(e) => habit_error(e),
     }
+}
+
+/// Fire "habit checked in" automations (D-024).
+pub(crate) async fn checked(env: &Env, p: &Principal, habit: &Habit, date: &str) {
+    let event = Event::HabitChecked {
+        habit_id: habit.id.clone(),
+        name: habit.name.clone(),
+        date: date.to_owned(),
+    };
+    automations::fire(env, p, event).await;
 }
 
 /// Mark a day done (idempotent).

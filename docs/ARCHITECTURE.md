@@ -94,6 +94,8 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | GET | `/api/v1/links?kind=task|note|project|journal&id=` | session or token | Items linked to an entity, with resolved titles. Links whose other end was deleted are dropped and removed. |
 | POST | `/api/v1/links` | session or token | `{ from: {kind,id}, to: {kind,id} }` → `201 { link_id, kind, id, title }`. Idempotent and symmetric; both ends must exist and be owned. |
 | DELETE | `/api/v1/links/{id}` | session or token | Unlink |
+| GET / POST | `/api/v1/automations` | session or token | List (≤ 20), or create `{ name, trigger: { kind: task_completed, project_id? } | { kind: habit_checked, habit_id? }, command, enabled? }`. The command is validated (allowlisted kinds, ≤ 3 steps, known placeholders). |
+| PATCH / DELETE | `/api/v1/automations/{id}` | session or token | Partial update (re-validated) / delete. `PATCH /tasks/{id}` and `POST /jarvis/plans/{id}/execute` accept `?today=` (local date) for the automations they fire. |
 | GET / PATCH | `/api/v1/preferences` | session or token | Owner preferences (`{ dashboard?: { widgets: [...] } }`). PATCH is partial; `null` resets a field. Widgets are validated against a known list. |
 | GET / POST | `/api/v1/events` | session or token | Every event (repeats not expanded, at most 2,000), or create `{ id?, title, start_date, end_date?, start_time?, end_time?, location?, notes?, repeat?, repeat_until? }` → `201` (`409 exists` on a repeated client id). Times are `HH:MM` local wall-clock; no start time = all day. |
 | GET | `/api/v1/events/agenda?from=&to=` | session or token | Occurrences overlapping the range (≤ 400 days), repeats expanded, all-day first then by time |
@@ -156,6 +158,7 @@ JSON bodies are capped at 64 KiB.
     (keyed `habit_id, date`).
   - `0015`: `events` (local dates/times, `repeat` + `repeat_until`).
   - `0016`: `preferences` (one validated JSON document per owner).
+  - `0017`: `automations` (trigger JSON, command template, last-run status).
 - **R2** bucket `directory-files` is private, with no r2.dev URL or custom domain.
   File content lives at `u/<user_id>/f/<file_id>`; names and folders live in D1.
 - **IndexedDB** database `directory` (v2, adds `outbox`) has a `kv` store with cached

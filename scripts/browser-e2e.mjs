@@ -326,6 +326,31 @@ try {
     await page.waitForText("RECENT NOTES");
   });
 
+  await step("Automations: add a rule in JARVIS, it runs when a task is completed, then delete it", async () => {
+    await page.hash("/jarvis");
+    await page.waitForText("No automations yet.");
+    await page.fill("Automation name", "Log wins");
+    await page.fill("Automation command", "capture finished {title}");
+    await page.click("add automation");
+    await page.waitForText("When any task is completed:");
+    // Complete a task the way the Tasks screen does (with today's local date).
+    const today = localToday();
+    await page.evaluate(`(async () => {
+      const h = { "content-type": "application/json", Origin: location.origin };
+      const t = await (await fetch("/api/v1/tasks", { method: "POST", headers: h, body: JSON.stringify({ title: "Water ferns" }) })).json();
+      await fetch("/api/v1/tasks/" + t.id + "?today=${today}", { method: "PATCH", headers: h, body: JSON.stringify({ status: "done" }) });
+    })()`);
+    const inbox = await page.evaluate(`fetch("/api/v1/inbox").then((r) => r.json())`);
+    if (!inbox.items.some((i) => i.text === "finished Water ferns")) throw new Error(`inbox: ${JSON.stringify(inbox)}`);
+    await page.reload();
+    await page.waitForText("· ok · Captured to your inbox.");
+    await shot("automations");
+    await page.click("Delete “Log wins”");
+    await page.click("confirm delete");
+    await page.waitForText("No automations yet.");
+    await page.evaluate(`fetch("/api/v1/inbox").then((r) => r.json()).then((b) => Promise.all(b.items.map((i) => fetch("/api/v1/inbox/" + i.id, { method: "DELETE", headers: { Origin: location.origin } }))))`);
+  });
+
   await step("Projects: create, add a task from the project, progress updates", async () => {
     await page.hash("/projects");
     await page.waitForText("No active projects");

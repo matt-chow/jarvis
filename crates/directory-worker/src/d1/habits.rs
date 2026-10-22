@@ -170,8 +170,8 @@ impl HabitRepository for D1HabitRepository {
         habit_id: &str,
         date: &str,
         now: i64,
-    ) -> Result<(), String> {
-        stmt(
+    ) -> Result<bool, String> {
+        let r = stmt(
             &self.db,
             "INSERT OR IGNORE INTO habit_checkins (habit_id, owner_id, date, created_at) VALUES (?1, ?2, ?3, ?4)",
             &[text(habit_id), text(owner_id), text(date), int(now)],
@@ -179,11 +179,11 @@ impl HabitRepository for D1HabitRepository {
         .run()
         .await
         .map_err(err)?;
-        Ok(())
+        Ok(changes(&r) > 0)
     }
 
-    async fn uncheck(&self, owner_id: &str, habit_id: &str, date: &str) -> Result<(), String> {
-        stmt(
+    async fn uncheck(&self, owner_id: &str, habit_id: &str, date: &str) -> Result<bool, String> {
+        let r = stmt(
             &self.db,
             "DELETE FROM habit_checkins WHERE owner_id = ?1 AND habit_id = ?2 AND date = ?3",
             &[text(owner_id), text(habit_id), text(date)],
@@ -191,6 +191,6 @@ impl HabitRepository for D1HabitRepository {
         .run()
         .await
         .map_err(err)?;
-        Ok(())
+        Ok(changes(&r) > 0)
     }
 }

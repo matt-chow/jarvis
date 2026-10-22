@@ -515,3 +515,86 @@ fn agenda_and_habit_check_ins() {
         "Friday 2026-12-25 — Overdue: 1 task. Habits left: Stretch."
     );
 }
+
+#[test]
+fn automations_run_approved_commands_when_events_happen() {
+    use crate::automations::memory::MemoryAutomations;
+    use crate::automations::{AutomationService, Event, NewRule, Trigger};
+    const NOW: i64 = 1_792_584_000_000;
+    let f = F::default();
+    let rules = MemoryAutomations::default();
+    let auto = AutomationService::new(&rules, &f.e, NOW);
+    let rule = |name: &str, trigger: Trigger, command: &str| {
+        block_on(auto.create(
+            &me(),
+            NewRule {
+                name: name.into(),
+                trigger,
+                command: command.into(),
+                enabled: None,
+            },
+        ))
+        .unwrap()
+    };
+    let log = rule(
+        "Log wins",
+        Trigger::TaskCompleted { project_id: None },
+        "journal Finished {title}",
+    );
+    let broken = rule(
+        "Follow-up",
+        Trigger::TaskCompleted { project_id: None },
+        "add task tidy up after {title} in project nowhere",
+    );
+    let off = rule(
+        "Off",
+        Trigger::TaskCompleted { project_id: None },
+        "capture should not run",
+    );
+    block_on(auto.update(
+        &me(),
+        &off.id,
+        crate::automations::RulePatch {
+            enabled: Some(false),
+            ..Default::default()
+        },
+    ))
+    .unwrap();
+    rule(
+        "Habit only",
+        Trigger::HabitChecked { habit_id: None },
+        "capture habit {title}",
+    );
+
+    let event = Event::TaskCompleted {
+        title: "Pay rent".into(),
+        project_id: None,
+        project_name: None,
+        date: TODAY.into(),
+    };
+    let ran = block_on(auto.fire(&me(), &event, &f.svc(NOW), &f));
+    assert_eq!(ran, 2, "enabled task rules only");
+
+    let entry = block_on(f.journal.get("u1", TODAY)).unwrap().unwrap();
+    assert_eq!(entry.body, "Finished Pay rent");
+    assert!(
+        f.inbox.0.borrow().is_empty(),
+        "disabled and habit rules didn't run"
+    );
+    let stored = |id: &str| {
+        rules
+            .0
+            .borrow()
+            .iter()
+            .find(|r| r.id == id)
+            .cloned()
+            .unwrap()
+    };
+    assert_eq!(stored(&log.id).last_ok, Some(true));
+    assert_eq!(
+        stored(&broken.id).last_message.as_deref(),
+        Some("No active project matches “nowhere”.")
+    );
+    assert_eq!(stored(&broken.id).last_ok, Some(false));
+    assert_eq!(stored(&off.id).last_run_at, None);
+}
