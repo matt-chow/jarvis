@@ -19,3 +19,7 @@ coverage/
 Thumbs.db
 .vscode/*
 !.vscode/extensions.json
+
+# Agent handoff diagnostics (scripts/pre-compact.sh) and personal Claude settings
+.handoff/
+.claude/settings.local.json

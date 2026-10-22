@@ -45,6 +45,9 @@ npm run verify          # fmt, clippy, typecheck, all unit tests, builds, deploy
 npm run dev:worker      # local Worker with D1/R2 (restart after `npm run build`)
 npm run smoke           # API end-to-end on an isolated wrangler dev (or BASE_URL)
 npm run test:browser    # headless browser e2e with virtual passkey (after `npm run build`)
+bash scripts/session-start.sh             # resume briefing (run first; read-only)
+bash scripts/handoff-check.sh             # size of uncommitted work vs handoff thresholds
+bash scripts/handoff.sh --to codex|claude # validate a handoff (see Handoff protocol)
 ```
 
 On Windows with the GNU Rust host, prefix PATH with `~/.cargo/bin`. MinGW
@@ -58,3 +61,32 @@ On Windows with the GNU Rust host, prefix PATH with `~/.cargo/bin`. MinGW
   node environment, `fake-indexeddb`).
 - UI: use the tokens in `src/index.css` (`bg-panel`, `text-muted`,
   `text-accent`, …) and the `Panel`, `Button`, and `StatusChip` components.
+
+<!-- handoff-protocol:start -->
+## Handoff protocol (Claude Code ↔ Codex)
+
+This section is identical in AGENTS.md and CLAUDE.md; `scripts/handoff.sh`
+checks that. Change both copies together. Details: docs/HANDOFF.md.
+
+- **One editor at a time.** Only one CLI works in the tree. Stop one before
+  starting the other.
+- **Start of every session:** run `bash scripts/session-start.sh` (Claude Code
+  runs it automatically as a SessionStart hook). If HANDOVER.md has content,
+  read all of it before editing, and continue from its "Next steps".
+- **Keep handoffs small.** `bash scripts/handoff-check.sh` warns past 300
+  changed lines or at 10 changed files (staged, unstaged, and untracked
+  together). Commit each verified slice (AGENTS.md › Ground rules) instead of
+  handing over large uncommitted work.
+- **Before handing off:** update HANDOVER.md: `Base commit: <short HEAD>`, and
+  the sections Status, In progress, Next steps, and Working tree (what is
+  uncommitted and why). Then run `bash scripts/handoff.sh --to codex|claude`
+  until it reports READY (add `--record` to append to the handoff log).
+- **Never automatic:** agents do not push, deploy, reset, commit to hand off,
+  or create, apply, or drop stashes as part of a handoff. Uncommitted work
+  stays in the tree for the next agent; restoring a stash is the owner's call.
+- **HANDOVER.md is append-or-edit, never wipe.** Keep earlier entries (move
+  finished items to a "Done" list, or clear the file only once the owner
+  confirms the handoff is complete).
+- Before compaction, `scripts/pre-compact.sh` saves a snapshot to `.handoff/`
+  (gitignored). After compaction, re-read it and HANDOVER.md.
+<!-- handoff-protocol:end -->

@@ -106,13 +106,31 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ### Next task
 1. P5 hardening: backup restore (import from the export), error
    monitoring, accessibility pass, iOS check.
-3. Search over events and habits.
+2. Search over events and habits.
 3. Remaining owner decisions: deploy approval, voice, AI provider, reader
-   dependency, music storage (R2 quota).
+   dependency.
 
 ---
 
 ## Log
+
+### 2026-10-22 — Tooling: Claude Code ↔ Codex handoff safeguards
+- **Scripts (bash, read-only unless noted):**
+  - `scripts/session-start.sh`: resume briefing.
+  - `scripts/handoff-check.sh`: size of uncommitted work, 300 lines / 10
+    files thresholds, no double-counting; `--strict`, `--hook-json`.
+  - `scripts/pre-compact.sh`: warning plus a snapshot in gitignored
+    `.handoff/`.
+  - `scripts/handoff.sh --to codex|claude`: validation, with append-only
+    `--record`.
+  - `scripts/test-handoff.sh`: 50 checks in throwaway repos, clean and
+    dirty trees; part of `npm run verify`.
+- **Claude hooks:** `.claude/settings.json` runs SessionStart, PreCompact,
+  and Stop.
+- **Docs:** an identical handoff-protocol section in AGENTS.md and
+  CLAUDE.md (CLAUDE.md also imports AGENTS.md), and docs/HANDOFF.md
+  (switching both ways, safe WIP restoration, HANDOVER.md template).
+- Nothing pushes, deploys, resets, commits, or stashes automatically.
 
 ### 2026-10-22 — M4 slice: Music
 - **Migration 0018:** `playlists`. Schema version 18.

@@ -20,7 +20,8 @@
     "test:rust": "cargo test -p directory-core",
     "test:web": "npm run test -w @directory/web",
     "smoke": "node scripts/smoke.mjs",
-    "verify": "npm run lint && npm test && npm run build && npm run build:worker",
+    "verify": "npm run lint && npm test && npm run test:handoff && npm run build && npm run build:worker",
+    "test:handoff": "bash scripts/test-handoff.sh",
     "deploy": "npm run build && wrangler deploy",
     "test:browser": "node scripts/browser-e2e.mjs",
     "ci": "npm run verify && npm run smoke && npm run test:browser"
