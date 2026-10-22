@@ -17,7 +17,7 @@ JARVIS commands will refer to them.
 | `journal` | Journal | preview | yes | `/api/v1/journal` | One entry per day with mood (1–5), autosave, month list, day navigation, and deep links (`#/journal?date=`). Editable offline (a new day saves create-only); deleting and links need a connection. |
 | `library` | Library | preview | no | `/api/v1/library` | PDFs/ePubs from Files with status and page progress. PDFs open in a new tab; ePubs download. No in-app reader yet. |
 | `files` | Files | preview | no | `/api/v1/files` | Folders (`#/files?folder=`), streamed multi/drag-drop upload, download, rename/move, delete, usage bar against the quota. |
-| `jarvis` | JARVIS | preview | no | `/api/v1/jarvis/*` | Text command console: preview → approve → results (with links to items), clickable examples, history, and presets (save from any plan, run from chips). Commands: tasks (add, optionally `in project …`; complete; list), projects (new, list with progress), note, journal, capture, find. Deterministic parser; no AI provider yet. |
+| `jarvis` | JARVIS | preview | no | `/api/v1/jarvis/*` | Text command console: preview → approve → results (with links to items), clickable examples, history, and presets (save from any plan, run from chips). Commands: tasks (add, optionally `in project …`; complete; list), projects (new, list with progress), agenda (`what's on [date]`: events, tasks due, overdue, habits left), habit check-ins (`check in <habit> [yesterday]`), note, journal, capture, find. Deterministic parser; no AI provider yet. |
 | `settings` | Settings | ready | no | `/api/v1/auth/*` | Passkeys, device tokens, sign-out. |
 
 **Links** aren't a module either. The `LinkedSection` component appears in the

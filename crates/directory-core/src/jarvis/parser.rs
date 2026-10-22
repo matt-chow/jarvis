@@ -5,6 +5,8 @@
 //!                                      · also: task, todo, remind me to
 //!   new project <name>                 · also: add project, create project
 //!   list projects                      · also: projects, show projects
+//!   agenda [<date>]                    · also: what's on [<date>], schedule
+//!   check in <habit> [today|yesterday|YYYY-MM-DD]  · also: check off
 //!   complete <query>                   · also: done, finish, complete task
 //!   note <text>                        · also: add note, new note
 //!   journal <text>                     · also: log, diary
@@ -24,6 +26,8 @@ pub const EXAMPLES: &[&str] = &[
     "add task call the dentist due friday",
     "new project garden; add task plant tomatoes in project garden",
     "list projects",
+    "what's on tomorrow",
+    "check in stretch",
     "complete dentist",
     "note gate code is 4512",
     "journal long walk by the river",
@@ -165,6 +169,47 @@ fn parse_step(step: &str, today: &str) -> Result<Command, ParseError> {
         "list projects" | "show projects" | "projects" | "active projects"
     ) {
         return Ok(Command::ListProjects);
+    }
+    if let Some(rest) = strip(
+        step,
+        &[
+            "what's on",
+            "what is on",
+            "agenda for",
+            "agenda",
+            "schedule for",
+            "schedule",
+        ],
+    ) {
+        let rest = rest.trim_end_matches(['?', '.', '!']).trim();
+        let rest = strip(rest, &["for"]).unwrap_or(rest);
+        let date = if rest.is_empty() {
+            today.to_owned()
+        } else if rest.eq_ignore_ascii_case("yesterday") {
+            validate::add_days(today, -1)
+        } else {
+            parse_date(rest, today).ok_or_else(|| ParseError::BadDate(rest.to_owned()))?
+        };
+        return Ok(Command::Agenda { date });
+    }
+    if let Some(rest) = strip(step, &["check in", "check off", "checkin"]) {
+        let rest = require(rest, "which habit")?;
+        // An optional trailing day: today, yesterday, or YYYY-MM-DD (not weekdays,
+        // which would mean the *next* one).
+        let (name, date) = match rest.rsplit_once(' ') {
+            Some((name, last)) if last.eq_ignore_ascii_case("today") => (name, today.to_owned()),
+            Some((name, last)) if last.eq_ignore_ascii_case("yesterday") => {
+                (name, validate::add_days(today, -1))
+            }
+            Some((name, last)) if validate::date(last).is_ok() => (name, last.to_owned()),
+            _ => (rest, today.to_owned()),
+        };
+        return Ok(Command::CheckHabit {
+            query: name.trim().to_owned(),
+            date,
+            habit_id: None,
+            name: None,
+        });
     }
     if let Some(rest) = strip(
         step,
@@ -462,6 +507,44 @@ mod tests {
         assert_eq!(
             parse("new project", TODAY),
             Err(ParseError::MissingText("project name"))
+        );
+    }
+
+    #[test]
+    fn agenda_and_habit_check_ins() {
+        let one = |s: &str| parse(s, TODAY).unwrap().remove(0);
+        let agenda = |d: &str| Command::Agenda { date: d.into() };
+        assert_eq!(one("agenda"), agenda(TODAY));
+        assert_eq!(one("What's on tomorrow?"), agenda("2026-10-22"));
+        assert_eq!(one("schedule for friday"), agenda("2026-10-23"));
+        assert_eq!(one("what's on yesterday"), agenda("2026-10-20"));
+        assert_eq!(
+            parse("agenda someday", TODAY),
+            Err(ParseError::BadDate("someday".into()))
+        );
+
+        let check = |q: &str, d: &str| Command::CheckHabit {
+            query: q.into(),
+            date: d.into(),
+            habit_id: None,
+            name: None,
+        };
+        assert_eq!(one("check in stretch"), check("stretch", TODAY));
+        assert_eq!(
+            one("check in morning walk yesterday"),
+            check("morning walk", "2026-10-20")
+        );
+        assert_eq!(
+            one("check off read 2026-10-01"),
+            check("read", "2026-10-01")
+        );
+        assert_eq!(
+            one("check in friday prayers"),
+            check("friday prayers", TODAY)
+        );
+        assert_eq!(
+            parse("check in", TODAY),
+            Err(ParseError::MissingText("which habit"))
         );
     }
 }

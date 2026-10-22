@@ -39,8 +39,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
     cross-module picker and deep links.
   - Full JSON data export from Settings.
   - Library of PDFs/ePubs with reading progress.
-  - JARVIS text commands (tasks, projects, notes, journal, capture, list,
-    find) with preview,
+  - JARVIS text commands (tasks, projects, agenda, habit check-ins, notes,
+    journal, capture, list, find) with preview,
     approve, results, history, and saved presets.
   - Universal search (`/` from anywhere), plus JARVIS `find`.
   - PWA install and offline relaunch with the saved session.
@@ -55,7 +55,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | Command | Result (2026-10-22) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
-| `cargo test -p directory-core` | ✅ 93 passed |
+| `cargo test -p directory-core` | ✅ 95 passed |
 | Vitest | ✅ 49 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
 | `npm run test:browser` (headless Edge, virtual passkey) | ✅ 21/21 |
@@ -99,8 +99,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. JARVIS agenda and habit commands ("what's on today", "check in
-   <habit>"), then search over events and habits.
+1. Search over events and habits (SearchSource + JARVIS find).
 2. M4 next: customizable dashboard (Home), then automations.
 3. Remaining owner decisions: deploy approval, voice, AI provider, reader
    dependency, music storage (R2 quota).
@@ -108,6 +107,21 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-22 — M2 slice: JARVIS agenda and habit check-ins
+- **Refactor:** `jarvis::CommandTargets` is now a trait with associated
+  repository types instead of a struct with seven type parameters. The
+  Worker's `Targets` and the test fixture implement it, and the service
+  functions take `&C: CommandTargets`.
+- **Commands:**
+  - `Agenda { date }` (read): events (expanded), tasks due, overdue count,
+    and habits scheduled but not checked.
+  - `CheckHabit` (write): resolved by habit name; the result reports the
+    streak.
+  - Parser: `agenda [date]`, `what's on [date]`, `schedule [for] date`,
+    `check in|check off <habit> [today|yesterday|YYYY-MM-DD]`.
+- **Tests:** core 95 (parser cases; agenda message; check-in with streak;
+  unresolved habit), smoke (agenda + check-in on D1).
 
 ### 2026-10-22 — M4 slice: Calendar (D-021)
 - **Migration 0015:** `events`. Schema version 15.

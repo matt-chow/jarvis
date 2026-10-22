@@ -1,5 +1,9 @@
 use super::*;
+use crate::calendar::memory::MemoryEvents;
+use crate::calendar::{CalendarService, NewEvent};
 use crate::entropy::testing::CountingEntropy;
+use crate::habits::memory::MemoryHabits;
+use crate::habits::{HabitService, NewHabit};
 use crate::identity::AuthMethod;
 use crate::inbox::memory::MemoryInbox;
 use crate::journal::testing::MemoryJournal;
@@ -132,30 +136,47 @@ struct F {
     journal: MemoryJournal,
     inbox: MemoryInbox,
     projects: MemoryProjects,
+    events: MemoryEvents,
+    habits: MemoryHabits,
     e: CountingEntropy,
 }
 
-impl F {
-    fn targets(
-        &self,
-    ) -> CommandTargets<
-        '_,
-        MemoryTasks,
-        MemoryNotes,
-        MemoryJournal,
-        MemoryInbox,
-        MemoryTasks,
-        MemoryProjects,
-    > {
-        CommandTargets {
-            tasks: &self.tasks,
-            notes: &self.notes,
-            journal: &self.journal,
-            inbox: &self.inbox,
-            search: &self.tasks,
-            projects: &self.projects,
-        }
+impl CommandTargets for F {
+    type Tasks = MemoryTasks;
+    type Notes = MemoryNotes;
+    type Journal = MemoryJournal;
+    type Inbox = MemoryInbox;
+    type Search = MemoryTasks;
+    type Projects = MemoryProjects;
+    type Events = MemoryEvents;
+    type Habits = MemoryHabits;
+    fn events(&self) -> &MemoryEvents {
+        &self.events
     }
+    fn habits(&self) -> &MemoryHabits {
+        &self.habits
+    }
+    fn tasks(&self) -> &MemoryTasks {
+        &self.tasks
+    }
+    fn notes(&self) -> &MemoryNotes {
+        &self.notes
+    }
+    fn journal(&self) -> &MemoryJournal {
+        &self.journal
+    }
+    fn inbox(&self) -> &MemoryInbox {
+        &self.inbox
+    }
+    fn search(&self) -> &MemoryTasks {
+        &self.tasks
+    }
+    fn projects(&self) -> &MemoryProjects {
+        &self.projects
+    }
+}
+
+impl F {
     fn svc(&self, now: i64) -> JarvisService<'_, MemoryPlans, CountingEntropy> {
         JarvisService::new(&self.plans, &self.e, now)
     }
@@ -167,13 +188,10 @@ impl F {
             input: input.into(),
             today: TODAY.into(),
         };
-        block_on(
-            self.svc(now)
-                .plan(p, &DeterministicParser, req, self.targets()),
-        )
+        block_on(self.svc(now).plan(p, &DeterministicParser, req, self))
     }
     fn execute(&self, id: &str, now: i64) -> Result<Plan, JarvisError> {
-        block_on(self.svc(now).execute(&me(), id, self.targets()))
+        block_on(self.svc(now).execute(&me(), id, self))
     }
 }
 
@@ -376,7 +394,7 @@ fn cancel_expiry_and_ownership() {
         method: AuthMethod::Session,
     };
     assert_eq!(
-        block_on(f.svc(1_500).execute(&other, &c.id, f.targets())).unwrap_err(),
+        block_on(f.svc(1_500).execute(&other, &c.id, &f)).unwrap_err(),
         JarvisError::NotFound
     );
     assert!(f.plan_as(&other, "list tasks", 1_500).unwrap().results[0]
@@ -400,10 +418,7 @@ fn input_validation() {
         today: "yesterday".into(),
     };
     assert!(matches!(
-        block_on(
-            f.svc(1)
-                .plan(&me(), &DeterministicParser, bad_today, f.targets())
-        ),
+        block_on(f.svc(1).plan(&me(), &DeterministicParser, bad_today, &f)),
         Err(JarvisError::Invalid("today", _))
     ));
 }
@@ -428,5 +443,75 @@ fn find_is_read_only_and_links_the_top_hit() {
     assert_eq!(
         f.plan("find xylophone").unwrap().results[0].message,
         "Nothing matches “xylophone”."
+    );
+}
+
+#[test]
+fn agenda_and_habit_check_ins() {
+    // Noon UTC on TODAY: habit check-ins can't be in the server's future.
+    const NOW: i64 = 1_792_584_000_000;
+    let f = F::default();
+    let habit = block_on(HabitService::new(&f.habits, &f.e, NOW).create(
+        &me(),
+        NewHabit {
+            name: "Stretch".into(),
+            ..Default::default()
+        },
+    ))
+    .unwrap();
+    block_on(HabitService::new(&f.habits, &f.e, NOW).set_check(
+        &me(),
+        &habit.id,
+        "2026-10-20",
+        true,
+    ))
+    .unwrap();
+    let cal = CalendarService::new(&f.events, &f.e, NOW);
+    for (title, time) in [("Standup", Some("09:30")), ("Trip", None)] {
+        block_on(cal.create(
+            &me(),
+            NewEvent {
+                title: title.into(),
+                start_date: TODAY.into(),
+                start_time: time.map(Into::into),
+                ..Default::default()
+            },
+        ))
+        .unwrap();
+    }
+    let add = f
+        .plan_as(&me(), "add task pay rent due today", NOW)
+        .unwrap();
+    f.execute(&add.id, NOW).unwrap();
+
+    let agenda = f.plan_as(&me(), "agenda", NOW).unwrap();
+    assert_eq!(agenda.status, PlanStatus::Executed);
+    assert_eq!(
+        agenda.results[0].message,
+        "Wednesday 2026-10-21 — Events: all day Trip; 09:30 Standup. Due: pay rent. Habits left: Stretch."
+    );
+
+    let check = f.plan_as(&me(), "check in STRETCH", NOW).unwrap();
+    assert_eq!(
+        check.actions[0].summary,
+        "Check in “Stretch” for 2026-10-21"
+    );
+    let done = f.execute(&check.id, NOW).unwrap();
+    assert_eq!(
+        done.results[0].message,
+        "Checked in “Stretch” for 2026-10-21 (2-day streak)."
+    );
+    let after = f.plan_as(&me(), "what's on today", NOW).unwrap();
+    assert!(!after.results[0].message.contains("Habits left"));
+
+    assert!(matches!(
+        f.plan_as(&me(), "check in nope", NOW),
+        Err(JarvisError::Unresolved(m)) if m == "No habit matches “nope”."
+    ));
+    // Still-open tasks due earlier count as overdue relative to the day asked about.
+    let later = f.plan_as(&me(), "agenda 2026-12-25", NOW).unwrap();
+    assert_eq!(
+        later.results[0].message,
+        "Friday 2026-12-25 — Overdue: 1 task. Habits left: Stretch."
     );
 }

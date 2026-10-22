@@ -9,7 +9,9 @@
 pub mod parser;
 pub mod presets;
 
+use crate::calendar::{CalendarService, EventRepository, Occurrence};
 use crate::entropy::{is_id, new_id, Entropy};
+use crate::habits::{HabitError, HabitRepository, HabitService, HabitView};
 use crate::identity::Principal;
 use crate::inbox::{Capture, InboxError, InboxRepository, InboxService};
 use crate::journal::{JournalError, JournalRepository, JournalService};
@@ -46,6 +48,17 @@ pub enum Command {
         name: String,
     },
     ListProjects,
+    /// Events, tasks due, and habits still open on `date`.
+    Agenda {
+        date: String,
+    },
+    /// `habit_id`/`name` are filled in when the plan is resolved.
+    CheckHabit {
+        query: String,
+        date: String,
+        habit_id: Option<String>,
+        name: Option<String>,
+    },
     /// `task_id`/`title` are filled in when the plan is resolved.
     CompleteTask {
         query: String,
@@ -89,7 +102,9 @@ fn quote(s: &str, max: usize) -> String {
 impl Command {
     pub fn risk(&self) -> Risk {
         match self {
-            Self::ListTasks | Self::ListProjects | Self::Find { .. } => Risk::Read,
+            Self::ListTasks | Self::ListProjects | Self::Agenda { .. } | Self::Find { .. } => {
+                Risk::Read
+            }
             _ => Risk::Write,
         }
     }
@@ -114,6 +129,18 @@ impl Command {
             }
             Self::CreateProject { name } => format!("Create project {}", quote(name, 80)),
             Self::ListProjects => "List active projects".into(),
+            Self::Agenda { date } => format!("Show the agenda for {date}"),
+            Self::CheckHabit {
+                name: Some(n),
+                date,
+                ..
+            } => format!("Check in {} for {date}", quote(n, 80)),
+            Self::CheckHabit { query, date, .. } => {
+                format!(
+                    "Check in the habit matching {} for {date}",
+                    quote(query, 80)
+                )
+            }
             Self::CompleteTask { title: Some(t), .. } => format!("Complete task {}", quote(t, 80)),
             Self::CompleteTask { query, .. } => {
                 format!("Complete the task matching {}", quote(query, 80))
@@ -259,14 +286,25 @@ pub trait JarvisRepository {
     async fn history(&self, owner_id: &str, limit: u32) -> Result<Vec<Plan>, String>;
 }
 
-/// Module repositories commands execute through.
-pub struct CommandTargets<'a, T, N, J, I, S, Pj> {
-    pub tasks: &'a T,
-    pub notes: &'a N,
-    pub journal: &'a J,
-    pub inbox: &'a I,
-    pub search: &'a S,
-    pub projects: &'a Pj,
+/// Module repositories commands execute through, provided by each host
+/// (the Worker's D1 adapters, in-memory fakes in tests).
+pub trait CommandTargets {
+    type Tasks: TaskRepository;
+    type Notes: NoteRepository;
+    type Journal: JournalRepository;
+    type Inbox: InboxRepository;
+    type Search: SearchSource;
+    type Projects: ProjectRepository;
+    type Events: EventRepository;
+    type Habits: HabitRepository;
+    fn tasks(&self) -> &Self::Tasks;
+    fn notes(&self) -> &Self::Notes;
+    fn journal(&self) -> &Self::Journal;
+    fn inbox(&self) -> &Self::Inbox;
+    fn search(&self) -> &Self::Search;
+    fn projects(&self) -> &Self::Projects;
+    fn events(&self) -> &Self::Events;
+    fn habits(&self) -> &Self::Habits;
 }
 
 fn backend(e: String) -> JarvisError {
@@ -302,6 +340,82 @@ fn journal_failure(e: JournalError) -> ActionResult {
         JournalError::Conflict(_) => "The journal changed at the same time; try again.".into(),
         _ => "The journal service is unavailable.".into(),
     })
+}
+
+fn habit_failure(e: HabitError) -> ActionResult {
+    failure(match e {
+        HabitError::Invalid(f, w) => format!("Invalid {f}: {w}."),
+        HabitError::NotFound => "That habit no longer exists.".into(),
+        _ => "The habits service is unavailable.".into(),
+    })
+}
+
+const WEEKDAY_NAMES: [&str; 7] = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+];
+
+/// "Thursday 2026-10-22 — 09:30 Standup; all day Trip. Due: Pay rent. …"
+fn agenda_message(
+    date: &str,
+    events: &[Occurrence],
+    open: &[tasks::Task],
+    habits: &[HabitView],
+) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if !events.is_empty() {
+        let list: Vec<String> = events
+            .iter()
+            .take(LIST_PREVIEW)
+            .map(|o| match &o.start_time {
+                Some(t) => format!("{t} {}", o.title),
+                None => format!("all day {}", o.title),
+            })
+            .collect();
+        parts.push(format!("Events: {}", list.join("; ")));
+    }
+    let due: Vec<&str> = open
+        .iter()
+        .filter(|t| t.due_date.as_deref() == Some(date))
+        .map(|t| t.title.as_str())
+        .collect();
+    if !due.is_empty() {
+        parts.push(format!("Due: {}", due.join("; ")));
+    }
+    let overdue = open
+        .iter()
+        .filter(|t| t.due_date.as_deref().is_some_and(|d| d < date))
+        .count();
+    if overdue > 0 {
+        parts.push(format!(
+            "Overdue: {overdue} task{}",
+            if overdue == 1 { "" } else { "s" }
+        ));
+    }
+    let weekday = validate::weekday(date) as u8;
+    let left: Vec<&str> = habits
+        .iter()
+        .filter(|h| {
+            !h.habit.archived
+                && h.habit.days.contains(&weekday)
+                && !h.checkins.iter().any(|c| c == date)
+        })
+        .map(|h| h.habit.name.as_str())
+        .collect();
+    if !left.is_empty() {
+        parts.push(format!("Habits left: {}", left.join(", ")));
+    }
+    let day = format!("{} {date}", WEEKDAY_NAMES[weekday as usize]);
+    if parts.is_empty() {
+        format!("{day}: nothing scheduled.")
+    } else {
+        format!("{day} — {}.", parts.join(". "))
+    }
 }
 
 fn project_failure(e: ProjectError) -> ActionResult {
@@ -382,21 +496,16 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
     }
 
     /// Interpret and resolve `req` into a plan. Read-only plans execute now.
-    pub async fn plan<P, T, N, J, I, S, Pj>(
+    pub async fn plan<P, C>(
         &self,
         p: &Principal,
         provider: &P,
         req: PlanRequest,
-        targets: CommandTargets<'_, T, N, J, I, S, Pj>,
+        targets: &C,
     ) -> Result<Plan, JarvisError>
     where
         P: IntentProvider,
-        T: TaskRepository,
-        N: NoteRepository,
-        J: JournalRepository,
-        I: InboxRepository,
-        S: SearchSource,
-        Pj: ProjectRepository,
+        C: CommandTargets,
     {
         let input = req.input.trim();
         if input.chars().count() > MAX_INPUT {
@@ -406,9 +515,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         let commands = provider.interpret(input, &today).await?;
         let mut actions = Vec::with_capacity(commands.len());
         for command in commands {
-            let command = self
-                .resolve(p, command, &actions, targets.tasks, targets.projects)
-                .await?;
+            let command = self.resolve(p, command, &actions, targets).await?;
             actions.push(PlannedAction {
                 summary: command.summary(),
                 risk: command.risk(),
@@ -428,7 +535,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
             results: vec![],
         };
         if !requires_approval {
-            let (status, results) = self.run(p, &plan.actions, &targets).await;
+            let (status, results) = self.run(p, &plan.actions, targets).await;
             plan.status = status;
             plan.results = results;
         }
@@ -437,17 +544,34 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
     }
 
     /// Fill in references the user described by name.
-    async fn resolve<T: TaskRepository, Pj: ProjectRepository>(
+    async fn resolve<C: CommandTargets>(
         &self,
         p: &Principal,
         command: Command,
         earlier: &[PlannedAction],
-        tasks: &T,
-        projects: &Pj,
+        t: &C,
     ) -> Result<Command, JarvisError> {
         match command {
+            Command::CheckHabit { query, date, .. } => {
+                let habits = HabitService::new(t.habits(), self.entropy, self.now)
+                    .list(p, &date, 1)
+                    .await
+                    .map_err(|e| match e {
+                        HabitError::Backend(b) => JarvisError::Backend(b),
+                        _ => JarvisError::Unresolved("Couldn't read your habits.".into()),
+                    })?;
+                let active: Vec<_> = habits.into_iter().filter(|h| !h.habit.archived).collect();
+                let h = pick(&active, |h| &h.habit.name, &query)
+                    .map_err(|m| ambiguity(&query, "habit", &m, |h| &h.habit.name))?;
+                Ok(Command::CheckHabit {
+                    habit_id: Some(h.habit.id.clone()),
+                    name: Some(h.habit.name.clone()),
+                    query,
+                    date,
+                })
+            }
             Command::CompleteTask { query, .. } => {
-                let open = TaskService::new(tasks, self.entropy, self.now)
+                let open = TaskService::new(t.tasks(), self.entropy, self.now)
                     .list(p, Filter::Open)
                     .await
                     .map_err(|e| match e {
@@ -468,7 +592,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                 project: Some(query),
                 ..
             } => {
-                let active = ProjectService::new(projects, self.entropy, self.now)
+                let active = ProjectService::new(t.projects(), self.entropy, self.now)
                     .list(p, false)
                     .await
                     .map_err(|e| match e {
@@ -499,19 +623,14 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
     }
 
     /// Approve and run a pending plan (exactly once).
-    pub async fn execute<T, N, J, I, S, Pj>(
+    pub async fn execute<C>(
         &self,
         p: &Principal,
         id: &str,
-        targets: CommandTargets<'_, T, N, J, I, S, Pj>,
+        targets: &C,
     ) -> Result<Plan, JarvisError>
     where
-        T: TaskRepository,
-        N: NoteRepository,
-        J: JournalRepository,
-        I: InboxRepository,
-        S: SearchSource,
-        Pj: ProjectRepository,
+        C: CommandTargets,
     {
         let plan = self.load(p, id).await?;
         if plan.status != PlanStatus::Pending {
@@ -527,7 +646,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
             let current = self.load(p, id).await?;
             return Err(JarvisError::NotPending(current.status));
         }
-        let (status, results) = self.run(p, &plan.actions, &targets).await;
+        let (status, results) = self.run(p, &plan.actions, targets).await;
         self.repo
             .finish(&p.user_id, id, status, &results)
             .await
@@ -576,19 +695,14 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
     }
 
     /// Run actions in order; stop at the first failure.
-    async fn run<T, N, J, I, S, Pj>(
+    async fn run<C>(
         &self,
         p: &Principal,
         actions: &[PlannedAction],
-        t: &CommandTargets<'_, T, N, J, I, S, Pj>,
+        t: &C,
     ) -> (PlanStatus, Vec<ActionResult>)
     where
-        T: TaskRepository,
-        N: NoteRepository,
-        J: JournalRepository,
-        I: InboxRepository,
-        S: SearchSource,
-        Pj: ProjectRepository,
+        C: CommandTargets,
     {
         let mut results = Vec::with_capacity(actions.len());
         for action in actions {
@@ -602,21 +716,11 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         (PlanStatus::Executed, results)
     }
 
-    async fn run_one<T, N, J, I, S, Pj>(
-        &self,
-        p: &Principal,
-        command: &Command,
-        t: &CommandTargets<'_, T, N, J, I, S, Pj>,
-    ) -> ActionResult
+    async fn run_one<C>(&self, p: &Principal, command: &Command, t: &C) -> ActionResult
     where
-        T: TaskRepository,
-        N: NoteRepository,
-        J: JournalRepository,
-        I: InboxRepository,
-        S: SearchSource,
-        Pj: ProjectRepository,
+        C: CommandTargets,
     {
-        let tasks = TaskService::new(t.tasks, self.entropy, self.now);
+        let tasks = TaskService::new(t.tasks(), self.entropy, self.now);
         let entity = |kind, id: &str| {
             Some(EntityRef {
                 kind,
@@ -633,7 +737,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                 // A project created earlier in this plan is looked up by its exact name now.
                 let project_id = match (project, project_id) {
                     (Some(name), None) => {
-                        let active = match ProjectService::new(t.projects, self.entropy, self.now)
+                        let active = match ProjectService::new(t.projects(), self.entropy, self.now)
                             .list(p, false)
                             .await
                         {
@@ -674,7 +778,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     name: name.clone(),
                     description: None,
                 };
-                match ProjectService::new(t.projects, self.entropy, self.now)
+                match ProjectService::new(t.projects(), self.entropy, self.now)
                     .create(p, input)
                     .await
                 {
@@ -687,7 +791,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                 }
             }
             Command::ListProjects => {
-                let active = match ProjectService::new(t.projects, self.entropy, self.now)
+                let active = match ProjectService::new(t.projects(), self.entropy, self.now)
                     .list(p, false)
                     .await
                 {
@@ -756,7 +860,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     body: Some(body.clone()),
                     ..Default::default()
                 };
-                match NoteService::new(t.notes, self.entropy, self.now)
+                match NoteService::new(t.notes(), self.entropy, self.now)
                     .create(p, input)
                     .await
                 {
@@ -768,18 +872,20 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     Err(e) => note_failure(e),
                 }
             }
-            Command::AppendJournal { date, text } => match JournalService::new(t.journal, self.now)
-                .append(p, date, text)
-                .await
-            {
-                Ok(e) => ActionResult {
-                    ok: true,
-                    message: format!("Added to the journal for {}.", e.date),
-                    entity: entity(EntityKind::Journal, &e.date),
-                },
-                Err(e) => journal_failure(e),
-            },
-            Command::Capture { text } => match InboxService::new(t.inbox, self.entropy, self.now)
+            Command::AppendJournal { date, text } => {
+                match JournalService::new(t.journal(), self.now)
+                    .append(p, date, text)
+                    .await
+                {
+                    Ok(e) => ActionResult {
+                        ok: true,
+                        message: format!("Added to the journal for {}.", e.date),
+                        entity: entity(EntityKind::Journal, &e.date),
+                    },
+                    Err(e) => journal_failure(e),
+                }
+            }
+            Command::Capture { text } => match InboxService::new(t.inbox(), self.entropy, self.now)
                 .capture(
                     p,
                     Capture {
@@ -796,7 +902,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                 },
                 Err(e) => inbox_failure(e),
             },
-            Command::Find { query } => match search::search(t.search, p, query).await {
+            Command::Find { query } => match search::search(t.search(), p, query).await {
                 Ok(hits) if hits.is_empty() => ActionResult {
                     ok: true,
                     message: format!("Nothing matches “{query}”."),
@@ -823,6 +929,66 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                 Err(SearchError::Invalid(why)) => failure(format!("Can't search for that: {why}.")),
                 Err(SearchError::Backend(_)) => failure("Search is unavailable.".into()),
             },
+            Command::CheckHabit {
+                habit_id: None,
+                query,
+                ..
+            } => failure(format!("No habit was resolved for “{query}”.")),
+            Command::CheckHabit {
+                habit_id: Some(id),
+                name,
+                date,
+                ..
+            } => {
+                let habits = HabitService::new(t.habits(), self.entropy, self.now);
+                if let Err(e) = habits.set_check(p, id, date, true).await {
+                    return habit_failure(e);
+                }
+                let name = name.as_deref().unwrap_or("the habit");
+                // The streak as of the checked day.
+                let streak = match habits.list(p, date, 1).await {
+                    Ok(list) => list
+                        .into_iter()
+                        .find(|h| &h.habit.id == id)
+                        .map(|h| h.streak),
+                    Err(_) => None,
+                };
+                ActionResult {
+                    ok: true,
+                    message: match streak {
+                        Some(n) if n > 1 => {
+                            format!("Checked in “{name}” for {date} ({n}-day streak).")
+                        }
+                        _ => format!("Checked in “{name}” for {date}."),
+                    },
+                    entity: None,
+                }
+            }
+            Command::Agenda { date } => {
+                let events = match CalendarService::new(t.events(), self.entropy, self.now)
+                    .agenda(p, date, date)
+                    .await
+                {
+                    Ok(o) => o,
+                    Err(_) => return failure("The calendar is unavailable.".into()),
+                };
+                let open = match tasks.list(p, Filter::Open).await {
+                    Ok(open) => open,
+                    Err(e) => return task_failure(e),
+                };
+                let habits = match HabitService::new(t.habits(), self.entropy, self.now)
+                    .list(p, date, 1)
+                    .await
+                {
+                    Ok(h) => h,
+                    Err(e) => return habit_failure(e),
+                };
+                ActionResult {
+                    ok: true,
+                    message: agenda_message(date, &events, &open, &habits),
+                    entity: None,
+                }
+            }
             Command::ListTasks => match tasks.list(p, Filter::Open).await {
                 Ok(open) => {
                     let mut top: Vec<&tasks::Task> =

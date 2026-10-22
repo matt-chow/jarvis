@@ -3,8 +3,9 @@
 use super::auth::principal;
 use super::{error, error_with, json, no_content, read_json};
 use crate::d1::{
-    D1InboxRepository, D1JarvisRepository, D1JournalRepository, D1NoteRepository,
-    D1PresetRepository, D1ProjectRepository, D1SearchSource, D1TaskRepository,
+    D1EventRepository, D1HabitRepository, D1InboxRepository, D1JarvisRepository,
+    D1JournalRepository, D1NoteRepository, D1PresetRepository, D1ProjectRepository, D1SearchSource,
+    D1TaskRepository,
 };
 use crate::{bindings, entropy::WebCryptoEntropy, try_or_respond};
 use directory_core::identity::Principal;
@@ -52,17 +53,9 @@ struct Targets {
     inbox: D1InboxRepository,
     search: D1SearchSource,
     projects: D1ProjectRepository,
+    events: D1EventRepository,
+    habits: D1HabitRepository,
 }
-
-type Borrowed<'a> = CommandTargets<
-    'a,
-    D1TaskRepository,
-    D1NoteRepository,
-    D1JournalRepository,
-    D1InboxRepository,
-    D1SearchSource,
-    D1ProjectRepository,
->;
 
 impl Targets {
     fn from_env(env: &Env) -> Result<Self> {
@@ -74,18 +67,44 @@ impl Targets {
             inbox: D1InboxRepository::new(db()?),
             search: D1SearchSource::new(db()?),
             projects: D1ProjectRepository::new(db()?),
+            events: D1EventRepository::new(db()?),
+            habits: D1HabitRepository::new(db()?),
         })
     }
+}
 
-    fn borrow(&self) -> Borrowed<'_> {
-        CommandTargets {
-            tasks: &self.tasks,
-            notes: &self.notes,
-            journal: &self.journal,
-            inbox: &self.inbox,
-            search: &self.search,
-            projects: &self.projects,
-        }
+impl CommandTargets for Targets {
+    type Tasks = D1TaskRepository;
+    type Notes = D1NoteRepository;
+    type Journal = D1JournalRepository;
+    type Inbox = D1InboxRepository;
+    type Search = D1SearchSource;
+    type Projects = D1ProjectRepository;
+    type Events = D1EventRepository;
+    type Habits = D1HabitRepository;
+    fn events(&self) -> &D1EventRepository {
+        &self.events
+    }
+    fn habits(&self) -> &D1HabitRepository {
+        &self.habits
+    }
+    fn tasks(&self) -> &D1TaskRepository {
+        &self.tasks
+    }
+    fn notes(&self) -> &D1NoteRepository {
+        &self.notes
+    }
+    fn journal(&self) -> &D1JournalRepository {
+        &self.journal
+    }
+    fn inbox(&self) -> &D1InboxRepository {
+        &self.inbox
+    }
+    fn search(&self) -> &D1SearchSource {
+        &self.search
+    }
+    fn projects(&self) -> &D1ProjectRepository {
+        &self.projects
     }
 }
 
@@ -125,7 +144,7 @@ pub async fn plan(mut req: Request, rc: RouteContext<()>) -> Result<Response> {
     let targets = Targets::from_env(&rc.env)?;
     match c
         .service()
-        .plan(&c.principal, &DeterministicParser, input, targets.borrow())
+        .plan(&c.principal, &DeterministicParser, input, &targets)
         .await
     {
         Ok(plan) => json(200, &plan),
@@ -138,7 +157,7 @@ pub async fn execute(req: Request, rc: RouteContext<()>) -> Result<Response> {
     let targets = Targets::from_env(&rc.env)?;
     match c
         .service()
-        .execute(&c.principal, &id_param(&rc), targets.borrow())
+        .execute(&c.principal, &id_param(&rc), &targets)
         .await
     {
         Ok(plan) => json(200, &plan),

@@ -483,6 +483,27 @@ async function local() {
       await api.req("DELETE", `/api/v1/projects/${project.id}`);
     });
 
+    await check("jarvis agenda and habit check-ins run through the calendar and habits modules", async () => {
+      const plan = (input) => api.req("POST", "/api/v1/jarvis/plan", { body: { input, today: "2026-10-21" } });
+      const habit = (await api.req("POST", "/api/v1/habits", { body: { name: "Smoke Read" } })).json;
+      const event = (await api.req("POST", "/api/v1/events", { body: { title: "Smoke standup", start_date: "2026-10-21", start_time: "09:00" } })).json;
+
+      const agenda = await plan("what's on today");
+      expect(agenda.json.status === "executed", agenda.text);
+      const message = agenda.json.results[0].message;
+      expect(message.startsWith("Wednesday 2026-10-21 — Events: 09:00 Smoke standup") && message.includes("Habits left: Smoke Read"), message);
+
+      const check = await plan("check in smoke read");
+      expect(check.json.status === "pending" && check.json.actions[0].summary === "Check in “Smoke Read” for 2026-10-21", check.text);
+      const ran = await api.req("POST", `/api/v1/jarvis/plans/${check.json.id}/execute`);
+      expect(ran.json.results[0].message === "Checked in “Smoke Read” for 2026-10-21.", ran.text);
+      const habits = (await api.req("GET", "/api/v1/habits?today=2026-10-21")).json.habits;
+      expect(habits.find((h) => h.id === habit.id).checkins.includes("2026-10-21"), "checked in on the server");
+
+      await api.req("DELETE", `/api/v1/habits/${habit.id}`);
+      await api.req("DELETE", `/api/v1/events/${event.id}`);
+    });
+
     await check("jarvis presets: save (validated by parsing), list, delete", async () => {
       const bad = await api.req("POST", "/api/v1/jarvis/presets", { body: { name: "Bad", input: "dance" } });
       expect(bad.status === 400 && bad.json.error === "not_understood", `unparseable → ${bad.status}`);
