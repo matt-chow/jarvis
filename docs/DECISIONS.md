@@ -136,8 +136,29 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-018 — Offline document edits: coalesced, versioned saves and stored conflicts
+**Status:** accepted (Notes, Journal)
+- **Coalescing:** autosaved edits to one note or journal day made while
+  offline (or while other changes are queued) update a single outbox entry
+  in place (`merge` key = document key, `rev` bumped). That entry keeps the
+  server version the edits started from (`base`).
+- **Versioned replay:** saves send `expected_updated_at: base`. Notes created
+  offline have no base (their first save overwrites the copy just created).
+  A journal day that had no entry uses `0`, which the server treats as
+  create only, so a day written on another device is never overwritten
+  silently.
+- **In-flight edits:** if the entry changed while its save was in flight, the
+  replay keeps it and rebases it onto the version it just wrote, instead of
+  deleting it. A replay that sees new work queued mid-run goes round again.
+- **Conflicts:** a `409 conflict` during replay drops the entry and stores
+  `conflict:<doc>` = `{ mine, theirs }` in IndexedDB. The app shows an alert,
+  and the editor shows the existing "use theirs / keep mine" banner when the
+  document is open (immediately, or the next time it's opened). Nothing is
+  merged automatically.
+- **Online-only:** pinning, links, journal delete, and inbox triage.
+
 ## D-017 — Offline edits through a replayable outbox
-**Status:** accepted (Tasks, Projects; Inbox capture and discard)
+**Status:** accepted (Tasks, Projects, Notes list create/delete; Inbox capture and discard)
 - **Queueing:** offline changes apply to the local copy immediately and are
   queued in an IndexedDB `outbox` (schema v2), then replayed in order on load,
   on reconnect, and after each enqueue. While anything is queued, new edits
@@ -149,10 +170,9 @@ operations are ordered so that a failure can only leave a duplicate source
 - **Failure handling:** network, 5xx, and 401 errors stop the replay and keep
   the queue. Other 4xx errors drop that change and show a visible "couldn't
   …" message.
-- **Not yet covered:** notes and journal stay read-only offline; their
-  versioned conflict flow (D-014) needs a queued-conflict UI. Inbox triage
-  stays online-only because it creates items in other modules, and links
-  need a connection.
+- **Documents:** note and journal saves are versioned and coalesced (D-018).
+  Inbox triage stays online-only because it creates items in other modules,
+  and links need a connection.
 
 ## D-013 — Provisional UI until Paper designs land
 **Status:** accepted

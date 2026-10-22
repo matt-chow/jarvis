@@ -13,6 +13,8 @@ export async function runOrQueue<T, R>(opts: {
   list: CachedList<T>;
   noun: string;
   op: Op;
+  /** The document the op touches (e.g. `note:<id>`), so its editor can find it. */
+  doc?: string;
   server: () => Promise<R>;
   fromServer: (current: T[], result: R) => T[];
   applyLocal: (current: T[], op: Op) => T[];
@@ -35,7 +37,7 @@ export async function runOrQueue<T, R>(opts: {
       }
     }
   }
-  await db.enqueue(opts.op);
+  await db.enqueue(opts.op, opts.doc);
   const next = opts.applyLocal(list.latest(), opts.op);
   list.replace(next);
   window.dispatchEvent(new Event(OUTBOX_EVENT));

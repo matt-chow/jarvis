@@ -18,7 +18,8 @@ const small = "min-h-7 px-2 text-[10px]";
 export function Notes({ online }: ModuleProps) {
   const state = useNotes(online);
   const [selected, setSelected] = useState<string>();
-  const readOnly = state.stale || !online;
+  // Notes are editable offline: edits stay on this device and sync later (D-018).
+  const offline = state.stale || !online;
 
   const deepNote = useHashParam("note");
   useEffect(() => {
@@ -40,7 +41,7 @@ export function Notes({ online }: ModuleProps) {
       <Panel
         title={`notes${state.notes ? ` · ${state.notes.length}` : ""}`}
         actions={
-          <Button onClick={() => void create()} variant="primary" disabled={readOnly} className={small}>
+          <Button onClick={() => void create()} variant="primary" disabled={!state.notes} className={small}>
             + new
           </Button>
         }
@@ -50,8 +51,10 @@ export function Notes({ online }: ModuleProps) {
             Moved {state.migrated} note{state.migrated === 1 ? "" : "s"} from this device into your account.
           </p>
         ) : null}
-        {readOnly && state.notes && <p className="mb-3 text-sm text-muted">Offline: notes are read-only.</p>}
-        {state.error && !readOnly && (
+        {offline && state.notes && (
+          <p className="mb-3 text-sm text-muted">Offline: changes are saved on this device and sync when you reconnect. Pinning and links need a connection.</p>
+        )}
+        {state.error && !offline && (
           <p role="alert" className="mb-3 text-sm text-bad">
             {state.error}
           </p>
@@ -97,7 +100,7 @@ export function Notes({ online }: ModuleProps) {
       </Panel>
 
       {selected ? (
-        <NoteEditor key={selected} id={selected} state={state} readOnly={readOnly} />
+        <NoteEditor key={selected} id={selected} state={state} offline={offline} />
       ) : (
         <Panel title="editor">
           <p className="text-sm text-muted">Select or create a note.</p>
@@ -107,14 +110,16 @@ export function Notes({ online }: ModuleProps) {
   );
 }
 
-function NoteEditor({ id, state, readOnly }: { id: string; state: NotesState; readOnly: boolean }) {
+function NoteEditor({ id, state, offline }: { id: string; state: NotesState; offline: boolean }) {
   const { saved } = state;
   const editor = useAutosaveDoc<Note, { title: string; body: string }>({
     cacheKey: `note:${id}`,
     noun: "note",
     load: () => api.note(id),
     fieldsOf: (n) => ({ title: n?.title ?? "", body: n?.body ?? "" }),
+    withFields: (n, f) => ({ ...(n ?? { id, pinned: false, created_at: Date.now(), updated_at: Date.now() }), ...f }),
     save: (f, expected) => api.updateNote(id, { ...f, expected_updated_at: expected }),
+    toOp: (fields, base) => ({ kind: "note.save", id, fields, base }),
     conflictOf: (e) => (e.body as { note?: Note }).note,
     onSaved: saved,
   });
@@ -138,7 +143,8 @@ function NoteEditor({ id, state, readOnly }: { id: string; state: NotesState; re
     );
   }
 
-  const locked = readOnly || editor.fromCache;
+  // Pinning and links are online-only.
+  const online = !offline && !editor.fromCache;
   const togglePin = () =>
     void api.updateNote(id, { pinned: !note.pinned }).then((n) => {
       editor.adopt({ ...n, title: editor.fields.title, body: editor.fields.body });
@@ -154,9 +160,9 @@ function NoteEditor({ id, state, readOnly }: { id: string; state: NotesState; re
             role="status"
             className={`font-mono text-[11px] ${editor.status === "error" || editor.status === "offline" ? "text-bad" : "text-muted"}`}
           >
-            {locked ? "read-only" : SAVE_STATUS_TEXT[editor.status]}
+            {SAVE_STATUS_TEXT[editor.status]}
           </span>
-          <Button className={small} disabled={locked} aria-pressed={note.pinned} onClick={togglePin}>
+          <Button className={small} disabled={!online} aria-pressed={note.pinned} onClick={togglePin}>
             {note.pinned ? "unpin" : "pin"}
           </Button>
         </span>
@@ -168,7 +174,6 @@ function NoteEditor({ id, state, readOnly }: { id: string; state: NotesState; re
       <input
         value={editor.fields.title}
         onChange={(e) => editor.edit({ title: e.target.value })}
-        disabled={locked}
         maxLength={200}
         placeholder="Title (optional: first line is used)"
         aria-label="Note title"
@@ -177,14 +182,13 @@ function NoteEditor({ id, state, readOnly }: { id: string; state: NotesState; re
       <textarea
         value={editor.fields.body}
         onChange={(e) => editor.edit({ body: e.target.value })}
-        disabled={locked}
         maxLength={100000}
         aria-label="Note body"
         placeholder="Start typing…"
         className={`${inputClass} min-h-[50vh] w-full resize-y py-3 font-mono leading-relaxed`}
       />
       <div className="mt-3">
-        <LinkedSection entity={{ kind: "note", id }} disabled={locked} />
+        <LinkedSection entity={{ kind: "note", id }} disabled={!online} />
       </div>
       <div className="mt-3 flex items-center justify-between">
         <span className="font-mono text-[11px] text-muted">created {formatDate(note.created_at)}</span>
@@ -193,12 +197,19 @@ function NoteEditor({ id, state, readOnly }: { id: string; state: NotesState; re
             <Button className={small} onClick={() => setConfirmDelete(false)}>
               keep
             </Button>
-            <Button variant="danger" className={small} onClick={() => void state.remove(id)}>
+            <Button
+              variant="danger"
+              className={small}
+              onClick={() => {
+                editor.discard();
+                void state.remove(id);
+              }}
+            >
               confirm delete
             </Button>
           </span>
         ) : (
-          <Button variant="danger" className={small} disabled={locked} onClick={() => setConfirmDelete(true)}>
+          <Button variant="danger" className={small} onClick={() => setConfirmDelete(true)}>
             delete
           </Button>
         )}

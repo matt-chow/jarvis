@@ -75,6 +75,9 @@ impl From<NoteHead> for NoteSummary {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct NewNote {
+    /// Client-chosen id (offline create); must be a fresh 32-hex id.
+    #[serde(default)]
+    pub id: Option<String>,
     #[serde(default)]
     pub title: Option<String>,
     #[serde(default)]
@@ -99,6 +102,8 @@ pub struct NotePatch {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NoteError {
     Invalid(&'static str, &'static str),
+    /// A client-supplied id is already in use (a replayed offline create).
+    Exists,
     NotFound,
     /// The note changed since `expected_updated_at`; carries the current version.
     Conflict(Box<Note>),
@@ -172,8 +177,25 @@ impl<'a, R: NoteRepository, E: Entropy + ?Sized> NoteService<'a, R, E> {
     }
 
     pub async fn create(&self, p: &Principal, input: NewNote) -> Result<Note, NoteError> {
+        let id = match input.id {
+            Some(id) if !is_id(&id) => {
+                return Err(NoteError::Invalid("id", "expected 32 hex characters"))
+            }
+            Some(id)
+                if self
+                    .repo
+                    .get(&p.user_id, &id)
+                    .await
+                    .map_err(backend)?
+                    .is_some() =>
+            {
+                return Err(NoteError::Exists)
+            }
+            Some(id) => id,
+            None => new_id(self.entropy),
+        };
         let note = Note {
-            id: new_id(self.entropy),
+            id,
             owner_id: p.user_id.clone(),
             title: title(input.title.as_deref().unwrap_or(""))?,
             body: body(input.body.as_deref().unwrap_or(""))?,
@@ -435,5 +457,27 @@ pub(crate) mod tests {
             NoteError::NotFound
         );
         block_on(svc.delete(&me(), &n.id)).unwrap();
+    }
+
+    #[test]
+    fn client_ids_make_offline_creates_idempotent() {
+        let repo = Memory::default();
+        let e = CountingEntropy::default();
+        let svc = NoteService::new(&repo, &e, 1);
+        let new = |id: &str| NewNote {
+            id: Some(id.into()),
+            body: Some("on the plane".into()),
+            ..Default::default()
+        };
+        let id = "a".repeat(32);
+        assert_eq!(block_on(svc.create(&me(), new(&id))).unwrap().id, id);
+        assert_eq!(
+            block_on(svc.create(&me(), new(&id))).unwrap_err(),
+            NoteError::Exists
+        );
+        assert_eq!(
+            block_on(svc.create(&me(), new("short"))).unwrap_err(),
+            NoteError::Invalid("id", "expected 32 hex characters")
+        );
     }
 }

@@ -98,9 +98,9 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | DELETE | `/api/v1/inbox/{id}` | session or token | Discard |
 | POST | `/api/v1/inbox/{id}/triage` | session or token | `{ to: task|note|journal, date? }` → `{ kind, task|note|entry }`. Goes through the target module's service; the target is created before the item is removed. |
 | GET | `/api/v1/journal?from=&to=` | session or token | Summaries (`date, excerpt, mood`) for a range of at most 366 days, newest first |
-| GET / PUT / DELETE | `/api/v1/journal/{YYYY-MM-DD}` | session or token | PUT upserts `{ body?, mood? (1–5 or null), expected_updated_at? }`. A stale version or a same-day create race gets `409 { entry }`. |
+| GET / PUT / DELETE | `/api/v1/journal/{YYYY-MM-DD}` | session or token | PUT upserts `{ body?, mood? (1–5 or null), expected_updated_at? }`. A stale version or a same-day create race gets `409 { entry }`. `expected_updated_at: 0` means create only (an existing entry → 409). |
 | GET | `/api/v1/notes` | session or token | Summaries `{ id, title, excerpt, pinned, … }`, without bodies. Pinned first, then newest. |
-| POST | `/api/v1/notes` | session or token | `{ title?, body?, pinned? }` → `201`. Body ≤ 100k chars (512 KiB request cap). |
+| POST | `/api/v1/notes` | session or token | `{ id?, title?, body?, pinned? }` → `201` (optional client id; a repeat → `409 exists`). Body ≤ 100k chars (512 KiB request cap). |
 | GET / PATCH / DELETE | `/api/v1/notes/{id}` | session or token | PATCH `title, body, pinned, expected_updated_at?`. A stale version gets `409 { error: "conflict", note }`. |
 | GET | `/api/v1/projects[?include=archived]` | session or token | Owner's projects (active only by default) |
 | POST | `/api/v1/projects` | session or token | `{ id?, name, description? }` → `201` (optional client id; a repeat → `409 exists`) |
@@ -146,9 +146,12 @@ JSON bodies are capped at 64 KiB.
 - **R2** bucket `directory-files` is private, with no r2.dev URL or custom domain.
   File content lives at `u/<user_id>/f/<file_id>`; names and folders live in D1.
 - **IndexedDB** database `directory` (v2, adds `outbox`) has a `kv` store with cached
-  copies for read-only offline viewing: health, the last verified session user,
+  copies for offline use: health, the last verified session user,
   task, project, and note lists, each opened note (`note:<id>`), and each
-  journal month and day (`journal:<YYYY-MM>`, `journal:<date>`). It also
+  journal month and day (`journal:<YYYY-MM>`, `journal:<date>`). Unresolved
+  sync conflicts live at `conflict:<doc>` (D-018). Outbox entries carry an
+  optional `doc` key, a `merge` key for coalesced document saves, and a `rev`
+  counter. It also
   has a legacy `notes` store (Sprint 00 Scratchpad), which is migrated into the
   account once and then emptied.
 

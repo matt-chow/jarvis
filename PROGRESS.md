@@ -9,13 +9,17 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   slices are done and `npm run ci` is green. The first deploy is **blocked on
   owner approval** (see the readiness checklist in docs/ARCHITECTURE.md ›
   Deployment). **M2 JARVIS Alpha:** command layer ✅, presets ✅, `find` ✅.
-  Voice is blocked on owner approval. **M3:** universal search ✅ (early).
+  Voice is blocked on owner approval. **M3:** search ✅, files ✅, library ✅,
+  offline editing for tasks, projects, notes, journal, and inbox capture ✅.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
   - Device tokens for native clients and scripts.
   - Settings: passkeys and tokens.
   - Tasks with one level of subtasks: status, priority, due date, notes,
-    Open/Done/All filters, a project filter, and a read-only offline copy.
+    Open/Done/All filters, and a project filter.
+  - Offline editing (queued, synced on reconnect) for tasks, projects,
+    notes, journal, and inbox capture/discard, with conflict choice for
+    notes and journal.
   - Projects: create, rename, describe, archive, delete (tasks are kept),
     progress bars, and a link to the project's tasks.
   - Owner-scoped private file upload, list, download, and delete.
@@ -44,8 +48,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | Command | Result (2026-10-21) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass (2026-10-22). Worker upload 1,323 KiB / 424 KiB gzipped |
-| `cargo test -p directory-core` | ✅ 82 passed |
-| Vitest | ✅ 34 passed |
+| `cargo test -p directory-core` | ✅ 83 passed |
+| Vitest | ✅ 37 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
 | `npm run test:browser` (headless Edge, virtual passkey) | ✅ 18/18 |
 
@@ -60,9 +64,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Search uses SQLite `LIKE`, which is case-insensitive for ASCII only, and
   reads whole note and journal bodies for snippets. Move to FTS5 when data
   grows.
-- Offline editing covers Tasks, Projects, and Inbox capture/discard; notes
-  and journal are read-only offline, and inbox triage and links need a
-  connection. A project deleted offline leaves its tasks showing the old
+- Offline: links, pinning, journal delete, and inbox triage need a
+  connection. A new edit queued in the instant between a replay finishing
+  and the open editor learning the new version can show a spurious
+  conflict (resolved with "keep mine"). A project deleted offline leaves its tasks showing the old
   project until the next sync refresh.
 - `wrangler dev` must be restarted after rebuilding `apps/web/dist`.
 - The repo lives under OneDrive, which slows down and locks `node_modules` and
@@ -87,13 +92,35 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. Offline notes and journal with a queued-conflict UI (D-014 + D-017).
-2. Wiki: notes with `[[wiki links]]` and backlinks (reuse links).
-3. Remaining owner decisions: deploy approval, voice, AI provider.
+1. Wiki: notes with `[[wiki links]]` and backlinks (reuse links).
+2. Remaining owner decisions: deploy approval, voice, AI provider.
 
 ---
 
 ## Log
+
+### 2026-10-22 — M3 slice: Offline notes and journal (D-018)
+- **Core:** `NewNote.id` (client id; `NoteError::Exists` → 409). Journal
+  `expected_updated_at: 0` = create only (tested).
+- **Web:**
+  - `db.ts`: outbox entries gain `doc`/`merge`/`rev`; `enqueueMerged`,
+    `pendingFor`, `settle` (rebase if edited mid-flight), `deleteValue`.
+  - `sync.ts`: `note.create/save/delete` and `journal.save` ops; replay
+    reports new versions and conflicts.
+  - `useSync` stores conflicts (`conflict:<doc>`), alerts, re-runs when work
+    arrives mid-replay, and sends versions/conflicts with `SYNCED_EVENT`.
+  - `useAutosaveDoc` queues offline (status "saved on this device"),
+    restores queued edits and stored conflicts on open, and `discard()`
+    before delete.
+  - Notes and Journal stay editable offline; offline note create/delete.
+- **Fix:** the journal deep-link regex had lost its backslashes
+  (`/^d{4}-…/`), so `#/journal?date=` never matched. Likely cause: shell heredoc
+  edits lose backslashes in this environment (reproduced this session), so
+  edit code containing `\` with the Edit tool.
+- **Tests:** core 83, web 37 (coalescing, versions, conflicts, mid-flight
+  rebase), smoke (note client id, journal create-only), browser e2e 18/18
+  (offline note and journal edits sync; a conflicting journal edit from
+  another device surfaces; keep mine wins; editing with the server down).
 
 ### 2026-10-22 — M3 slice: Offline Projects
 - **Core:** `NewProject.id` (optional client id; `ProjectError::Exists` →

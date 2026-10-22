@@ -453,7 +453,7 @@ async function local() {
       expect((await api.req("GET", "/api/v1/library")).json.items.length === 0, "library empties with files");
     });
 
-    await check("offline sync support: client-chosen task, inbox, and project ids make replayed creates idempotent", async () => {
+    await check("offline sync support: client ids make replayed creates idempotent (tasks, inbox, projects, notes); journal create-only", async () => {
       const id = "ab".repeat(16);
       const first = await api.req("POST", "/api/v1/tasks", { body: { id, title: "From the outbox" } });
       expect(first.status === 201 && first.json.id === id, `create → ${first.text}`);
@@ -475,6 +475,19 @@ async function local() {
       const pAgain = await api.req("POST", "/api/v1/projects", { body: { id: pid, name: "Offline plan" } });
       expect(pAgain.status === 409 && pAgain.json.error === "exists", `project replay → ${pAgain.status}`);
       await api.req("DELETE", `/api/v1/projects/${pid}`);
+
+      const nid = "0a".repeat(16);
+      expect((await api.req("POST", "/api/v1/notes", { body: { id: nid } })).status === 201, "note create");
+      const nAgain = await api.req("POST", "/api/v1/notes", { body: { id: nid } });
+      expect(nAgain.status === 409 && nAgain.json.error === "exists", `note replay → ${nAgain.status}`);
+      await api.req("DELETE", `/api/v1/notes/${nid}`);
+
+      // Journal: expected_updated_at 0 = create only (an offline write to a day that had no entry).
+      const fresh = await api.req("PUT", "/api/v1/journal/2001-01-01", { body: { body: "offline", expected_updated_at: 0 } });
+      expect(fresh.status === 200 || fresh.status === 201, `create-only → ${fresh.status}`);
+      const clash = await api.req("PUT", "/api/v1/journal/2001-01-01", { body: { body: "other device", expected_updated_at: 0 } });
+      expect(clash.status === 409 && clash.json.entry.body === "offline", `create-only on existing → ${clash.status}`);
+      await api.req("DELETE", "/api/v1/journal/2001-01-01");
     });
 
     await check("device API token: create (shown once), use as bearer, cannot manage credentials", async () => {

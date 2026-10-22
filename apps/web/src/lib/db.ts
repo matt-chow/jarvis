@@ -11,6 +11,12 @@ export interface OutboxEntry {
   seq?: number;
   op: unknown;
   created_at: number;
+  /** The document this change touches (e.g. `note:<id>`), for editors to find pending edits. */
+  doc?: string;
+  /** Set on coalesced saves: later edits to the same document update this entry in place. */
+  merge?: string;
+  /** Bumped on each in-place update, so a replay can tell it sent a stale copy. */
+  rev?: number;
 }
 
 export interface Note {
@@ -86,10 +92,31 @@ export class LocalDb {
     await promisify(this.store("kv", "readwrite").put(value, key));
   }
 
+  async deleteValue(key: string): Promise<void> {
+    await promisify(this.store("kv", "readwrite").delete(key));
+  }
+
   /** Append to the offline outbox; returns its sequence number. */
-  async enqueue(op: unknown): Promise<number> {
-    const entry: OutboxEntry = { op, created_at: Date.now() };
+  async enqueue(op: unknown, doc?: string): Promise<number> {
+    const entry: OutboxEntry = { op, created_at: Date.now(), doc };
     return (await promisify(this.store("outbox", "readwrite").add(entry))) as number;
+  }
+
+  /**
+   * Queue a save that coalesces with an earlier queued save of the same
+   * document (`key`): `update` gets the queued op (if any) and returns the new one.
+   */
+  async enqueueMerged(key: string, update: (queued: unknown) => unknown): Promise<void> {
+    const store = this.store("outbox", "readwrite");
+    const all = (await promisify(store.getAll())) as OutboxEntry[];
+    const queued = all.find((e) => e.merge === key);
+    if (queued) await promisify(store.put({ ...queued, op: update(queued.op), rev: (queued.rev ?? 0) + 1 }));
+    else await promisify(store.add({ op: update(undefined), created_at: Date.now(), doc: key, merge: key } satisfies OutboxEntry));
+  }
+
+  /** Queued changes for one document, oldest first. */
+  async pendingFor(doc: string): Promise<OutboxEntry[]> {
+    return (await this.outbox()).filter((e) => e.doc === doc);
   }
 
   /** Queued changes, oldest first. */
@@ -99,6 +126,19 @@ export class LocalDb {
 
   async dequeue(seq: number): Promise<void> {
     await promisify(this.store("outbox", "readwrite").delete(seq));
+  }
+
+  /**
+   * Finish a replayed entry. If it was updated in place while the replay was
+   * in flight, keep it (rebased with `rebase`) so the newer edit still syncs.
+   */
+  async settle(sent: OutboxEntry, rebase?: (op: unknown) => unknown): Promise<void> {
+    if (sent.seq === undefined) return;
+    const store = this.store("outbox", "readwrite");
+    const now = (await promisify(store.get(sent.seq))) as OutboxEntry | undefined;
+    if (!now) return;
+    if ((now.rev ?? 0) === (sent.rev ?? 0) || !rebase) await promisify(store.delete(sent.seq));
+    else await promisify(store.put({ ...now, op: rebase(now.op) }));
   }
 
   close() {

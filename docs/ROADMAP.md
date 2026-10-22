@@ -56,7 +56,8 @@ part of every slice, not deferred to the end.
 ## M3 Knowledge & Offline Beta (P3)
 - ✅ Private file management (folders, streamed content, quota).
 - ✅ Offline editing for Tasks via a replayable outbox (D-017), plus
-  Projects and offline Inbox capture and discard. Notes and journal are next.
+  Projects, Notes, Journal (coalesced versioned saves with stored conflicts,
+  D-018), and offline Inbox capture and discard.
 - ✅ PDF/ePub library with manual reading progress. An in-app reader
   (pdf.js / epub.js) needs a dependency decision and would enable automatic
   progress.
@@ -65,7 +66,8 @@ part of every slice, not deferred to the end.
 - Wiki and PDF/ePub library on R2, with reading progress.
 - File management: folders, metadata in D1, multipart uploads, quotas.
 - Universal search.
-- Offline sync: IndexedDB outbox, server timestamps, conflict policy.
+- ✅ Offline sync: IndexedDB outbox, server versions, conflict policy
+  (D-017, D-018). Remaining: links and pinning offline.
 
 ## M4 Personal OS (P4)
 Habits, calendar, automation engine, music library and playlists, streaming and

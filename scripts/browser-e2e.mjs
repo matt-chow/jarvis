@@ -13,6 +13,13 @@ import { startDevServer } from "./lib/devserver.mjs";
 const SHOTS = process.env.SCREENSHOT_DIR; // optional: save screenshots for design review
 const shot = async (name, opts) => SHOTS && page.screenshot(join(SHOTS, `${name}.png`), opts);
 
+/** The browser's local date (YYYY-MM-DD), as the journal uses it. */
+const localToday = () => {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
 let failures = 0;
 async function step(name, fn) {
   try {
@@ -205,6 +212,24 @@ try {
     await page.click("create");
     await page.waitForText("Planned offline");
     await page.waitForText("3 pending");
+    // Notes and journal: edits stay on the device as one coalesced save per document.
+    await page.hash("/notes");
+    await page.click("Meeting notes");
+    await page.fill("Note body", "Meeting notes\nAgenda: launch plan\nAdded offline");
+    await page.waitForText("saved on this device");
+    await page.hash("/journal");
+    await page.fill("Journal entry", "Walked by the river. Rain on the way back.");
+    await page.waitForText("saved on this device");
+    await page.fill("Journal entry", "Walked by the river. Rain on the way back, then sun.");
+    await waitFor("journal edit queued", async () => (await page.text()).includes("5 pending") && (await page.text()).includes("saved on this device"));
+    // Meanwhile another device changes today's entry.
+    const { cookies } = await page.send("Network.getCookies", { urls: [server.origin] });
+    const elsewhere = await fetch(`${server.origin}/api/v1/journal/${localToday()}`, {
+      method: "PUT",
+      headers: { cookie: cookies.map((c) => `${c.name}=${c.value}`).join("; "), origin: server.origin, "content-type": "application/json" },
+      body: JSON.stringify({ body: "Written on my phone" }),
+    });
+    if (!elsewhere.ok) throw new Error(`edit from elsewhere → ${elsewhere.status}`);
     await net(false);
     await waitFor("synced", async () => !(await page.text()).includes("pending"), 30_000);
     const tasks = await page.evaluate(`fetch("/api/v1/tasks").then((r) => r.json())`);
@@ -214,7 +239,20 @@ try {
     const projects = await page.evaluate(`fetch("/api/v1/projects").then((r) => r.json())`);
     const planned = projects.projects.find((p) => p.name === "Planned offline");
     if (!planned) throw new Error("offline project not on server");
+    const notes = await page.evaluate(`fetch("/api/v1/notes").then((r) => r.json())`);
+    if (!notes.notes.some((n) => n.excerpt.includes("Added offline"))) throw new Error("offline note edit not on server");
+
+    // The journal edit conflicted: the open editor offers both versions; keep mine.
+    await page.waitForText("conflicts with a change made elsewhere");
+    await page.waitForText("changed on another device");
+    await page.click("keep mine");
+    await waitFor("conflict resolved", async () => !(await page.text()).includes("changed on another device"));
+    const day = await page.evaluate(`fetch("/api/v1/journal/${localToday()}").then((r) => r.json())`);
+    if (day.body !== "Walked by the river. Rain on the way back, then sun.") throw new Error(`journal after keep mine: ${day.body}`);
+    await page.click("dismiss");
+
     // Leave the inbox and projects empty for later steps.
+    await page.hash("/projects");
     await page.click("Planned offline");
     await page.click("delete");
     await page.click("confirm delete");
@@ -334,12 +372,13 @@ try {
     await page.reload();
     await page.waitForText("session saved on this device");
     await page.hash("/notes");
-    await page.waitForText("Offline: notes are read-only");
+    await page.waitForText("Pinning and links need a connection");
     await page.click("Meeting notes");
-    await page.waitForText("read-only");
     await waitFor("cached note body", async () =>
       ((await page.evaluate(`document.querySelector('textarea[aria-label="Note body"]')?.value ?? ""`))).includes("Agenda: launch plan"),
     );
+    await page.fill("Note title", "Edited with the server down");
+    await page.waitForText("saved on this device");
     await page.hash("/tasks");
     await page.waitForText("Offline: changes are saved on this device");
     await page.click("All");

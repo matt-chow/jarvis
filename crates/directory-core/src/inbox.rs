@@ -89,7 +89,7 @@ impl From<NoteError> for InboxError {
     fn from(e: NoteError) -> Self {
         match e {
             NoteError::Invalid(f, w) => Self::Invalid(f, w),
-            NoteError::NotFound => Self::NotFound,
+            NoteError::NotFound | NoteError::Exists => Self::NotFound,
             NoteError::Conflict(_) => Self::Backend("note conflict during create".into()),
             NoteError::Backend(b) => Self::Backend(b),
         }

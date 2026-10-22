@@ -5,6 +5,7 @@ import { LinkedSection } from "../components/LinkedSection";
 import { Button, Panel, inputClass } from "../components/ui";
 import { SAVE_STATUS_TEXT, useAutosaveDoc } from "../hooks/useAutosaveDoc";
 import { useCachedList, type CachedList } from "../hooks/useCachedList";
+import { SYNCED_EVENT } from "../hooks/useSync";
 import { useHashParam } from "../hooks/useHashParam";
 import { reportIfUnauthorized } from "../hooks/useSession";
 import { api } from "../lib/api";
@@ -40,7 +41,13 @@ export function Journal({ online }: ModuleProps) {
   const { from, to } = monthRange(month);
   const fetchMonth = useCallback(() => api.journal(from, to), [from, to]);
   const list = useCachedList<JournalSummary>(`journal:${month}`, "entry", fetchMonth, online);
-  const readOnly = list.stale || !online;
+  // Entries are editable offline: edits stay on this device and sync later (D-018).
+  const offline = list.stale || !online;
+  const { reload } = list;
+  useEffect(() => {
+    window.addEventListener(SYNCED_EVENT, reload);
+    return () => window.removeEventListener(SYNCED_EVENT, reload);
+  }, [reload]);
 
   const go = (d: string) => {
     setDate(d);
@@ -50,7 +57,7 @@ export function Journal({ online }: ModuleProps) {
   // Deep link (#/journal?date=YYYY-MM-DD).
   const deepDate = useHashParam("date");
   useEffect(() => {
-    if (deepDate && /^d{4}-d{2}-d{2}$/.test(deepDate)) {
+    if (deepDate && /^\d{4}-\d{2}-\d{2}$/.test(deepDate)) {
       setDate(deepDate);
       setMonth(monthOf(deepDate));
     }
@@ -110,7 +117,7 @@ export function Journal({ online }: ModuleProps) {
             ))}
           </ul>
         )}
-        {readOnly && list.items && <p className="mt-3 text-sm text-muted">Offline: the journal is read-only.</p>}
+        {offline && <p className="mt-3 text-sm text-muted">Offline: entries are saved on this device and sync when you reconnect.</p>}
       </Panel>
 
       <DayEditor
@@ -119,7 +126,7 @@ export function Journal({ online }: ModuleProps) {
         month={month}
         today={today}
         list={list}
-        readOnly={readOnly}
+        offline={offline}
         onGo={go}
         onDeleted={() => setGeneration((g) => g + 1)}
       />
@@ -133,7 +140,8 @@ function DayEditor(props: {
   month: string;
   today: string;
   list: CachedList<JournalSummary>;
-  readOnly: boolean;
+  /** Deleting and links need a connection. */
+  offline: boolean;
   onGo: (date: string) => void;
   onDeleted: () => void;
 }) {
@@ -143,7 +151,12 @@ function DayEditor(props: {
     noun: "entry",
     load: () => api.journalEntry(date),
     fieldsOf: (e) => ({ body: e?.body ?? "", mood: e?.mood ?? null }),
+    withFields: (e, f) => ({ ...(e ?? { date, created_at: Date.now(), updated_at: 0 }), ...f }),
     save: (f, expected) => api.putJournal(date, { ...f, expected_updated_at: expected }),
+    toOp: (fields, base) => ({ kind: "journal.save", date, fields, base }),
+    // A day with no entry is saved create-only, so it can't overwrite one written elsewhere.
+    newVersion: 0,
+    startEmptyOffline: true,
     conflictOf: (e) => (e.body as { entry?: JournalEntry }).entry,
     onSaved: (saved) => {
       if (monthOf(saved.date) !== props.month) return;
@@ -160,10 +173,11 @@ function DayEditor(props: {
     },
   });
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const locked = props.readOnly || editor.fromCache;
+  const online = !props.offline && !editor.fromCache;
   const exists = Boolean(editor.doc);
 
   const remove = async () => {
+    editor.discard();
     try {
       await api.deleteJournal(date);
       void list.mutate(async () => true, (cur) => cur.filter((e) => e.date !== date));
@@ -179,7 +193,7 @@ function DayEditor(props: {
       actions={
         <span className="flex items-center gap-1">
           <span role="status" className={`mr-2 font-mono text-[11px] ${editor.status === "error" || editor.status === "offline" ? "text-bad" : "text-muted"}`}>
-            {editor.doc === undefined ? "" : locked ? "read-only" : exists || editor.status !== "saved" ? SAVE_STATUS_TEXT[editor.status] : "new"}
+            {editor.doc === undefined ? "" : exists || editor.status !== "saved" ? SAVE_STATUS_TEXT[editor.status] : "new"}
           </span>
           <Button className={small} aria-label="Previous day" onClick={() => props.onGo(shiftDate(date, -1))}>
             ‹
@@ -213,7 +227,6 @@ function DayEditor(props: {
                 aria-checked={editor.fields.mood === m.value}
                 aria-label={m.label}
                 title={m.label}
-                disabled={locked}
                 onClick={() => editor.edit({ mood: editor.fields.mood === m.value ? null : m.value })}
                 className={`grid size-8 place-items-center rounded-sm border font-mono text-sm ${
                   editor.fields.mood === m.value ? "border-accent bg-accent text-accent-ink" : "border-line text-muted hover:border-accent"
@@ -226,7 +239,6 @@ function DayEditor(props: {
           <textarea
             value={editor.fields.body}
             onChange={(e) => editor.edit({ body: e.target.value })}
-            disabled={locked}
             maxLength={50000}
             aria-label="Journal entry"
             placeholder="How was your day?"
@@ -234,7 +246,7 @@ function DayEditor(props: {
           />
           {exists && (
             <div className="mt-3">
-              <LinkedSection entity={{ kind: "journal", id: date }} disabled={locked} />
+              <LinkedSection entity={{ kind: "journal", id: date }} disabled={!online} />
             </div>
           )}
           {exists && (
@@ -249,7 +261,7 @@ function DayEditor(props: {
                   </Button>
                 </span>
               ) : (
-                <Button variant="danger" className={small} disabled={locked} onClick={() => setConfirmDelete(true)}>
+                <Button variant="danger" className={small} disabled={!online} onClick={() => setConfirmDelete(true)}>
                   delete entry
                 </Button>
               )}

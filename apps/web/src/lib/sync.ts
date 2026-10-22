@@ -4,10 +4,15 @@
  *
  * Every operation is safe to replay: creates carry a client-generated id
  * (a repeat answers 409 `exists`), updates send only changed fields, and
- * deletes treat 404 as already done.
+ * deletes treat 404 as already done. Document saves (notes, journal) carry the
+ * version they were based on; if the server copy changed meanwhile, the save
+ * becomes a conflict for the owner to resolve (DECISIONS D-018).
  */
 import { ApiError, isNetworkError } from "./api";
+import type { OutboxEntry } from "./db";
 import type { InboxItem } from "./inbox";
+import type { JournalEntry, PutJournal } from "./journal";
+import type { Note, NotePatch } from "./notes";
 import type { NewProject, Project, ProjectPatch } from "./projects";
 import type { NewTask, Task, TaskPatch } from "./tasks";
 
@@ -19,11 +24,41 @@ export type Op =
   | { kind: "inbox.delete"; id: string }
   | { kind: "project.create"; project: NewProject & { id: string } }
   | { kind: "project.update"; id: string; patch: ProjectPatch }
-  | { kind: "project.delete"; id: string };
+  | { kind: "project.delete"; id: string }
+  | { kind: "note.create"; note: { id: string; title?: string; body?: string } }
+  /** `base`: the server version edited; undefined for a note created offline. */
+  | { kind: "note.save"; id: string; fields: NoteFields; base?: number }
+  | { kind: "note.delete"; id: string }
+  /** `base` 0 = the day had no entry (create only). */
+  | { kind: "journal.save"; date: string; fields: JournalFields; base?: number };
+
+export interface NoteFields {
+  title: string;
+  body: string;
+}
+
+export interface JournalFields {
+  body: string;
+  mood: number | null;
+}
+
+/** A queued save the server refused because the document changed elsewhere. */
+export interface Conflict {
+  /** `note:<id>` or `journal:<date>`. */
+  doc: string;
+  mine: NoteFields | JournalFields;
+  theirs: Note | JournalEntry;
+}
+
+/** The outbox entry key for a document. */
+export const noteDoc = (id: string) => `note:${id}`;
+export const journalDoc = (date: string) => `journal:${date}`;
+/** IndexedDB key where a document's unresolved sync conflict is kept. */
+export const conflictKey = (doc: string) => `conflict:${doc}`;
 
 export interface Outbox {
-  outbox(): Promise<{ seq?: number; op: unknown }[]>;
-  dequeue(seq: number): Promise<void>;
+  outbox(): Promise<OutboxEntry[]>;
+  settle(sent: OutboxEntry, rebase?: (op: unknown) => unknown): Promise<void>;
 }
 
 export interface SyncApi {
@@ -35,12 +70,20 @@ export interface SyncApi {
   createProject(p: NewProject & { id: string }): Promise<Project>;
   updateProject(id: string, patch: ProjectPatch): Promise<Project>;
   deleteProject(id: string): Promise<void>;
+  createNote(n: { id: string; title?: string; body?: string }): Promise<Note>;
+  updateNote(id: string, patch: NotePatch): Promise<Note>;
+  deleteNote(id: string): Promise<void>;
+  putJournal(date: string, entry: PutJournal): Promise<JournalEntry>;
 }
 
 export interface SyncResult {
   applied: number;
   /** Changes the server rejected; they were dropped from the outbox. */
   rejected: { op: Op; reason: string }[];
+  /** Saves that conflicted with a newer server copy; dropped from the outbox. */
+  conflicts: Conflict[];
+  /** New server versions of documents saved by this replay, by document key. */
+  versions: Record<string, number>;
   /** Replay stopped early (offline, server error, or signed out). */
   stopped?: "offline" | "server" | "unauthorized";
   pending: number;
@@ -52,7 +95,8 @@ export function clientId(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function apply(api: SyncApi, op: Op): Promise<void> {
+/** Applies one op; returns the new server version for document saves. */
+async function apply(api: SyncApi, op: Op): Promise<number | void> {
   try {
     switch (op.kind) {
       case "task.create":
@@ -79,6 +123,16 @@ async function apply(api: SyncApi, op: Op): Promise<void> {
       case "project.delete":
         await api.deleteProject(op.id);
         return;
+      case "note.create":
+        await api.createNote(op.note);
+        return;
+      case "note.save":
+        return (await api.updateNote(op.id, { ...op.fields, expected_updated_at: op.base })).updated_at;
+      case "note.delete":
+        await api.deleteNote(op.id);
+        return;
+      case "journal.save":
+        return (await api.putJournal(op.date, { ...op.fields, expected_updated_at: op.base })).updated_at;
     }
   } catch (e) {
     // Already applied by an earlier, interrupted replay.
@@ -108,19 +162,47 @@ function describeOp(op: Op): string {
       return "update a project";
     case "project.delete":
       return "delete a project";
+    case "note.create":
+      return "create a note";
+    case "note.save":
+      return `save “${op.fields.title || op.fields.body.split("\n")[0].slice(0, 40) || "Untitled"}”`;
+    case "note.delete":
+      return "delete a note";
+    case "journal.save":
+      return `save the journal for ${op.date}`;
   }
+}
+
+function conflictOf(op: Op, e: unknown): Conflict | undefined {
+  if (!(e instanceof ApiError) || e.code !== "conflict") return undefined;
+  const body = e.body as { note?: Note; entry?: JournalEntry } | undefined;
+  if (op.kind === "note.save" && body?.note) return { doc: noteDoc(op.id), mine: op.fields, theirs: body.note };
+  if (op.kind === "journal.save" && body?.entry) return { doc: journalDoc(op.date), mine: op.fields, theirs: body.entry };
+  return undefined;
 }
 
 /** Replay queued changes in order. Never throws. */
 export async function replay(outbox: Outbox, api: SyncApi): Promise<SyncResult> {
   const entries = await outbox.outbox();
-  const result: SyncResult = { applied: 0, rejected: [], pending: entries.length };
+  const result: SyncResult = { applied: 0, rejected: [], conflicts: [], versions: {}, pending: entries.length };
   for (const entry of entries) {
     const op = entry.op as Op;
     try {
-      await apply(api, op);
+      const version = await apply(api, op);
       result.applied++;
+      if (typeof version === "number") result.versions[op.kind === "note.save" ? noteDoc(op.id) : journalDoc((op as { date: string }).date)] = version;
+      // Edited again while this save was in flight: keep the newer copy, based on what we just wrote.
+      await outbox.settle(entry, (queued) => ({ ...(queued as Op), base: version }));
+      result.pending--;
+      continue;
     } catch (e) {
+      const conflict = conflictOf(op, e);
+      if (conflict) {
+        result.conflicts.push(conflict);
+        await outbox.settle(entry);
+        result.pending--;
+        continue;
+      }
       if (isNetworkError(e)) result.stopped = "offline";
       else if (e instanceof ApiError && e.status === 401) result.stopped = "unauthorized";
       else if (e instanceof ApiError && e.status >= 500) result.stopped = "server";
@@ -129,7 +211,7 @@ export async function replay(outbox: Outbox, api: SyncApi): Promise<SyncResult> 
       const reason = e instanceof ApiError ? (e.detail ?? e.code) : String(e);
       result.rejected.push({ op, reason: `Couldn't ${describeOp(op)}: ${reason}` });
     }
-    if (entry.seq !== undefined) await outbox.dequeue(entry.seq);
+    await outbox.settle(entry);
     result.pending--;
   }
   return result;

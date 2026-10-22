@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import { LocalDb } from "./db";
 import { applyInboxLocally, applyLocally, applyProjectLocally, clientId, replay, type Op, type SyncApi } from "./sync";
+import type { Note } from "./notes";
 import type { Task } from "./tasks";
 
 const task = (id: string, over: Partial<Task> = {}): Task => ({
@@ -19,6 +20,8 @@ const task = (id: string, over: Partial<Task> = {}): Task => ({
   completed_at: null,
   ...over,
 });
+
+const note = (id: string, updated_at: number): Note => ({ id, title: "", body: "", pinned: false, created_at: 0, updated_at });
 
 function fakeApi(fail: (op: string) => unknown = () => undefined) {
   const calls: string[] = [];
@@ -37,6 +40,20 @@ function fakeApi(fail: (op: string) => unknown = () => undefined) {
     createProject: async (p) => ({ ...(await run(`project:${p.id}`)), name: p.name, description: "", status: "active" }),
     updateProject: async (id) => ({ ...(await run(`project-update:${id}`)), name: "", description: "", status: "active" }),
     deleteProject: async (id) => void (await run(`project-delete:${id}`)),
+    createNote: async (n) => {
+      await run(`note:${n.id}`);
+      return note(n.id, 1);
+    },
+    // Saves answer with server version 50 (notes) or 60 (journal).
+    updateNote: async (id, patch) => {
+      await run(`note-save:${id}@${patch.expected_updated_at}`);
+      return note(id, 50);
+    },
+    deleteNote: async (id) => void (await run(`note-delete:${id}`)),
+    putJournal: async (date, e) => {
+      await run(`journal:${date}@${e.expected_updated_at}`);
+      return { date, body: "", mood: null, created_at: 0, updated_at: 60 };
+    },
   };
   return { api, calls };
 }
@@ -131,5 +148,49 @@ describe("project ops", () => {
     list = applyProjectLocally(list, { kind: "project.update", id: "p1", patch: { status: "archived" } }, 6);
     expect(list[0]).toMatchObject({ status: "archived", updated_at: 6 });
     expect(applyProjectLocally(list, { kind: "project.delete", id: "p1" })).toEqual([]);
+  });
+});
+
+describe("document saves (D-018)", () => {
+  const save = (id: string, body: string, base?: number): Op => ({ kind: "note.save", id, fields: { title: "", body }, base });
+
+  it("coalesces edits into one queued save that keeps the original base version", async () => {
+    const db = await outboxWith([]);
+    for (const body of ["a", "ab", "abc"]) {
+      await db.enqueueMerged("note:n1", (queued) => ({ ...save("n1", body, 7), base: queued ? (queued as { base?: number }).base : 7 }));
+    }
+    const entries = await db.outbox();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ doc: "note:n1", rev: 2, op: { fields: { body: "abc" }, base: 7 } });
+    expect(await db.pendingFor("note:n1")).toHaveLength(1);
+  });
+
+  it("sends the base version, reports new versions, and turns conflicts into records", async () => {
+    const theirs = note("n2", 99);
+    const db = await outboxWith([
+      save("n1", "mine", 7),
+      { kind: "journal.save", date: "2026-10-22", fields: { body: "offline day", mood: 3 }, base: 0 },
+      save("n2", "stale edit", 8),
+    ]);
+    const { api, calls } = fakeApi((op) => (op.startsWith("note-save:n2") ? new ApiError(409, "conflict", undefined, { error: "conflict", note: theirs }) : undefined));
+    const r = await replay(db, api);
+    expect(calls).toEqual(["note-save:n1@7", "journal:2026-10-22@0", "note-save:n2@8"]);
+    expect(r).toMatchObject({ applied: 2, rejected: [], pending: 0, versions: { "note:n1": 50, "journal:2026-10-22": 60 } });
+    expect(r.conflicts).toEqual([{ doc: "note:n2", mine: { title: "", body: "stale edit" }, theirs }]);
+    expect(await db.outbox()).toHaveLength(0);
+  });
+
+  it("keeps an edit made while its save was in flight, rebased on the version just written", async () => {
+    const db = await outboxWith([]);
+    await db.enqueueMerged("note:n1", () => save("n1", "first", 7));
+    const { api } = fakeApi((op) => {
+      // The user keeps typing while the request is out.
+      if (op.startsWith("note-save")) void db.enqueueMerged("note:n1", (q) => ({ ...save("n1", "second"), base: (q as { base?: number }).base }));
+      return undefined;
+    });
+    await replay(db, api);
+    const left = await db.outbox();
+    expect(left).toHaveLength(1);
+    expect(left[0].op).toMatchObject({ fields: { body: "second" }, base: 50 });
   });
 });

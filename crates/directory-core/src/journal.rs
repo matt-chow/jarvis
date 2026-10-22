@@ -67,7 +67,8 @@ pub struct PutEntry {
     /// `null` clears the mood; omitted leaves it unchanged.
     #[serde(default, deserialize_with = "double_option")]
     pub mood: Option<Option<u8>>,
-    /// Version the client last saw; omit when creating or overwriting.
+    /// Version the client last saw; omit to create or overwrite. `0` means
+    /// create only: an existing entry answers with a conflict (offline replay).
     #[serde(default)]
     pub expected_updated_at: Option<i64>,
 }
@@ -382,6 +383,21 @@ pub(crate) mod tests {
             block_on(JournalService::new(&repo, 20).put(&me(), "2026-10-21", stale)),
             Err(JournalError::Conflict(e)) if e.body == "Good day, long walk"
         ));
+
+        let create_only = PutEntry {
+            expected_updated_at: Some(0),
+            ..put("written offline")
+        };
+        assert!(matches!(
+            block_on(JournalService::new(&repo, 25).put(&me(), "2026-10-21", create_only.clone())),
+            Err(JournalError::Conflict(e)) if e.body == "Good day, long walk"
+        ));
+        assert_eq!(
+            block_on(JournalService::new(&repo, 25).put(&me(), "2026-10-22", create_only))
+                .unwrap()
+                .body,
+            "written offline"
+        );
 
         let cleared: PutEntry = serde_json::from_str(r#"{"mood":null}"#).unwrap();
         assert_eq!(

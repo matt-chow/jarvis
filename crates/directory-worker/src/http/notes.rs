@@ -16,6 +16,7 @@ fn note_error(e: NoteError) -> Result<Response> {
         NoteError::Invalid(field, why) => {
             error_with(400, "invalid_input", format!("{field}: {why}"))
         }
+        NoteError::Exists => error(409, "exists"),
         NoteError::NotFound => error(404, "not_found"),
         // The client needs the winning version to resolve the conflict.
         NoteError::Conflict(current) => json(409, &body!({ "error": "conflict", "note": current })),

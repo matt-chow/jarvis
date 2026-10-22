@@ -168,7 +168,7 @@ export class Api {
   // ---- Notes ----
   notes = async () => (await this.call<{ notes: NoteSummary[] }>("GET", "/api/v1/notes")).notes;
   note = (id: string) => this.call<Note>("GET", `/api/v1/notes/${encodeURIComponent(id)}`);
-  createNote = (n: { title?: string; body?: string; pinned?: boolean }) => this.call<Note>("POST", "/api/v1/notes", n);
+  createNote = (n: { id?: string; title?: string; body?: string; pinned?: boolean }) => this.call<Note>("POST", "/api/v1/notes", n);
   updateNote = (id: string, patch: NotePatch) => this.call<Note>("PATCH", `/api/v1/notes/${encodeURIComponent(id)}`, patch);
   deleteNote = (id: string) => this.call<void>("DELETE", `/api/v1/notes/${encodeURIComponent(id)}`);
 
