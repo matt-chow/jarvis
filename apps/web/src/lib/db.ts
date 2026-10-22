@@ -4,7 +4,7 @@
  */
 
 export const DB_NAME = "directory";
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 /** A queued offline change (see lib/sync.ts); `seq` orders replay. */
 export interface OutboxEntry {
@@ -26,10 +26,19 @@ export interface Note {
   updatedAt: number;
 }
 
+/** A track saved for offline playback (an explicit download, not a cache). */
+export interface SavedMedia {
+  id: string;
+  blob: Blob;
+  size: number;
+  saved_at: number;
+}
+
 interface Stores {
   notes: Note;
   kv: unknown;
   outbox: OutboxEntry;
+  media: SavedMedia;
 }
 type StoreName = keyof Stores;
 
@@ -40,6 +49,9 @@ function upgrade(db: IDBDatabase, oldVersion: number) {
   }
   if (oldVersion < 2) {
     db.createObjectStore("outbox", { keyPath: "seq", autoIncrement: true });
+  }
+  if (oldVersion < 3) {
+    db.createObjectStore("media", { keyPath: "id" });
   }
 }
 
@@ -139,6 +151,24 @@ export class LocalDb {
     if (!now) return;
     if ((now.rev ?? 0) === (sent.rev ?? 0) || !rebase) await promisify(store.delete(sent.seq));
     else await promisify(store.put({ ...now, op: rebase(now.op) }));
+  }
+
+  async putMedia(m: SavedMedia): Promise<void> {
+    await promisify(this.store("media", "readwrite").put(m));
+  }
+
+  async getMedia(id: string): Promise<SavedMedia | undefined> {
+    return (await promisify(this.store("media", "readonly").get(id))) as SavedMedia | undefined;
+  }
+
+  async deleteMedia(id: string): Promise<void> {
+    await promisify(this.store("media", "readwrite").delete(id));
+  }
+
+  /** Saved tracks without their blobs: id → size. */
+  async mediaSizes(): Promise<Map<string, number>> {
+    const all = (await promisify(this.store("media", "readonly").getAll())) as SavedMedia[];
+    return new Map(all.map((m) => [m.id, m.size]));
   }
 
   close() {

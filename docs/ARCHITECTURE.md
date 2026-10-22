@@ -96,6 +96,8 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | DELETE | `/api/v1/links/{id}` | session or token | Unlink |
 | GET / POST | `/api/v1/automations` | session or token | List (≤ 20), or create `{ name, trigger: { kind: task_completed, project_id? } or { kind: habit_checked, habit_id? }, command, enabled? }`. The command is validated (allowlisted kinds, ≤ 3 steps, known placeholders). |
 | PATCH / DELETE | `/api/v1/automations/{id}` | session or token | Partial update (re-validated) / delete. `PATCH /tasks/{id}` and `POST /jarvis/plans/{id}/execute` accept `?today=` (local date) for the automations they fire. |
+| GET | `/api/v1/music` | session or token | `{ tracks, playlists }`: audio files (by content type or extension) and playlists, without tracks whose files were deleted |
+| POST / PATCH / DELETE | `/api/v1/music/playlists[/{id}]` | session or token | `{ name, tracks? }` / `{ name?, tracks? }` (tracks replace the order; each must be your audio file; ≤ 500; ≤ 100 playlists) / delete |
 | GET / PATCH | `/api/v1/preferences` | session or token | Owner preferences (`{ dashboard?: { widgets: [...] } }`). PATCH is partial; `null` resets a field. Widgets are validated against a known list. |
 | GET / POST | `/api/v1/events` | session or token | Every event (repeats not expanded, at most 2,000), or create `{ id?, title, start_date, end_date?, start_time?, end_time?, location?, notes?, repeat?, repeat_until? }` → `201` (`409 exists` on a repeated client id). Times are `HH:MM` local wall-clock; no start time = all day. |
 | GET | `/api/v1/events/agenda?from=&to=` | session or token | Occurrences overlapping the range (≤ 400 days), repeats expanded, all-day first then by time |
@@ -124,7 +126,7 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | GET | `/api/v1/files?folder=` | session or token | `{ folder, folders, files }` from D1 metadata (no R2 list operations) |
 | POST | `/api/v1/files?folder=&name=` | session or token | Raw body with `Content-Length` (411 if missing). Streamed to R2 at `u/<owner>/f/<id>`. Limits: 95 MiB per file (413), owner quota (507; default 1 GiB, `DIRECTORY_QUOTA_BYTES`), duplicate name (409). |
 | GET | `/api/v1/files/usage` | session or token | `{ used, quota, max_file }` |
-| GET | `/api/v1/files/{id}/content` | session or token | Streamed from R2 as an attachment (RFC 6266 filename), CSP `sandbox` Supports a single `Range: bytes=…` (206 with `Content-Range`; 416 past the end), so media can seek and downloads resume. |
+| GET | `/api/v1/files/{id}/content` | session or token | Streamed from R2 as an attachment (RFC 6266 filename), CSP `sandbox`. Supports a single `Range: bytes=…` (206 with `Content-Range`; 416 past the end), so media can seek and downloads resume. |
 | PATCH / DELETE | `/api/v1/files/{id}` | session or token | PATCH `{ name?, folder? }` (metadata only). DELETE removes metadata first, then the blob. |
 
 Keys are `segment(/segment)*` over `[A-Za-z0-9._-]`, with no `.`/`..` segments
@@ -159,6 +161,10 @@ JSON bodies are capped at 64 KiB.
   - `0015`: `events` (local dates/times, `repeat` + `repeat_until`).
   - `0016`: `preferences` (one validated JSON document per owner).
   - `0017`: `automations` (trigger JSON, command template, last-run status).
+  - `0018`: `playlists` (ordered file ids as JSON).
+- IndexedDB v3 adds a `media` store: tracks the owner chose to save for
+  offline playback (blobs, explicit download; the service worker still never
+  caches `/api/*`).
 - **R2** bucket `directory-files` is private, with no r2.dev URL or custom domain.
   File content lives at `u/<user_id>/f/<file_id>`; names and folders live in D1.
 - **IndexedDB** database `directory` (v2, adds `outbox`) has a `kv` store with cached

@@ -425,6 +425,29 @@ async function local() {
       expect((await fetch(`${baseUrl}/api/v1/preferences`)).status === 401, "anonymous → 401");
     });
 
+    await check("music: audio files listed, playlists validated and ordered, deleted tracks skipped, exported", async () => {
+      const up = (name, type) =>
+        api.req("POST", `/api/v1/files?folder=Music&name=${encodeURIComponent(name)}`, { body: "audio", headers: { "Content-Type": type } });
+      const a = (await up("b-side.mp3", "audio/mpeg")).json;
+      const b = (await up("Anthem.flac", "application/octet-stream")).json;
+      const txt = (await up("lyrics.txt", "text/plain")).json;
+      const lib = (await api.req("GET", "/api/v1/music")).json;
+      expect(lib.tracks.map((t) => t.name).join() === "Anthem.flac,b-side.mp3", `tracks → ${JSON.stringify(lib.tracks.map((t) => t.name))}`);
+
+      const bad = await api.req("POST", "/api/v1/music/playlists", { body: { name: "x", tracks: [txt.id] } });
+      expect(bad.status === 400, "non-audio track refused");
+      const pl = (await api.req("POST", "/api/v1/music/playlists", { body: { name: "Road trip", tracks: [a.id, b.id] } })).json;
+      const swapped = await api.req("PATCH", `/api/v1/music/playlists/${pl.id}`, { body: { tracks: [b.id, a.id] } });
+      expect(swapped.json.tracks.join() === `${b.id},${a.id}`, "reordered");
+      expect((await api.req("GET", "/api/v1/export")).json.playlists[0].name === "Road trip", "in export");
+
+      await api.req("DELETE", `/api/v1/files/${a.id}`);
+      expect((await api.req("GET", "/api/v1/music")).json.playlists[0].tracks.join() === b.id, "deleted file skipped");
+      expect((await api.req("DELETE", `/api/v1/music/playlists/${pl.id}`)).status === 204, "delete playlist");
+      for (const f of [b, txt]) await api.req("DELETE", `/api/v1/files/${f.id}`);
+      expect((await fetch(`${baseUrl}/api/v1/music`)).status === 401, "anonymous → 401");
+    });
+
     await check("export: one JSON download with every record, no credential material", async () => {
       const task = (await api.req("POST", "/api/v1/tasks", { body: { title: "Export me" } })).json;
       const note = (await api.req("POST", "/api/v1/notes", { body: { body: "Exported note body" } })).json;

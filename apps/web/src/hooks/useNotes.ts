@@ -40,8 +40,12 @@ function applyNoteLocally(list: NoteSummary[], op: Op, now = Date.now()): NoteSu
 
 const blankNote = (id: string, now: number, title = ""): Note => ({ id, title, body: "", pinned: false, created_at: now, updated_at: now });
 
-/** Server notes list (summaries); create, edit, and delete work offline (D-017, D-018). */
-export function useNotes(online: boolean): NotesState {
+/**
+ * Server notes list (summaries); create, edit, and delete work offline (D-017, D-018).
+ * `migrate` runs the one-time legacy Scratchpad migration: the Notes screen only,
+ * so its result is shown there.
+ */
+export function useNotes(online: boolean, migrate = true): NotesState {
   const list = useCachedList<NoteSummary>("notes:last", "note", fetchAll, online);
   const { mutate, items, stale, reload } = list;
   const [migrated, setMigrated] = useState<number>();
@@ -49,7 +53,7 @@ export function useNotes(online: boolean): NotesState {
 
   // One-time move of Sprint 00 Scratchpad notes (IndexedDB only) into the account.
   useEffect(() => {
-    if (!items || stale || migrating.current) return;
+    if (!migrate || !items || stale || migrating.current) return;
     migrating.current = true;
     void (async () => {
       const db = await localDb();
@@ -73,7 +77,7 @@ export function useNotes(online: boolean): NotesState {
       .finally(() => {
         migrating.current = false;
       });
-  }, [items, stale, reload]);
+  }, [migrate, items, stale, reload]);
 
   useEffect(() => {
     window.addEventListener(SYNCED_EVENT, reload);

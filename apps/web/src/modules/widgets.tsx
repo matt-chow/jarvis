@@ -124,7 +124,7 @@ export function HabitsWidget({ online, className }: { online: boolean; className
 }
 
 export function NotesWidget({ online, className }: { online: boolean; className?: string }) {
-  const state = useNotes(online);
+  const state = useNotes(online, false);
   const recent = useMemo(() => [...(state.notes ?? [])].sort((a, b) => b.updated_at - a.updated_at).slice(0, 5), [state.notes]);
   return (
     <Panel

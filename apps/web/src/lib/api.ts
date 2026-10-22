@@ -12,6 +12,7 @@ import type { Plan, Preset } from "./jarvis";
 import type { JournalEntry, JournalSummary, PutJournal } from "./journal";
 import type { LibraryItem, Progress, ProgressPatch } from "./library";
 import type { EntityRef, Linked } from "./links";
+import type { MusicLibrary, Playlist } from "./music";
 import type { Note, NotePatch, NoteSummary } from "./notes";
 import type { Preferences, PreferencesPatch } from "./preferences";
 import type { NewProject, Project, ProjectPatch } from "./projects";
@@ -178,6 +179,13 @@ export class Api {
   createNote = (n: { id?: string; title?: string; body?: string; pinned?: boolean }) => this.call<Note>("POST", "/api/v1/notes", n);
   updateNote = (id: string, patch: NotePatch) => this.call<Note>("PATCH", `/api/v1/notes/${encodeURIComponent(id)}`, patch);
   deleteNote = (id: string) => this.call<void>("DELETE", `/api/v1/notes/${encodeURIComponent(id)}`);
+
+  // ---- Music ----
+  music = () => this.call<MusicLibrary>("GET", "/api/v1/music");
+  createPlaylist = (name: string, tracks: string[] = []) => this.call<Playlist>("POST", "/api/v1/music/playlists", { name, tracks });
+  updatePlaylist = (id: string, patch: { name?: string; tracks?: string[] }) =>
+    this.call<Playlist>("PATCH", `/api/v1/music/playlists/${encodeURIComponent(id)}`, patch);
+  deletePlaylist = (id: string) => this.call<void>("DELETE", `/api/v1/music/playlists/${encodeURIComponent(id)}`);
 
   // ---- Automations ----
   automations = async () => (await this.call<{ automations: Rule[] }>("GET", "/api/v1/automations")).automations;

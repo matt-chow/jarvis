@@ -32,4 +32,14 @@ describe("LocalDb", () => {
     expect(await second.getValue("missing")).toBeUndefined();
     second.close();
   });
+
+  it("keeps tracks saved for offline playback", async () => {
+    const db = await LocalDb.open(new IDBFactory(), "media");
+    await db.putMedia({ id: "t1", blob: new Blob(["abc"]), size: 3, saved_at: 1 });
+    expect(await db.mediaSizes()).toEqual(new Map([["t1", 3]]));
+    expect((await db.getMedia("t1"))?.size).toBe(3);
+    await db.deleteMedia("t1");
+    expect(await db.getMedia("t1")).toBeUndefined();
+    db.close();
+  });
 });

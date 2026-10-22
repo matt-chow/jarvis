@@ -20,6 +20,27 @@ const localToday = () => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
 
+/** A quiet 8 kHz mono 16-bit WAV of `seconds`, enough for the browser to play. */
+function wav(seconds) {
+  const rate = 8000;
+  const samples = rate * seconds;
+  const buf = Buffer.alloc(44 + samples * 2);
+  buf.write("RIFF", 0);
+  buf.writeUInt32LE(36 + samples * 2, 4);
+  buf.write("WAVEfmt ", 8);
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20); // PCM
+  buf.writeUInt16LE(1, 22); // mono
+  buf.writeUInt32LE(rate, 24);
+  buf.writeUInt32LE(rate * 2, 28);
+  buf.writeUInt16LE(2, 32);
+  buf.writeUInt16LE(16, 34);
+  buf.write("data", 36);
+  buf.writeUInt32LE(samples * 2, 40);
+  for (let i = 0; i < samples; i++) buf.writeInt16LE(Math.round(800 * Math.sin((i * 2 * Math.PI * 440) / rate)), 44 + i * 2);
+  return buf;
+}
+
 let failures = 0;
 async function step(name, fn) {
   try {
@@ -349,6 +370,36 @@ try {
     await page.click("confirm delete");
     await page.waitForText("No automations yet.");
     await page.evaluate(`fetch("/api/v1/inbox").then((r) => r.json()).then((b) => Promise.all(b.items.map((i) => fetch("/api/v1/inbox/" + i.id, { method: "DELETE", headers: { Origin: location.origin } }))))`);
+  });
+
+  await step("Music: upload a track, play it, save it offline, add it to a playlist", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "directory-music-"));
+    const file = join(dir, "Tone.wav");
+    writeFileSync(file, wav(2));
+    await page.hash("/music");
+    await page.waitForText("No music yet.");
+    await page.setFile('input[aria-label="Upload audio"]', file);
+    await page.click("Play “Tone”");
+    await waitFor("audio playing", () => page.evaluate(`(() => { const a = document.querySelector("audio"); return !!a && a.currentTime > 0 && !a.paused; })()`), 20_000);
+    await page.waitForText("1/1");
+    await page.click("Pause");
+    await page.click("Save “Tone” for offline");
+    await page.waitForText("saved offline");
+    await page.fill("New playlist", "Focus");
+    await page.click("create");
+    await page.waitForText("Empty. Add tracks");
+    await page.evaluate(`(() => {
+      const s = document.querySelector('select[aria-label="Add “Tone” to a playlist"]');
+      const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
+      set.call(s, s.options[1].value);
+      s.dispatchEvent(new Event("change", { bubbles: true }));
+    })()`);
+    await waitFor("track in playlist", () => page.evaluate(`!!document.querySelector('button[aria-label="Remove “Tone” from the playlist"]')`));
+    const lib = await page.evaluate(`fetch("/api/v1/music").then((r) => r.json())`);
+    const focus = lib.playlists.find((p) => p.name === "Focus");
+    if (!focus || focus.tracks.length !== 1 || lib.tracks[0].name !== "Tone.wav") throw new Error(`music: ${JSON.stringify(lib)}`);
+    await shot("music");
+    await page.click("Close player");
   });
 
   await step("Projects: create, add a task from the project, progress updates", async () => {

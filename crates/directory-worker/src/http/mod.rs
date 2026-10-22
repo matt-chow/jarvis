@@ -13,6 +13,7 @@ pub mod jarvis;
 pub mod journal;
 pub mod library;
 pub mod links;
+pub mod music;
 pub mod notes;
 pub mod preferences;
 pub mod projects;

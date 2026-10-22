@@ -1,5 +1,6 @@
 import { useEffect, useState, type ComponentType } from "react";
 import { AuthScreen } from "./components/AuthScreen";
+import { PlayerProvider } from "./components/Player";
 import { StatusChip, StageTag, type Tone } from "./components/ui";
 import { useHealth, type HealthState } from "./hooks/useHealth";
 import { useOnline } from "./hooks/useOnline";
@@ -13,6 +14,7 @@ import { Inbox } from "./modules/Inbox";
 import { Jarvis } from "./modules/Jarvis";
 import { Journal } from "./modules/Journal";
 import { Library } from "./modules/Library";
+import { Music } from "./modules/Music";
 import { Notes } from "./modules/Notes";
 import { Calendar } from "./modules/Calendar";
 import { Habits } from "./modules/Habits";
@@ -40,6 +42,7 @@ const VIEWS: Record<ModuleId, ComponentType<ModuleProps>> = {
   notes: Notes,
   journal: Journal,
   library: Library,
+  music: Music,
   files: Files,
   jarvis: Jarvis,
   settings: Settings,
@@ -129,6 +132,7 @@ export function App() {
   }
 
   return (
+    <PlayerProvider>
     <div className="flex h-full">
       {/* Sidebar (tablet / desktop) */}
       <aside className="hidden w-60 shrink-0 flex-col border-r border-line bg-panel/80 backdrop-blur md:flex">
@@ -205,7 +209,7 @@ export function App() {
           )}
         </header>
 
-        <main className="flex-1 overflow-y-auto px-4 py-6 pb-28 md:px-8 md:pb-10">
+        <main className="flex-1 overflow-y-auto px-4 py-6 pb-44 md:px-8 md:pb-24">
           <div className="mx-auto max-w-5xl">
             <View online={online} health={health} sw={sw} session={session} navigate={navigate} />
           </div>
@@ -235,5 +239,6 @@ export function App() {
         </nav>
       </div>
     </div>
+    </PlayerProvider>
   );
 }

@@ -70,7 +70,7 @@ part of every slice, not deferred to the end.
 | Habits: weekday schedules, check-ins, streaks, offline (D-020) | ✅ done |
 | Calendar: month/day views, timed/all-day/multi-day/repeating events, tasks due, offline (D-021) | ✅ done |
 | Automations: event-driven rules running pre-approved JARVIS commands (D-024) | ✅ done; time-based triggers need Cron + time zones |
-| Music library, playlists, streaming and offline media | planned (R2 storage and quota implications need review) |
+| Music: audio from Files, playlists, app-wide player with seeking, offline saved tracks | ✅ done (uses the existing per-owner storage quota) |
 | Customizable dashboard (widgets, layout saved to the account) | ✅ done |
 
 ## M5 1.0 (P5)

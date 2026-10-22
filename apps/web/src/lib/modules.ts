@@ -4,7 +4,7 @@
  * should share these ids.
  */
 
-export type ModuleId = "home" | "search" | "inbox" | "tasks" | "projects" | "calendar" | "habits" | "notes" | "journal" | "library" | "files" | "jarvis" | "settings";
+export type ModuleId = "home" | "search" | "inbox" | "tasks" | "projects" | "calendar" | "habits" | "notes" | "journal" | "library" | "music" | "files" | "jarvis" | "settings";
 
 export interface ModuleMeta {
   id: ModuleId;
@@ -28,6 +28,7 @@ export const MODULES: readonly ModuleMeta[] = [
   { id: "notes", label: "Notes", glyph: "¶", summary: "Notes and wiki pages, with autosave and backlinks.", stage: "preview", offline: true },
   { id: "journal", label: "Journal", glyph: "≡", summary: "One entry per day, with mood.", stage: "preview", offline: true },
   { id: "library", label: "Library", glyph: "◫", summary: "PDFs and ePubs with reading progress.", stage: "preview", offline: false },
+  { id: "music", label: "Music", glyph: "♫", summary: "Your audio files, playlists, and offline listening.", stage: "preview", offline: true },
   { id: "files", label: "Files", glyph: "▤", summary: "Private cloud storage.", stage: "preview", offline: false },
   { id: "jarvis", label: "JARVIS", glyph: "◉", summary: "Text commands with preview and approval.", stage: "preview", offline: false },
   { id: "settings", label: "Settings", glyph: "§", summary: "Passkeys, device tokens, and sign-out.", stage: "ready", offline: false },

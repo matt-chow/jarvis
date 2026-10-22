@@ -2,8 +2,8 @@
 
 use super::{
     D1EventRepository, D1FileRepository, D1HabitRepository, D1InboxRepository, D1JournalRepository,
-    D1LibraryRepository, D1LinkRepository, D1NoteRepository, D1PreferencesRepository,
-    D1ProjectRepository, D1TaskRepository,
+    D1LibraryRepository, D1LinkRepository, D1MusicRepository, D1NoteRepository,
+    D1PreferencesRepository, D1ProjectRepository, D1TaskRepository,
 };
 use directory_core::calendar::{Event, EventRepository, MAX_EVENTS};
 use directory_core::export::ExportSource;
@@ -13,6 +13,7 @@ use directory_core::inbox::{InboxItem, InboxRepository};
 use directory_core::journal::Entry;
 use directory_core::library::{LibraryRepository, Progress};
 use directory_core::links::Link;
+use directory_core::music::{MusicRepository, Playlist, MAX_PLAYLISTS};
 use directory_core::notes::Note;
 use directory_core::preferences::{from_stored, Preferences, PreferencesRepository};
 use directory_core::projects::{Project, ProjectRepository};
@@ -33,6 +34,7 @@ pub struct D1ExportSource {
     pub habits: D1HabitRepository,
     pub events: D1EventRepository,
     pub preferences: D1PreferencesRepository,
+    pub music: D1MusicRepository,
 }
 
 impl ExportSource for D1ExportSource {
@@ -78,5 +80,8 @@ impl ExportSource for D1ExportSource {
             .await?
             .map(|d| from_stored(&d))
             .unwrap_or_default())
+    }
+    async fn playlists(&self, owner_id: &str) -> Result<Vec<Playlist>, String> {
+        self.music.playlists(owner_id, MAX_PLAYLISTS).await
     }
 }

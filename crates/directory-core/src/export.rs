@@ -9,6 +9,7 @@ use crate::inbox::InboxItem;
 use crate::journal::Entry;
 use crate::library::Progress;
 use crate::links::{EntityRef, Link};
+use crate::music::Playlist;
 use crate::notes::Note;
 use crate::preferences::Preferences;
 use crate::projects::Project;
@@ -65,6 +66,7 @@ pub struct Export {
     pub habits: Vec<HabitRecord>,
     pub events: Vec<Event>,
     pub preferences: Preferences,
+    pub playlists: Vec<Playlist>,
 }
 
 /// Everything owned by `owner_id`, per module.
@@ -81,6 +83,7 @@ pub trait ExportSource {
     async fn habit_checkins(&self, owner_id: &str) -> Result<Vec<CheckIn>, String>;
     async fn events(&self, owner_id: &str) -> Result<Vec<Event>, String>;
     async fn preferences(&self, owner_id: &str) -> Result<Preferences, String>;
+    async fn playlists(&self, owner_id: &str) -> Result<Vec<Playlist>, String>;
 }
 
 pub async fn export<S: ExportSource>(
@@ -126,6 +129,7 @@ pub async fn export<S: ExportSource>(
         habits,
         events: source.events(&owner).await?,
         preferences: source.preferences(&owner).await?,
+        playlists: source.playlists(&owner).await?,
         user,
     })
 }
@@ -210,6 +214,9 @@ mod tests {
         }
         async fn preferences(&self, _: &str) -> Result<Preferences, String> {
             Ok(Preferences::default())
+        }
+        async fn playlists(&self, _: &str) -> Result<Vec<Playlist>, String> {
+            Ok(vec![])
         }
     }
 

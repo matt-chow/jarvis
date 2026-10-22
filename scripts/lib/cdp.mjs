@@ -76,7 +76,7 @@ export async function launch() {
   const exe = findBrowser();
   if (!exe) throw new Error("No Chrome/Edge found; set BROWSER_PATH.");
   const profile = mkdtempSync(join(tmpdir(), "directory-e2e-"));
-  spawn(exe, ["--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "about:blank"], {
+  spawn(exe, ["--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "--autoplay-policy=no-user-gesture-required", "about:blank"], {
     stdio: "ignore",
   }).unref();
   const portFile = join(profile, "DevToolsActivePort");

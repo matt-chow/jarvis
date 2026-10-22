@@ -11,7 +11,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   Deployment). **M2 JARVIS Alpha:** command layer ✅, presets ✅, `find` ✅,
   project commands ✅.
   Voice is blocked on owner approval. **M3:** search ✅, files ✅, library ✅,
-  offline editing ✅, wiki ✅. **M4:** habits ✅, calendar ✅, dashboard ✅, automations ✅.
+  offline editing ✅, wiki ✅. **M4:** habits ✅, calendar ✅, dashboard ✅, automations ✅, music ✅.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
   - Device tokens for native clients and scripts.
@@ -45,6 +45,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   - Universal search (`/` from anywhere), plus JARVIS `find`.
   - Automations: when a task is completed or a habit is checked in, run a
     saved command (journal, capture, note, add task).
+  - Music: audio files, playlists, a player that keeps playing across
+    modules, and tracks saved for offline listening.
   - PWA install and offline relaunch with the saved session.
   - Customizable Home dashboard (today, habits, recent notes, capture,
     status, modules), with the layout saved to the account.
@@ -58,10 +60,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | Command | Result (2026-10-22) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
-| `cargo test -p directory-core` | ✅ 104 passed |
-| Vitest | ✅ 51 passed |
+| `cargo test -p directory-core` | ✅ 106 passed |
+| Vitest | ✅ 53 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
-| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 23/23 |
+| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 24/24 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -102,9 +104,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. M4: music library and playlists. This needs an owner decision on audio
-   storage size within R2's free tier, and on offline downloads.
-2. P5 hardening: backup restore (import from the export), error
+1. P5 hardening: backup restore (import from the export), error
    monitoring, accessibility pass, iOS check.
 3. Search over events and habits.
 3. Remaining owner decisions: deploy approval, voice, AI provider, reader
@@ -113,6 +113,31 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-22 — M4 slice: Music
+- **Migration 0018:** `playlists`. Schema version 18.
+- **Core:** `music` module: audio detection (type or extension), library,
+  playlists validated against your audio files (≤ 500 tracks, ≤ 100
+  playlists). Deleted files are skipped on read. Playlists are included in
+  the export.
+- **Worker:** `/api/v1/music` and playlist routes. Playback streams from
+  file content with Range support.
+- **Web:**
+  - Music screen: upload into `Music`, play all or one track, add to a
+    playlist, save or remove offline.
+  - Playlists: create, play, reorder, remove, delete.
+  - App-wide `PlayerProvider` and bar: play/pause, next/previous, seek,
+    and Media Session keys. It prefers saved copies.
+  - IndexedDB v3 `media` store.
+- **Fix:** the Home notes widget no longer runs the legacy-notes migration
+  (a race hid its message on the Notes screen).
+- **Tests:**
+  - core 106; web 53 (media store, music helpers).
+  - smoke: audio listing, playlist validation and order, deleted tracks
+    skipped, export, 401.
+  - browser e2e 24/24: upload a generated WAV, it plays, save offline,
+    add to a playlist. The test browser allows autoplay
+    (`--autoplay-policy`).
 
 ### 2026-10-22 — Files: HTTP Range support
 - **Core:** `files::parse_range` (single range, suffix ranges, clamping;
