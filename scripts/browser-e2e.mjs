@@ -174,6 +174,21 @@ try {
     await shot("projects");
   });
 
+  await step("Search: '/' opens search, results are highlighted and open the item", async () => {
+    await page.hash("/home");
+    await page.evaluate(`document.activeElement?.blur(); window.dispatchEvent(new KeyboardEvent("keydown", { key: "/" }))`);
+    await waitFor("search module", () => page.evaluate(`location.hash.startsWith("#/search")`));
+    await page.fill("Search", "quarterly");
+    await page.waitForText("Write the quarterly report");
+    const marked = await page.evaluate(`[...document.querySelectorAll("mark")].map((m) => m.innerText.toLowerCase())`);
+    if (!marked.includes("quarterly")) throw new Error(`highlight: ${marked}`);
+    await shot("search");
+    await page.evaluate(`[...document.querySelectorAll("a")].find((a) => a.innerText.includes("Write the quarterly report")).click()`);
+    await waitFor("task opened", () =>
+      page.evaluate(`[...document.querySelectorAll("input")].some((i) => i.value === "Write the quarterly report")`),
+    );
+  });
+
   await step("JARVIS: command preview, approve, results link to items", async () => {
     await page.hash("/jarvis");
     await page.waitForText("No commands yet");

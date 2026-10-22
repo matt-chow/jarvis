@@ -89,6 +89,7 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | GET | `/api/v1/jarvis/history` | session or token | Last 50 plans with results |
 | GET / POST | `/api/v1/jarvis/presets` | session or token | Saved commands `{ name, input }` (≤ 50, validated by parsing). Running one is a normal `plan` call. |
 | DELETE | `/api/v1/jarvis/presets/{id}` | session or token | |
+| GET | `/api/v1/search?q=` | session or token | 2–100 chars. Case-insensitive substring match across tasks, notes, projects, and journal; LIKE wildcards escaped. Title matches first, then newest; snippets cut in core. |
 | GET | `/api/v1/export` | session or token | One JSON download (`format: "directory-export"`, `format_version: 1`): user, tasks, projects, notes with bodies, journal, inbox, links, and file metadata. No credential material. |
 | GET | `/api/v1/links?kind=task|note|project|journal&id=` | session or token | Items linked to an entity, with resolved titles. Links whose other end was deleted are dropped and removed. |
 | POST | `/api/v1/links` | session or token | `{ from: {kind,id}, to: {kind,id} }` → `201 { link_id, kind, id, title }`. Idempotent and symmetric; both ends must exist and be owned. |

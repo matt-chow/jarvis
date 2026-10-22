@@ -15,6 +15,7 @@ use crate::inbox::{Capture, InboxError, InboxRepository, InboxService};
 use crate::journal::{JournalError, JournalRepository, JournalService};
 use crate::links::{EntityKind, EntityRef};
 use crate::notes::{NewNote, NoteError, NoteRepository, NoteService};
+use crate::search::{self, SearchError, SearchSource};
 use crate::tasks::{
     self, Filter, NewTask, Status, TaskError, TaskPatch, TaskRepository, TaskService,
 };
@@ -51,6 +52,9 @@ pub enum Command {
         text: String,
     },
     ListTasks,
+    Find {
+        query: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -74,7 +78,7 @@ fn quote(s: &str, max: usize) -> String {
 impl Command {
     pub fn risk(&self) -> Risk {
         match self {
-            Self::ListTasks => Risk::Read,
+            Self::ListTasks | Self::Find { .. } => Risk::Read,
             _ => Risk::Write,
         }
     }
@@ -100,6 +104,7 @@ impl Command {
             }
             Self::Capture { text } => format!("Capture to inbox: {}", quote(text, 60)),
             Self::ListTasks => "List open tasks".into(),
+            Self::Find { query } => format!("Search for {}", quote(query, 60)),
         }
     }
 }
@@ -235,11 +240,12 @@ pub trait JarvisRepository {
 }
 
 /// Module repositories commands execute through.
-pub struct CommandTargets<'a, T, N, J, I> {
+pub struct CommandTargets<'a, T, N, J, I, S> {
     pub tasks: &'a T,
     pub notes: &'a N,
     pub journal: &'a J,
     pub inbox: &'a I,
+    pub search: &'a S,
 }
 
 fn backend(e: String) -> JarvisError {
@@ -296,12 +302,12 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
     }
 
     /// Interpret and resolve `req` into a plan. Read-only plans execute now.
-    pub async fn plan<P, T, N, J, I>(
+    pub async fn plan<P, T, N, J, I, S>(
         &self,
         p: &Principal,
         provider: &P,
         req: PlanRequest,
-        targets: CommandTargets<'_, T, N, J, I>,
+        targets: CommandTargets<'_, T, N, J, I, S>,
     ) -> Result<Plan, JarvisError>
     where
         P: IntentProvider,
@@ -309,6 +315,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         N: NoteRepository,
         J: JournalRepository,
         I: InboxRepository,
+        S: SearchSource,
     {
         let input = req.input.trim();
         if input.chars().count() > MAX_INPUT {
@@ -400,17 +407,18 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
     }
 
     /// Approve and run a pending plan (exactly once).
-    pub async fn execute<T, N, J, I>(
+    pub async fn execute<T, N, J, I, S>(
         &self,
         p: &Principal,
         id: &str,
-        targets: CommandTargets<'_, T, N, J, I>,
+        targets: CommandTargets<'_, T, N, J, I, S>,
     ) -> Result<Plan, JarvisError>
     where
         T: TaskRepository,
         N: NoteRepository,
         J: JournalRepository,
         I: InboxRepository,
+        S: SearchSource,
     {
         let plan = self.load(p, id).await?;
         if plan.status != PlanStatus::Pending {
@@ -475,17 +483,18 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
     }
 
     /// Run actions in order; stop at the first failure.
-    async fn run<T, N, J, I>(
+    async fn run<T, N, J, I, S>(
         &self,
         p: &Principal,
         actions: &[PlannedAction],
-        t: &CommandTargets<'_, T, N, J, I>,
+        t: &CommandTargets<'_, T, N, J, I, S>,
     ) -> (PlanStatus, Vec<ActionResult>)
     where
         T: TaskRepository,
         N: NoteRepository,
         J: JournalRepository,
         I: InboxRepository,
+        S: SearchSource,
     {
         let mut results = Vec::with_capacity(actions.len());
         for action in actions {
@@ -499,17 +508,18 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         (PlanStatus::Executed, results)
     }
 
-    async fn run_one<T, N, J, I>(
+    async fn run_one<T, N, J, I, S>(
         &self,
         p: &Principal,
         command: &Command,
-        t: &CommandTargets<'_, T, N, J, I>,
+        t: &CommandTargets<'_, T, N, J, I, S>,
     ) -> ActionResult
     where
         T: TaskRepository,
         N: NoteRepository,
         J: JournalRepository,
         I: InboxRepository,
+        S: SearchSource,
     {
         let tasks = TaskService::new(t.tasks, self.entropy, self.now);
         let entity = |kind, id: &str| {
@@ -596,6 +606,33 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     entity: None,
                 },
                 Err(e) => inbox_failure(e),
+            },
+            Command::Find { query } => match search::search(t.search, p, query).await {
+                Ok(hits) if hits.is_empty() => ActionResult {
+                    ok: true,
+                    message: format!("Nothing matches “{query}”."),
+                    entity: None,
+                },
+                Ok(hits) => {
+                    let names: Vec<String> = hits
+                        .iter()
+                        .take(LIST_PREVIEW)
+                        .map(|h| format!("{} ({})", h.title, h.kind.as_str()))
+                        .collect();
+                    let more = if hits.len() > LIST_PREVIEW {
+                        format!(", and {} more", hits.len() - LIST_PREVIEW)
+                    } else {
+                        String::new()
+                    };
+                    let top = &hits[0];
+                    ActionResult {
+                        ok: true,
+                        message: format!("{} found: {}{more}.", hits.len(), names.join("; ")),
+                        entity: entity(top.kind, &top.id),
+                    }
+                }
+                Err(SearchError::Invalid(why)) => failure(format!("Can't search for that: {why}.")),
+                Err(SearchError::Backend(_)) => failure("Search is unavailable.".into()),
             },
             Command::ListTasks => match tasks.list(p, Filter::Open).await {
                 Ok(open) => {

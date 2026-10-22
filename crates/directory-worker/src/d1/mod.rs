@@ -10,6 +10,7 @@ mod notes;
 mod presets;
 mod projects;
 mod rate_limit;
+mod search;
 mod tasks;
 
 pub use export::D1ExportSource;
@@ -22,6 +23,7 @@ pub use notes::D1NoteRepository;
 pub use presets::D1PresetRepository;
 pub use projects::D1ProjectRepository;
 pub use rate_limit::D1RateLimitStore;
+pub use search::D1SearchSource;
 pub use tasks::D1TaskRepository;
 
 use directory_core::system::SystemRepository;

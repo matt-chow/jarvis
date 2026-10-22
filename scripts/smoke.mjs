@@ -387,6 +387,28 @@ async function local() {
       expect((await api.req("DELETE", `/api/v1/jarvis/presets/${p.json.id}`)).status === 404, "gone");
     });
 
+    await check("search: across kinds, title matches first, LIKE wildcards escaped, jarvis find", async () => {
+      const task = (await api.req("POST", "/api/v1/tasks", { body: { title: "Renew passport", notes: "form 100% done" } })).json;
+      const note = (await api.req("POST", "/api/v1/notes", { body: { body: "Travel docs\nPassport is in the top drawer" } })).json;
+      const proj = (await api.req("POST", "/api/v1/projects", { body: { name: "Japan trip", description: "need passport photos" } })).json;
+      const r = await api.req("GET", "/api/v1/search?q=passport");
+      expect(r.status === 200, `search → ${r.status}`);
+      const kinds = r.json.hits.map((h) => h.kind);
+      expect(kinds[0] === "task" && r.json.hits[0].title_match && kinds.includes("note") && kinds.includes("project"), `hits → ${r.text}`);
+      const noteHit = r.json.hits.find((h) => h.kind === "note");
+      expect(noteHit.title === "Travel docs" && /Passport is in the top drawer/.test(noteHit.snippet), "derived title + snippet");
+      const pct = await api.req("GET", "/api/v1/search?q=100%25");
+      expect(pct.json.hits.length === 1 && pct.json.hits[0].id === task.id, `literal % → ${pct.text}`);
+      const underscore = await api.req("GET", "/api/v1/search?q=_a");
+      expect(underscore.json.hits.length === 0, "literal _ is not a wildcard");
+      expect((await api.req("GET", "/api/v1/search?q=a")).status === 400, "too short");
+      const find = await api.req("POST", "/api/v1/jarvis/plan", { body: { input: "find passport", today: "2026-10-21" } });
+      expect(find.json.status === "executed" && find.json.results[0].entity.id === task.id, `jarvis find → ${find.text}`);
+      await api.req("DELETE", `/api/v1/tasks/${task.id}`);
+      await api.req("DELETE", `/api/v1/notes/${note.id}`);
+      await api.req("DELETE", `/api/v1/projects/${proj.id}`);
+    });
+
     await check("device API token: create (shown once), use as bearer, cannot manage credentials", async () => {
       const r = await api.req("POST", "/api/v1/auth/tokens", { body: { name: "Smoke device" } });
       expect(r.status === 201 && r.json.secret.startsWith("dir_"), `${r.status} ${r.text}`);

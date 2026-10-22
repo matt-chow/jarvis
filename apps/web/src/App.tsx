@@ -13,6 +13,7 @@ import { Jarvis } from "./modules/Jarvis";
 import { Journal } from "./modules/Journal";
 import { Notes } from "./modules/Notes";
 import { Projects } from "./modules/Projects";
+import { Search } from "./modules/Search";
 import { Settings } from "./modules/Settings";
 import { Tasks } from "./modules/Tasks";
 
@@ -26,6 +27,7 @@ export interface ModuleProps {
 
 const VIEWS: Record<ModuleId, ComponentType<ModuleProps>> = {
   home: Home,
+  search: Search,
   inbox: Inbox,
   tasks: Tasks,
   projects: Projects,
@@ -84,6 +86,20 @@ export function App() {
   useEffect(() => {
     document.title = active === "home" ? "Directory" : `${current.label} · Directory`;
   }, [active, current.label]);
+
+  // "/" opens search from anywhere (except while typing in a field).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing = el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+      if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        location.hash = "/search";
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const status = session.status;
   if (status.kind === "loading") {

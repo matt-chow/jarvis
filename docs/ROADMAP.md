@@ -42,8 +42,8 @@ part of every slice, not deferred to the end.
 | --- | --- |
 | Command layer: typed commands, deterministic parser, preview/approve/execute-once, multi-step, history | ✅ done |
 | Command presets (saved commands, one-tap run) | ✅ done |
-| Voice input (Web Speech API where available; text fallback) | next |
-| More commands (projects, links, search) | planned |
+| Voice input (Web Speech API where available; text fallback) | **needs owner approval**: browser speech services send audio to the vendor |
+| More commands: `find` ✅; projects and links planned | partial |
 | AI intent provider | needs owner approval (provider, budget) |
 
 - A command registry where modules expose typed, validated commands.
@@ -54,6 +54,8 @@ part of every slice, not deferred to the end.
   JARVIS never touches the database directly, only module commands.
 
 ## M3 Knowledge & Offline Beta (P3)
+- ✅ Universal search (substring, all text modules). A full-text index is
+  pending, behind `SearchSource`.
 - Wiki and PDF/ePub library on R2, with reading progress.
 - File management: folders, metadata in D1, multipart uploads, quotas.
 - Universal search.

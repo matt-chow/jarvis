@@ -12,7 +12,9 @@ mod entropy;
 mod http;
 mod r2;
 
-use http::{auth, export, health, inbox, jarvis, journal, links, notes, projects, storage, tasks};
+use http::{
+    auth, export, health, inbox, jarvis, journal, links, notes, projects, search, storage, tasks,
+};
 
 #[event(fetch)]
 async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
@@ -45,6 +47,8 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get_async("/api/v1/jarvis/presets", jarvis::list_presets)
         .post_async("/api/v1/jarvis/presets", jarvis::create_preset)
         .delete_async("/api/v1/jarvis/presets/:id", jarvis::delete_preset)
+        // Search
+        .get_async("/api/v1/search", search::search)
         // Data export
         .get_async("/api/v1/export", export::export)
         // Links

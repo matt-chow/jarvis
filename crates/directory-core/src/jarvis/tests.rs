@@ -4,9 +4,39 @@ use crate::identity::AuthMethod;
 use crate::inbox::memory::MemoryInbox;
 use crate::journal::testing::MemoryJournal;
 use crate::notes::testing::MemoryNotes;
+use crate::search::{Candidate, SearchSource};
 use crate::tasks::memory::MemoryTasks;
 use crate::test_util::block_on;
 use std::cell::RefCell;
+
+/// Test search: in-memory task titles only.
+impl SearchSource for MemoryTasks {
+    async fn candidates(
+        &self,
+        owner_id: &str,
+        kind: EntityKind,
+        pattern: &str,
+        _: u32,
+    ) -> Result<Vec<Candidate>, String> {
+        if kind != EntityKind::Task {
+            return Ok(vec![]);
+        }
+        let needle = pattern.trim_matches('%').to_lowercase();
+        Ok(self
+            .0
+            .borrow()
+            .iter()
+            .filter(|t| t.owner_id == owner_id && t.title.to_lowercase().contains(&needle))
+            .map(|t| Candidate {
+                kind,
+                id: t.id.clone(),
+                title: t.title.clone(),
+                body: t.notes.clone(),
+                updated_at: t.updated_at,
+            })
+            .collect())
+    }
+}
 
 #[derive(Default)]
 struct MemoryPlans(RefCell<Vec<Plan>>);
@@ -104,12 +134,15 @@ struct F {
 }
 
 impl F {
-    fn targets(&self) -> CommandTargets<'_, MemoryTasks, MemoryNotes, MemoryJournal, MemoryInbox> {
+    fn targets(
+        &self,
+    ) -> CommandTargets<'_, MemoryTasks, MemoryNotes, MemoryJournal, MemoryInbox, MemoryTasks> {
         CommandTargets {
             tasks: &self.tasks,
             notes: &self.notes,
             journal: &self.journal,
             inbox: &self.inbox,
+            search: &self.tasks,
         }
     }
     fn svc(&self, now: i64) -> JarvisService<'_, MemoryPlans, CountingEntropy> {
@@ -297,4 +330,27 @@ fn input_validation() {
         ),
         Err(JarvisError::Invalid("today", _))
     ));
+}
+
+#[test]
+fn find_is_read_only_and_links_the_top_hit() {
+    let f = F::default();
+    f.execute(
+        &f.plan("add task Renew passport; add task Pack bags")
+            .unwrap()
+            .id,
+        1_100,
+    )
+    .unwrap();
+    let plan = f.plan("find passport").unwrap();
+    assert!(!plan.requires_approval);
+    assert_eq!(plan.results[0].message, "1 found: Renew passport (task).");
+    assert_eq!(
+        plan.results[0].entity.as_ref().unwrap().kind,
+        EntityKind::Task
+    );
+    assert_eq!(
+        f.plan("find xylophone").unwrap().results[0].message,
+        "Nothing matches “xylophone”."
+    );
 }

@@ -7,6 +7,7 @@ JARVIS commands will refer to them.
 | Id | Name | Stage | Offline | Backend | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `home` | Home | ready | yes | `GET /api/v1/health` | Status dashboard; health cached in IndexedDB. |
+| `search` | Search | preview | no | `/api/v1/search` | Debounced search with highlighted titles and snippets, query in the URL (`#/search?q=`), and `/` to open from anywhere. Also the JARVIS `find …` command. |
 | `inbox` | Inbox | preview | read-only | `/api/v1/inbox` | Quick capture (also on Home); triage into task (first line becomes the title), note, or today's journal. |
 | `tasks` | Tasks | preview | read-only | `/api/v1/tasks` | Tasks and one-level subtasks, status, priority, due date, notes. Last list cached for offline viewing. |
 | `projects` | Projects | preview | read-only | `/api/v1/projects` | Group top-level tasks; progress, archive, and links into Tasks filtered by project. |
@@ -35,6 +36,7 @@ provisional (DECISIONS D-013): built from the shared `Panel`, `Button`, and
 | App shell (sidebar, header, tab bar) | `App.tsx` | provisional (Sprint 00 style) |
 | Sign-in / first-run setup | `components/AuthScreen.tsx` | awaiting design integration |
 | Home (status, capture, module grid) | `modules/Home.tsx` | provisional |
+| Search | `modules/Search.tsx` | awaiting design integration |
 | Inbox + capture box | `modules/Inbox.tsx`, `components/CaptureBox.tsx` | awaiting design integration |
 | Tasks | `modules/Tasks.tsx` | awaiting design integration |
 | Projects | `modules/Projects.tsx` | awaiting design integration |

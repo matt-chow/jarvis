@@ -9,6 +9,7 @@ import type { JournalEntry, JournalSummary, PutJournal } from "./journal";
 import type { EntityRef, Linked } from "./links";
 import type { Note, NotePatch, NoteSummary } from "./notes";
 import type { NewProject, Project, ProjectPatch } from "./projects";
+import type { SearchHit } from "./search";
 import type { NewTask, Task, TaskFilter, TaskPatch } from "./tasks";
 import type { AssertionJson, CreationOptionsJson, RegistrationJson, RequestOptionsJson } from "./webauthn";
 
@@ -204,6 +205,10 @@ export class Api {
   presets = async () => (await this.call<{ presets: Preset[] }>("GET", "/api/v1/jarvis/presets")).presets;
   createPreset = (name: string, input: string) => this.call<Preset>("POST", "/api/v1/jarvis/presets", { name, input });
   deletePreset = (id: string) => this.call<void>("DELETE", `/api/v1/jarvis/presets/${encodeURIComponent(id)}`);
+
+  // ---- Search ----
+  search = async (q: string) =>
+    (await this.call<{ hits: SearchHit[] }>("GET", `/api/v1/search?q=${encodeURIComponent(q)}`)).hits;
 
   // ---- Export ----
   async exportData(): Promise<Blob> {

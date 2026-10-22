@@ -4,7 +4,7 @@
  * should share these ids.
  */
 
-export type ModuleId = "home" | "inbox" | "tasks" | "projects" | "notes" | "journal" | "files" | "jarvis" | "settings";
+export type ModuleId = "home" | "search" | "inbox" | "tasks" | "projects" | "notes" | "journal" | "files" | "jarvis" | "settings";
 
 export interface ModuleMeta {
   id: ModuleId;
@@ -19,6 +19,7 @@ export interface ModuleMeta {
 
 export const MODULES: readonly ModuleMeta[] = [
   { id: "home", label: "Home", glyph: "~", summary: "System status and overview.", stage: "ready", offline: true },
+  { id: "search", label: "Search", glyph: "⌕", summary: "Find anything across tasks, notes, projects, and journal.", stage: "preview", offline: false },
   { id: "inbox", label: "Inbox", glyph: "↓", summary: "Capture first, sort later: triage into tasks, notes, or the journal.", stage: "preview", offline: false },
   { id: "tasks", label: "Tasks", glyph: "☐", summary: "Tasks and subtasks with due dates and priorities.", stage: "preview", offline: false },
   { id: "projects", label: "Projects", glyph: "▦", summary: "Group tasks and track progress.", stage: "preview", offline: false },

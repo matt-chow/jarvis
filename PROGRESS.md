@@ -8,8 +8,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - **Milestone:** M1 Private Alpha is **feature-complete locally**. All M1
   slices are done and `npm run ci` is green. The first deploy is **blocked on
   owner approval** (see the readiness checklist in docs/ARCHITECTURE.md ›
-  Deployment). **M2 JARVIS Alpha:** command layer ✅, presets ✅. Next:
-  voice input.
+  Deployment). **M2 JARVIS Alpha:** command layer ✅, presets ✅, `find` ✅.
+  Voice is blocked on owner approval. **M3:** universal search ✅ (early).
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
   - Device tokens for native clients and scripts.
@@ -30,6 +30,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   - Full JSON data export from Settings.
   - JARVIS text commands (tasks, notes, journal, capture, list) with preview,
     approve, results, history, and saved presets.
+  - Universal search (`/` from anywhere), plus JARVIS `find`.
   - PWA install and offline relaunch with the saved session.
   - Health dashboard.
 - **Not deployed.** Nothing has run on Cloudflare yet; that needs owner approval
@@ -41,11 +42,11 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 | Command | Result (2026-10-21) |
 | --- | --- |
-| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 1,205 KiB / 389 KiB gzipped |
-| `cargo test -p directory-core` | ✅ 74 passed |
+| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 1,247 KiB / 401 KiB gzipped |
+| `cargo test -p directory-core` | ✅ 78 passed |
 | Vitest | ✅ 26 passed (9 files) |
-| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 26/26 |
-| `npm run test:browser` (headless Edge 155, virtual passkey) | ✅ 15/15 |
+| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 27/27 |
+| `npm run test:browser` (headless Edge 155, virtual passkey) | ✅ 16/16 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -55,6 +56,9 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   private-key operations only; we only verify public-key signatures.
 - Files: whole bodies are buffered (10 MB cap); no folders, metadata table, or
   pagination cursor.
+- Search uses SQLite `LIKE`, which is case-insensitive for ASCII only, and
+  reads whole note and journal bodies for snippets. Move to FTS5 when data
+  grows.
 - Offline editing (tasks, notes, projects) is read-only until M3 sync; edits
   made while offline are not queued.
 - `wrangler dev` must be restarted after rebuilding `apps/web/dist`.
@@ -74,23 +78,44 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   `DIRECTORY_RP_ID`/`DIRECTORY_ORIGINS`.
 - **M2:** which AI provider (if any) JARVIS may call, and its budget. Until
   then, JARVIS uses a deterministic command parser only.
+- **M2 voice:** may JARVIS use the browser's speech recognition? In
+  Chrome/Edge it sends audio to the vendor's cloud. It would be off by
+  default, opt-in per device, and need `Permissions-Policy: microphone=(self)`.
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-**M2 slice 3: voice input for JARVIS.**
-- Progressive enhancement: a microphone button appears only when the browser
-  exposes `SpeechRecognition`/`webkitSpeechRecognition`. The transcript
-  fills the command box for review and is never auto-executed; writes still
-  need approval.
-- Permissions-Policy must allow the microphone for self (currently denied in
-  `_headers`).
-- Privacy note in the UI: browser speech services may process audio in the
-  cloud (e.g. Chrome sends it to Google). Mention this in docs.
-- Then: more commands (projects, linking), and M3 planning.
+**M3 slice: private file management.** This upgrades the R2 proof of
+concept into a Files module:
+- Folders (key prefixes), with a metadata table in D1 (name, size, type,
+  created, folder) as the list source, so listing costs no R2 Class A
+  operations.
+- Rename and move (metadata only; the stable object id is the key).
+- Streaming upload and download, so bodies aren't buffered: `R2 put` from the
+  request stream with `Content-Length` enforcement, and `get` streamed to the
+  response.
+- Per-owner storage quota in core, with a free-tier-safe default of 1 GB and
+  a usage display.
+- Then: PDF/ePub library with reading progress (built on Files), and offline
+  sync design.
 
 ---
 
 ## Log
+
+### 2026-10-21 — Universal search (+ JARVIS find)
+- **Core:** `search` module: validation, LIKE escaping, Unicode-safe
+  snippets, ranking (title match, then recency), and a `SearchSource` trait.
+  JARVIS gains a read-only `Find` command (parser: find, search, look up),
+  and its targets include a search source.
+- **Worker:** `d1/search.rs` (per-kind escaped LIKE; derived note titles),
+  `GET /api/v1/search`.
+- **Web:** Search module (debounced, highlighted, linkable `#/search?q=`) and
+  a global `/` shortcut. `lib/search.ts` holds the types (no lib → module
+  imports).
+- **Tests:** 4 core tests, a smoke search check (cross-kind ranking,
+  literal `%`/`_`, JARVIS find), and a browser e2e search step.
+- **Voice input** is deferred pending owner approval (privacy of browser
+  speech services).
 
 ### 2026-10-21 — M2 slice: JARVIS presets
 - **Core:** `jarvis::presets` (name and input validation, dry-parse on

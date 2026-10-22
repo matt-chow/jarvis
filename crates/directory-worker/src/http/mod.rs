@@ -10,6 +10,7 @@ pub mod journal;
 pub mod links;
 pub mod notes;
 pub mod projects;
+pub mod search;
 pub mod storage;
 pub mod tasks;
 

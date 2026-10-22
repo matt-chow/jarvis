@@ -7,6 +7,7 @@
 //!   journal <text>                     · also: log, diary
 //!   capture <text>                     · also: inbox, remember
 //!   list tasks                         · also: tasks, open tasks, what's open
+//!   find <text>                        · also: search, search for, look up
 //! Steps are separated by `;` or ` then `. Dates: today, tomorrow, a weekday
 //! (next occurrence), or YYYY-MM-DD.
 
@@ -23,6 +24,7 @@ pub const EXAMPLES: &[&str] = &[
     "journal long walk by the river",
     "capture look into solar panels",
     "list tasks",
+    "find passport",
     "add task buy milk; note milk was out of stock",
 ];
 
@@ -172,6 +174,12 @@ fn parse_step(step: &str, today: &str) -> Result<Command, ParseError> {
             text: require(rest, "journal text")?.to_owned(),
         });
     }
+    if let Some(rest) = strip(step, &["search for", "look up", "search", "find"]) {
+        let query = require(rest, "what to find")?.trim_end_matches(['?', '.']);
+        return Ok(Command::Find {
+            query: query.to_owned(),
+        });
+    }
     if let Some(rest) = strip(step, &["capture", "inbox", "remember"]) {
         return Ok(Command::Capture {
             text: require(rest, "text to capture")?.to_owned(),
@@ -282,6 +290,12 @@ mod tests {
             }
         );
         assert_eq!(one("What's open?"), Command::ListTasks);
+        assert_eq!(
+            one("search for passport?"),
+            Command::Find {
+                query: "passport".into()
+            }
+        );
         // Keywords must be whole words.
         assert_eq!(
             parse("notebook shopping", TODAY),

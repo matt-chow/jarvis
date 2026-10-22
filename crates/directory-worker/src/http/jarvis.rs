@@ -4,7 +4,7 @@ use super::auth::principal;
 use super::{error, error_with, json, no_content, read_json};
 use crate::d1::{
     D1InboxRepository, D1JarvisRepository, D1JournalRepository, D1NoteRepository,
-    D1PresetRepository, D1TaskRepository,
+    D1PresetRepository, D1SearchSource, D1TaskRepository,
 };
 use crate::{bindings, entropy::WebCryptoEntropy, try_or_respond};
 use directory_core::identity::Principal;
@@ -50,7 +50,17 @@ struct Targets {
     notes: D1NoteRepository,
     journal: D1JournalRepository,
     inbox: D1InboxRepository,
+    search: D1SearchSource,
 }
+
+type Borrowed<'a> = CommandTargets<
+    'a,
+    D1TaskRepository,
+    D1NoteRepository,
+    D1JournalRepository,
+    D1InboxRepository,
+    D1SearchSource,
+>;
 
 impl Targets {
     fn from_env(env: &Env) -> Result<Self> {
@@ -60,23 +70,17 @@ impl Targets {
             notes: D1NoteRepository::new(db()?),
             journal: D1JournalRepository::new(db()?),
             inbox: D1InboxRepository::new(db()?),
+            search: D1SearchSource::new(db()?),
         })
     }
 
-    fn borrow(
-        &self,
-    ) -> CommandTargets<
-        '_,
-        D1TaskRepository,
-        D1NoteRepository,
-        D1JournalRepository,
-        D1InboxRepository,
-    > {
+    fn borrow(&self) -> Borrowed<'_> {
         CommandTargets {
             tasks: &self.tasks,
             notes: &self.notes,
             journal: &self.journal,
             inbox: &self.inbox,
+            search: &self.search,
         }
     }
 }
