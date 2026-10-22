@@ -8,6 +8,14 @@ publish.workspace = true
 
 [dependencies]
 serde.workspace = true
+serde_json.workspace = true
+# Crypto for WebAuthn verification. Default features off: no `getrandom`
+# (randomness is injected via the `Entropy` trait) and smaller WASM.
+base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
+p256 = { version = "0.13.2", default-features = false, features = ["ecdsa", "pkcs8"] }
+rsa = { version = "0.9.10", default-features = false }
+sha2 = { version = "0.10.9", default-features = false, features = ["oid"] }
 
 [dev-dependencies]
-serde_json.workspace = true
+p256 = { version = "0.13.2", default-features = false, features = ["ecdsa", "pkcs8", "alloc"] }
+rsa = { version = "0.9.10", default-features = false, features = ["pem"] }

@@ -1,5 +1,12 @@
 # Copy to .dev.vars (gitignored) for local `wrangler dev`.
-# Production: `npx wrangler secret put DIRECTORY_API_TOKEN` — never commit real values.
-# Must be at least 32 characters. Generate one with:
+# Production: set DIRECTORY_RP_ID / DIRECTORY_ORIGINS in wrangler.toml [vars] and
+# `npx wrangler secret put DIRECTORY_SETUP_TOKEN` — never commit real values.
+
+# One-time owner setup secret (>= 32 chars). Generate with:
 #   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-DIRECTORY_API_TOKEN=local-dev-token-change-me-0123456789abcdef
+DIRECTORY_SETUP_TOKEN=local-setup-token-change-me-0123456789abcdef
+
+# Passkeys need a hostname RP id: use http://localhost (not 127.0.0.1) locally.
+DIRECTORY_RP_ID=localhost
+# Worker dev server and Vite dev server origins.
+DIRECTORY_ORIGINS=http://localhost:8787,http://localhost:5173

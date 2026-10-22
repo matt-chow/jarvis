@@ -12,13 +12,15 @@ const SW_TEXT: Record<ModuleProps["sw"]["kind"], string> = {
   error: "Service worker failed to register.",
 };
 
-export function Home({ online, health, sw, navigate }: ModuleProps) {
+export function Home({ online, health, sw, session, navigate }: ModuleProps) {
   const { report } = health;
   return (
     <div className="grid gap-5 lg:grid-cols-5">
       <div className="lg:col-span-5">
         <p className="label">boot sequence complete</p>
-        <h2 className="mt-1 text-2xl font-semibold tracking-tight md:text-3xl">Good to see you.</h2>
+        <h2 className="mt-1 text-2xl font-semibold tracking-tight md:text-3xl">
+          Good to see you{session.status.kind === "signed-in" ? `, ${session.status.user.displayName.split(" ")[0]}` : ""}.
+        </h2>
         <p className="mt-2 max-w-2xl text-sm text-muted">
           Directory is your modular personal workspace. This is the Sprint 00 foundation: the shell, offline cache,
           on-device storage, and the private cloud API.

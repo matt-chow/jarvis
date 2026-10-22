@@ -105,14 +105,56 @@ pub trait ObjectStore {
         -> Result<Vec<ObjectInfo>, StorageError>;
 }
 
-/// Applies Directory's storage rules on top of any `ObjectStore`.
+impl<T: ObjectStore> ObjectStore for &T {
+    async fn put(
+        &self,
+        key: &ObjectKey,
+        body: Vec<u8>,
+        content_type: &str,
+    ) -> Result<ObjectInfo, StorageError> {
+        (**self).put(key, body, content_type).await
+    }
+    async fn get(&self, key: &ObjectKey) -> Result<Option<StoredObject>, StorageError> {
+        (**self).get(key).await
+    }
+    async fn delete(&self, key: &ObjectKey) -> Result<(), StorageError> {
+        (**self).delete(key).await
+    }
+    async fn list(
+        &self,
+        prefix: Option<&str>,
+        limit: u32,
+    ) -> Result<Vec<ObjectInfo>, StorageError> {
+        (**self).list(prefix, limit).await
+    }
+}
+
+/// Applies Directory's storage rules on top of any `ObjectStore`, scoped to one
+/// owner: every physical key is `u/<owner_id>/<key>`, so one principal can never
+/// address another's objects.
 pub struct StorageService<S> {
     store: S,
+    namespace: String,
 }
 
 impl<S: ObjectStore> StorageService<S> {
-    pub fn new(store: S) -> Self {
-        Self { store }
+    pub fn new(store: S, owner_id: &str) -> Self {
+        Self {
+            store,
+            namespace: format!("u/{owner_id}/"),
+        }
+    }
+
+    fn physical(&self, raw_key: &str) -> Result<ObjectKey, StorageError> {
+        let key = ObjectKey::parse(raw_key)?;
+        Ok(ObjectKey(format!("{}{}", self.namespace, key.as_str())))
+    }
+
+    fn logical(&self, mut info: ObjectInfo) -> ObjectInfo {
+        if let Some(k) = info.key.strip_prefix(&self.namespace) {
+            info.key = k.to_owned();
+        }
+        info
     }
 
     pub async fn put(
@@ -121,23 +163,29 @@ impl<S: ObjectStore> StorageService<S> {
         body: Vec<u8>,
         content_type: Option<&str>,
     ) -> Result<ObjectInfo, StorageError> {
-        let key = ObjectKey::parse(raw_key)?;
+        let key = self.physical(raw_key)?;
         if body.len() > MAX_OBJECT_BYTES {
             return Err(StorageError::TooLarge {
                 max: MAX_OBJECT_BYTES,
             });
         }
-        self.store
+        let info = self
+            .store
             .put(&key, body, &normalize_content_type(content_type))
-            .await
+            .await?;
+        Ok(self.logical(info))
     }
 
     pub async fn get(&self, raw_key: &str) -> Result<Option<StoredObject>, StorageError> {
-        self.store.get(&ObjectKey::parse(raw_key)?).await
+        let obj = self.store.get(&self.physical(raw_key)?).await?;
+        Ok(obj.map(|o| StoredObject {
+            info: self.logical(o.info),
+            body: o.body,
+        }))
     }
 
     pub async fn delete(&self, raw_key: &str) -> Result<(), StorageError> {
-        self.store.delete(&ObjectKey::parse(raw_key)?).await
+        self.store.delete(&self.physical(raw_key)?).await
     }
 
     pub async fn list(
@@ -149,8 +197,10 @@ impl<S: ObjectStore> StorageService<S> {
         if let Some(p) = prefix {
             validate_prefix(p)?;
         }
+        let full_prefix = format!("{}{}", self.namespace, prefix.unwrap_or(""));
         let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT).clamp(1, MAX_LIST_LIMIT);
-        self.store.list(prefix, limit).await
+        let infos = self.store.list(Some(&full_prefix), limit).await?;
+        Ok(infos.into_iter().map(|i| self.logical(i)).collect())
     }
 }
 
@@ -296,7 +346,7 @@ mod tests {
 
     #[test]
     fn round_trips_through_service() {
-        let svc = StorageService::new(MemoryStore::default());
+        let svc = StorageService::new(MemoryStore::default(), "owner1");
         let info = block_on(svc.put("docs/a.txt", b"hello".to_vec(), Some("text/plain"))).unwrap();
         assert_eq!(info.size, 5);
 
@@ -319,7 +369,7 @@ mod tests {
 
     #[test]
     fn enforces_limits_and_validation() {
-        let svc = StorageService::new(MemoryStore::default());
+        let svc = StorageService::new(MemoryStore::default(), "owner1");
         let too_big = vec![0; MAX_OBJECT_BYTES + 1];
         assert_eq!(
             block_on(svc.put("big", too_big, None)),
@@ -335,6 +385,22 @@ mod tests {
             block_on(svc.list(Some("a//"), None)),
             Err(StorageError::InvalidKey(_))
         ));
+    }
+
+    #[test]
+    fn owners_are_isolated() {
+        let store = MemoryStore::default();
+        let alice = StorageService::new(&store, "alice");
+        let bob = StorageService::new(&store, "bob");
+        let info = block_on(alice.put("notes/a.txt", b"hi".to_vec(), None)).unwrap();
+        assert_eq!(info.key, "notes/a.txt", "callers see logical keys");
+        assert!(store.objects.borrow().contains_key("u/alice/notes/a.txt"));
+        assert!(block_on(bob.get("notes/a.txt")).unwrap().is_none());
+        assert!(block_on(bob.list(None, None)).unwrap().is_empty());
+        assert_eq!(
+            block_on(alice.list(None, None)).unwrap()[0].key,
+            "notes/a.txt"
+        );
     }
 
     #[test]

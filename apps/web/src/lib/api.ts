@@ -1,4 +1,9 @@
-/** Typed client for the Directory Worker API (`/api/v1`). */
+/**
+ * Typed client for the Directory Worker API (`/api/v1`).
+ * The browser authenticates with the HttpOnly session cookie (same origin);
+ * native clients can pass a device token instead.
+ */
+import type { AssertionJson, CreationOptionsJson, RegistrationJson, RequestOptionsJson } from "./webauthn";
 
 export interface HealthCheck {
   name: string;
@@ -20,10 +25,36 @@ export interface ObjectInfo {
   uploaded_at: string | null;
 }
 
+export interface SessionUser {
+  id: string;
+  displayName: string;
+}
+
+export interface SessionState {
+  authenticated: boolean;
+  setupRequired: boolean;
+  user?: SessionUser;
+}
+
+export interface PasskeyInfo {
+  id: string;
+  name: string;
+  created_at: number;
+  last_used_at: number | null;
+}
+
+export interface DeviceToken {
+  id: string;
+  name: string;
+  created_at: number;
+  last_used_at: number | null;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
+    readonly detail?: string,
   ) {
     super(`${status} ${code}`);
   }
@@ -41,46 +72,75 @@ export function objectPath(key: string): string {
 
 async function fail(res: Response): Promise<never> {
   let code = "request_failed";
+  let detail: string | undefined;
   try {
-    code = ((await res.json()) as { error?: string }).error ?? code;
+    const body = (await res.json()) as { error?: string; message?: string };
+    code = body.error ?? code;
+    detail = body.message;
   } catch {
     /* non-JSON body */
   }
-  throw new ApiError(res.status, code);
+  throw new ApiError(res.status, code, detail);
 }
 
-export async function fetchHealth(fetchImpl: Fetch = fetch): Promise<HealthReport> {
-  const res = await fetchImpl(`${BASE}/api/v1/health`, { headers: { Accept: "application/json" } });
-  // 503 still carries a report describing which check is degraded.
-  if (res.ok || res.status === 503) {
-    const body = (await res.json()) as Partial<HealthReport>;
-    if (body.service === "directory" && Array.isArray(body.checks)) return body as HealthReport;
-  }
-  return fail(res);
-}
-
-export class StorageClient {
+export class Api {
   constructor(
-    private readonly token: string,
-    private readonly fetchImpl: Fetch = fetch,
+    private readonly fetchImpl: Fetch = (...args) => fetch(...args),
+    private readonly base = BASE,
+    private readonly bearer?: string,
   ) {}
 
-  private request(path: string, init: RequestInit = {}) {
+  private send(method: string, path: string, init: { body?: BodyInit; json?: unknown; headers?: HeadersInit } = {}) {
     const headers = new Headers(init.headers);
-    headers.set("Authorization", `Bearer ${this.token}`);
-    return this.fetchImpl(`${BASE}${path}`, { ...init, headers });
+    if (this.bearer) headers.set("Authorization", `Bearer ${this.bearer}`);
+    let body = init.body;
+    if (init.json !== undefined) {
+      headers.set("Content-Type", "application/json");
+      body = JSON.stringify(init.json);
+    }
+    return this.fetchImpl(`${this.base}${path}`, { method, headers, body, credentials: "same-origin" });
   }
 
-  async list(prefix?: string): Promise<ObjectInfo[]> {
-    const q = prefix ? `?prefix=${encodeURIComponent(prefix)}` : "";
-    const res = await this.request(`/api/v1/storage/objects${q}`);
+  private async call<T>(method: string, path: string, json?: unknown): Promise<T> {
+    const res = await this.send(method, path, { json });
     if (!res.ok) return fail(res);
-    return ((await res.json()) as { objects: ObjectInfo[] }).objects;
+    return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+  }
+
+  async health(): Promise<HealthReport> {
+    const res = await this.send("GET", "/api/v1/health", { headers: { Accept: "application/json" } });
+    // 503 still carries a report describing which check is degraded.
+    if (res.ok || res.status === 503) {
+      const body = (await res.json()) as Partial<HealthReport>;
+      if (body.service === "directory" && Array.isArray(body.checks)) return body as HealthReport;
+    }
+    return fail(res);
+  }
+
+  // ---- Identity ----
+  session = () => this.call<SessionState>("GET", "/api/v1/auth/session");
+  setupOptions = (setupToken: string, displayName: string) =>
+    this.call<CreationOptionsJson>("POST", "/api/v1/auth/setup/options", { setupToken, displayName });
+  setupVerify = (reg: RegistrationJson) => this.call<SessionUser>("POST", "/api/v1/auth/setup/verify", reg);
+  loginOptions = () => this.call<RequestOptionsJson>("POST", "/api/v1/auth/login/options", {});
+  loginVerify = (a: AssertionJson) => this.call<SessionUser>("POST", "/api/v1/auth/login/verify", a);
+  logout = () => this.call<void>("POST", "/api/v1/auth/logout");
+  passkeys = async () => (await this.call<{ passkeys: PasskeyInfo[] }>("GET", "/api/v1/auth/passkeys")).passkeys;
+  addPasskeyOptions = () => this.call<CreationOptionsJson>("POST", "/api/v1/auth/passkeys/options", {});
+  addPasskeyVerify = (reg: RegistrationJson) => this.call<PasskeyInfo>("POST", "/api/v1/auth/passkeys/verify", reg);
+  deletePasskey = (id: string) => this.call<void>("DELETE", `/api/v1/auth/passkeys/${encodeURIComponent(id)}`);
+  tokens = async () => (await this.call<{ tokens: DeviceToken[] }>("GET", "/api/v1/auth/tokens")).tokens;
+  createToken = (name: string) => this.call<{ token: DeviceToken; secret: string }>("POST", "/api/v1/auth/tokens", { name });
+  deleteToken = (id: string) => this.call<void>("DELETE", `/api/v1/auth/tokens/${encodeURIComponent(id)}`);
+
+  // ---- Files ----
+  async listObjects(prefix?: string): Promise<ObjectInfo[]> {
+    const q = prefix ? `?prefix=${encodeURIComponent(prefix)}` : "";
+    return (await this.call<{ objects: ObjectInfo[] }>("GET", `/api/v1/storage/objects${q}`)).objects;
   }
 
   async upload(key: string, body: Blob): Promise<ObjectInfo> {
-    const res = await this.request(objectPath(key), {
-      method: "PUT",
+    const res = await this.send("PUT", objectPath(key), {
       body,
       headers: { "Content-Type": body.type || "application/octet-stream" },
     });
@@ -89,16 +149,16 @@ export class StorageClient {
   }
 
   async download(key: string): Promise<Blob> {
-    const res = await this.request(objectPath(key));
+    const res = await this.send("GET", objectPath(key));
     if (!res.ok) return fail(res);
     return res.blob();
   }
 
-  async remove(key: string): Promise<void> {
-    const res = await this.request(objectPath(key), { method: "DELETE" });
-    if (!res.ok) return fail(res);
-  }
+  removeObject = (key: string) => this.call<void>("DELETE", objectPath(key));
 }
+
+/** Shared client for the web app. */
+export const api = new Api();
 
 /** Turn a file name into a valid storage key (see core `ObjectKey`). */
 export function toObjectKey(fileName: string, folder = "uploads"): string {
@@ -109,4 +169,9 @@ export function toObjectKey(fileName: string, folder = "uploads"): string {
     .replace(/^[-.]+|-+$/g, "")
     .slice(0, 200);
   return `${folder}/${safe || "file"}`;
+}
+
+/** True when the request never reached the server (offline, DNS, CORS…). */
+export function isNetworkError(e: unknown): boolean {
+  return e instanceof TypeError;
 }

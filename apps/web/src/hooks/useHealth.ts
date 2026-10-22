@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchHealth, type HealthReport } from "../lib/api";
+import { api, type HealthReport } from "../lib/api";
 import { localDb } from "../lib/db";
 
 const CACHE_KEY = "health:last";
@@ -26,7 +26,7 @@ export function useHealth(online: boolean): HealthState {
   const refresh = useCallback(async () => {
     setState((s) => ({ ...s, loading: true }));
     try {
-      const report = await fetchHealth();
+      const report = await api.health();
       const checkedAt = Date.now();
       setState({ report, checkedAt, stale: false, loading: false });
       await (await localDb()).setValue<Cached>(CACHE_KEY, { report, checkedAt });

@@ -13,3 +13,7 @@ export function formatBytes(n: number): string {
 export function formatTime(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
+
+export function formatDate(ms: number): string {
+  return new Date(ms).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
+}

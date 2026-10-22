@@ -8,8 +8,9 @@
 // require `Send` futures.
 #![allow(async_fn_in_trait)]
 
-pub mod auth;
+pub mod encoding;
 pub mod health;
+pub mod identity;
 pub mod storage;
 pub mod system;
 

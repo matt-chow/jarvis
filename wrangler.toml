@@ -34,5 +34,13 @@ binding = "FILES"
 # Private bucket: never enable r2.dev public access or a custom domain on it.
 bucket_name = "directory-files"
 
+[vars]
+# Passkey relying party. Must be set to the deployed hostname before deploy, e.g.
+#   DIRECTORY_RP_ID = "directory.<subdomain>.workers.dev"
+#   DIRECTORY_ORIGINS = "https://directory.<subdomain>.workers.dev"
+# Left empty, sign-in fails closed (503 auth_not_configured). .dev.vars overrides locally.
+DIRECTORY_RP_ID = ""
+DIRECTORY_ORIGINS = ""
+
 # Secrets (not stored here):
-#   DIRECTORY_API_TOKEN — `npx wrangler secret put DIRECTORY_API_TOKEN`; locally via .dev.vars
+#   DIRECTORY_SETUP_TOKEN — `npx wrangler secret put DIRECTORY_SETUP_TOKEN`; locally via .dev.vars

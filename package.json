@@ -22,7 +22,7 @@
     "smoke": "node scripts/smoke.mjs",
     "verify": "npm run lint && npm test && npm run build && npm run build:worker",
     "deploy": "npm run build && wrangler deploy",
-    "test:offline": "node scripts/offline-check.mjs"
+    "test:browser": "node scripts/browser-e2e.mjs"
   },
   "devDependencies": {
     "wrangler": "4.151.3"

@@ -4,7 +4,7 @@
  * should share these ids.
  */
 
-export type ModuleId = "home" | "notes" | "files" | "jarvis";
+export type ModuleId = "home" | "notes" | "files" | "jarvis" | "settings";
 
 export interface ModuleMeta {
   id: ModuleId;
@@ -20,8 +20,9 @@ export interface ModuleMeta {
 export const MODULES: readonly ModuleMeta[] = [
   { id: "home", label: "Home", glyph: "~", summary: "System status and overview.", stage: "ready", offline: true },
   { id: "notes", label: "Scratchpad", glyph: "¶", summary: "Quick notes stored on this device.", stage: "preview", offline: true },
-  { id: "files", label: "Files", glyph: "▤", summary: "Private cloud storage (R2 proof of concept).", stage: "preview", offline: false },
+  { id: "files", label: "Files", glyph: "▤", summary: "Private cloud storage.", stage: "preview", offline: false },
   { id: "jarvis", label: "JARVIS", glyph: "◉", summary: "Voice and AI assistant.", stage: "planned", offline: false },
+  { id: "settings", label: "Settings", glyph: "§", summary: "Passkeys, device tokens, and sign-out.", stage: "ready", offline: false },
 ];
 
 export const DEFAULT_MODULE: ModuleId = "home";

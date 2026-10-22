@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ApiError, StorageClient, fetchHealth, objectPath, toObjectKey, type HealthReport } from "./api";
+import { Api, ApiError, objectPath, toObjectKey, type HealthReport } from "./api";
 
 const report: HealthReport = {
   status: "degraded",
@@ -11,36 +11,60 @@ const report: HealthReport = {
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
-describe("fetchHealth", () => {
+type Call = [string | URL | Request, RequestInit | undefined];
+
+function recorder(respond: () => Response) {
+  const calls: Call[] = [];
+  const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+    calls.push([url, init]);
+    return respond();
+  });
+  return { calls, fetchImpl };
+}
+
+describe("health", () => {
   it("accepts a degraded (503) report", async () => {
-    const fetchImpl = vi.fn(async () => json(503, report));
-    await expect(fetchHealth(fetchImpl)).resolves.toEqual(report);
-    expect(fetchImpl).toHaveBeenCalledWith("/api/v1/health", expect.anything());
+    const { fetchImpl, calls } = recorder(() => json(503, report));
+    await expect(new Api(fetchImpl).health()).resolves.toEqual(report);
+    expect(calls[0][0]).toBe("/api/v1/health");
   });
 
   it("rejects non-health responses", async () => {
-    await expect(fetchHealth(async () => json(404, { error: "not_found" }))).rejects.toMatchObject({
+    await expect(new Api(async () => json(404, { error: "not_found" })).health()).rejects.toMatchObject({
       status: 404,
       code: "not_found",
     });
-    await expect(fetchHealth(async () => new Response("<html>", { status: 200 }))).rejects.toBeInstanceOf(Error);
+    await expect(new Api(async () => new Response("<html>", { status: 200 })).health()).rejects.toBeInstanceOf(Error);
   });
 });
 
-describe("StorageClient", () => {
-  it("sends the bearer token and encodes keys", async () => {
-    const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => json(200, { objects: [] }));
-    await new StorageClient("secret", fetchImpl).list("docs/");
-    const [url, init] = fetchImpl.mock.calls[0];
-    expect(url).toBe("/api/v1/storage/objects?prefix=docs%2F");
-    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer secret");
+describe("requests", () => {
+  it("sends JSON with same-origin credentials", async () => {
+    const { fetchImpl, calls } = recorder(() => json(201, { token: { id: "t1" }, secret: "dir_x" }));
+    await new Api(fetchImpl).createToken("Phone");
+    const [url, init] = calls[0];
+    expect(url).toBe("/api/v1/auth/tokens");
+    expect(init?.method).toBe("POST");
+    expect(init?.credentials).toBe("same-origin");
+    expect(new Headers(init?.headers).get("Content-Type")).toBe("application/json");
+    expect(JSON.parse(String(init?.body))).toEqual({ name: "Phone" });
   });
 
-  it("surfaces API error codes", async () => {
-    const client = new StorageClient("bad", async () => json(401, { error: "unauthorized" }));
-    const err = await client.list().catch((e: unknown) => e);
+  it("uses a bearer token when given (native clients)", async () => {
+    const { fetchImpl, calls } = recorder(() => json(200, { objects: [] }));
+    await new Api(fetchImpl, "https://example.test", "dir_secret").listObjects("docs/");
+    const [url, init] = calls[0];
+    expect(url).toBe("https://example.test/api/v1/storage/objects?prefix=docs%2F");
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer dir_secret");
+  });
+
+  it("handles 204 and surfaces API error codes", async () => {
+    await expect(new Api(async () => new Response(null, { status: 204 })).logout()).resolves.toBeUndefined();
+    const err = await new Api(async () => json(409, { error: "last_passkey" }))
+      .deletePasskey("abc")
+      .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
-    expect(err).toMatchObject({ status: 401, code: "unauthorized" });
+    expect(err).toMatchObject({ status: 409, code: "last_passkey" });
   });
 });
 

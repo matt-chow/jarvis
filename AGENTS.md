@@ -7,8 +7,10 @@ Instructions for AI coding agents (and humans) working in this repository.
 - Read README.md, docs/ARCHITECTURE.md, and docs/DECISIONS.md before changing structure.
 - Keep `crates/directory-core` free of Cloudflare and `worker` imports. Add
   traits there and implement them in `crates/directory-worker`.
-- Every route that touches personal data must call `require_auth`
-  (`crates/directory-worker/src/http.rs`). Never make the R2 bucket public.
+- Every route that touches personal data must resolve a `Principal` with
+  `http::auth::authenticate` and scope queries by `principal.user_id`.
+  Never make the R2 bucket public. Changing auth or security policy needs owner
+  approval.
 - Never commit secrets. `.dev.vars` is gitignored; use `.dev.vars.example`.
 - Free tier only. Don't add paid Cloudflare products, bindings, or third-party
   services without explicit owner approval.
@@ -17,16 +19,31 @@ Instructions for AI coding agents (and humans) working in this repository.
 - The service worker must never cache `/api/*`.
 - Don't claim a deployment or integration works without running it (smoke or
   offline check).
-- Don't start the next sprint unprompted. Update PROGRESS.md at the end of
-  each sprint.
+- Work in vertical slices (see docs/ROADMAP.md milestones). Commit each
+  verified slice on `main` (owner-approved policy); never push or deploy
+  without approval. Update PROGRESS.md after every slice.
+- Screens without an approved Paper design are provisional (DECISIONS D-013):
+  reuse existing components and don't invent a new aesthetic.
+
+## Definition of Done
+
+Where applicable, a slice must have:
+- Working UI wired to the API, with persistence.
+- Validation in core and authorization by `Principal`.
+- Loading, empty, error, and success states.
+- Offline behaviour where required.
+- Core unit tests, web tests, smoke checks, and a browser e2e step for key flows.
+- Updated docs.
+
+No inert controls, and no mock-only features presented as done.
 
 ## Commands
 
 ```sh
 npm run verify          # fmt, clippy, typecheck, all unit tests, builds, deploy dry run
 npm run dev:worker      # local Worker with D1/R2 (restart after `npm run build`)
-npm run smoke           # API end-to-end against :8787 (or BASE_URL)
-npm run test:offline    # headless browser offline check (after `npm run build`)
+npm run smoke           # API end-to-end on an isolated wrangler dev (or BASE_URL)
+npm run test:browser    # headless browser e2e with virtual passkey (after `npm run build`)
 ```
 
 On Windows with the GNU Rust host, prefix PATH with `~/.cargo/bin`. MinGW

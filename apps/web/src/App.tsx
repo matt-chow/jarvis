@@ -1,18 +1,22 @@
 import { useEffect, useState, type ComponentType } from "react";
+import { AuthScreen } from "./components/AuthScreen";
 import { StatusChip, StageTag, type Tone } from "./components/ui";
 import { useHealth, type HealthState } from "./hooks/useHealth";
 import { useOnline } from "./hooks/useOnline";
+import { useSession, type SessionApi } from "./hooks/useSession";
 import { useServiceWorker, type SwState } from "./hooks/useServiceWorker";
 import { MODULES, moduleFromHash, type ModuleId } from "./lib/modules";
 import { Files } from "./modules/Files";
 import { Home } from "./modules/Home";
 import { Jarvis } from "./modules/Jarvis";
 import { Notes } from "./modules/Notes";
+import { Settings } from "./modules/Settings";
 
 export interface ModuleProps {
   online: boolean;
   health: HealthState;
   sw: SwState;
+  session: SessionApi;
   navigate: (id: ModuleId) => void;
 }
 
@@ -21,6 +25,7 @@ const VIEWS: Record<ModuleId, ComponentType<ModuleProps>> = {
   notes: Notes,
   files: Files,
   jarvis: Jarvis,
+  settings: Settings,
 };
 
 function useHashModule(): [ModuleId, (id: ModuleId) => void] {
@@ -62,6 +67,7 @@ export function App() {
   const online = useOnline();
   const health = useHealth(online);
   const sw = useServiceWorker();
+  const session = useSession(online);
   const current = MODULES.find((m) => m.id === active)!;
   const View = VIEWS[active];
   const swState = swChip(sw);
@@ -70,6 +76,25 @@ export function App() {
   useEffect(() => {
     document.title = active === "home" ? "Directory" : `${current.label} · Directory`;
   }, [active, current.label]);
+
+  const status = session.status;
+  if (status.kind === "loading") {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="cursor font-mono text-sm tracking-[0.25em] text-muted">DIRECTORY</p>
+      </div>
+    );
+  }
+  if (status.kind !== "signed-in") {
+    return (
+      <AuthScreen
+        setupRequired={status.kind === "signed-out" && status.setupRequired}
+        unavailable={status.kind === "unavailable" ? status.message : undefined}
+        onSignedIn={session.signedIn}
+        onRetry={() => void session.refresh()}
+      />
+    );
+  }
 
   return (
     <div className="flex h-full">
@@ -101,7 +126,10 @@ export function App() {
           })}
         </nav>
         <div className="border-t border-line px-5 py-4 font-mono text-[11px] text-muted">
-          <p>v{health.report?.version ?? "0.0.1"} · sprint 00</p>
+          <p className="truncate text-ink">{status.user.displayName}</p>
+          <p title={status.verified ? undefined : "Server unreachable: using the session saved on this device"}>
+            {status.verified ? "signed in" : "offline · unverified"} · v{health.report?.version ?? "0.0.1"}
+          </p>
         </div>
       </aside>
 
@@ -132,7 +160,7 @@ export function App() {
 
         <main className="flex-1 overflow-y-auto px-4 py-6 pb-28 md:px-8 md:pb-10">
           <div className="mx-auto max-w-5xl">
-            <View online={online} health={health} sw={sw} navigate={navigate} />
+            <View online={online} health={health} sw={sw} session={session} navigate={navigate} />
           </div>
         </main>
 
@@ -141,7 +169,7 @@ export function App() {
           aria-label="Modules"
           className="pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-line bg-panel/95 backdrop-blur md:hidden"
         >
-          <ul className="grid grid-cols-4">
+          <ul className="grid grid-cols-5">
             {MODULES.map((m) => (
               <li key={m.id}>
                 <a

@@ -12,4 +12,5 @@ crate-type = ["cdylib"]
 [dependencies]
 directory-core = { path = "../directory-core" }
 serde.workspace = true
+serde_json.workspace = true
 worker = { version = "0.8.7", features = ["d1"] }

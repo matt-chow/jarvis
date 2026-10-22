@@ -26,7 +26,7 @@ well-understood caching policy. Revisit if background sync or complex runtime
 caching is needed.
 
 ## D-004 — Sprint 00 auth: shared bearer token (temporary)
-**Status:** accepted as a stopgap; **must be replaced in Sprint 01**
+**Status:** superseded by D-009 (2026-10-21)
 Private routes require `Authorization: Bearer <DIRECTORY_API_TOKEN>` (a Worker
 secret, at least 32 characters, constant-time compare, fails closed). The
 decision logic sits in core (`auth.rs`) so it can be swapped. Options for
@@ -62,3 +62,51 @@ profile uses `opt-level = "z"`, LTO, and one codegen unit; `wasm-opt` runs via
 **Status:** accepted
 `#/module` routes need no router dependency and behave identically offline and
 in installed PWAs. Revisit if deep links or shareable URLs need clean paths.
+
+## D-009 — Owner auth: passkeys + D1 sessions + device tokens
+**Status:** accepted (owner decision, 2026-10-21)
+- **Sign-in:** WebAuthn passkeys with user verification required. They're
+  verified in portable Rust: `p256` for ES256 and `rsa` for RS256, using
+  stable crate lines (p256 0.13, rsa 0.9, sha2 0.10) to avoid mixed digest
+  versions.
+- **Bootstrap:** the first passkey is registered with a one-time setup secret.
+- **Sessions and tokens:** browsers use an opaque session cookie, and native
+  clients use revocable device tokens. Only SHA-256 hashes are stored.
+- **Why passkeys over Cloudflare Access:** self-contained, testable locally, and
+  cheap per request (a signature check versus password hashing, which could
+  exceed the Workers Free 10 ms CPU limit). They also work with Windows Hello
+  and Face ID.
+- **Rejected:** Cloudflare Access (account setup, harder local dev) and
+  passwords (CPU cost, phishing risk).
+- **Known gap:** no rate limiting on login options/verify yet (tracked in
+  PROGRESS).
+
+## D-010 — Storage is owner-scoped in core
+**Status:** accepted
+`StorageService::new(store, owner_id)` maps every key to `u/<owner_id>/<key>`
+and strips the prefix from results, so handlers can't address another
+principal's objects even if multiple users exist later.
+
+## D-011 — End-to-end tests drive real infrastructure locally
+**Status:** accepted
+- `npm run smoke` starts an isolated `wrangler dev` with a fresh D1/R2 state
+  directory and generated secrets. It uses a Node software authenticator for
+  the full identity lifecycle.
+- `npm run test:browser` drives headless Chrome/Edge over CDP with a virtual
+  WebAuthn authenticator, so it exercises real `navigator.credentials`.
+- No Playwright or Puppeteer dependency.
+
+## D-012 — Release milestones instead of a single "production" finish line
+**Status:** accepted
+Releases: M0 Foundation → M1 Private Alpha (auth + functional core) → M2 JARVIS
+Alpha → M3 Knowledge & Offline Beta → M4 Personal OS → M5 1.0. Each milestone
+has exit criteria in ROADMAP.md. A milestone ships to Cloudflare only after the
+owner approves deployment.
+
+## D-013 — Provisional UI until Paper designs land
+**Status:** accepted
+No `DESIGN_HANDOFF.md` exists yet. New screens reuse the existing `Panel`,
+`Button`, and `StatusChip` components and tokens, are marked
+`// Provisional screen: awaiting design integration`, and are listed in
+MODULES.md › Design status. Business logic stays in `lib/` and hooks so designs
+can replace presentation only.

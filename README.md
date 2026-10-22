@@ -45,15 +45,20 @@ MinGW is only needed for that install; building the Worker itself does not need 
 
 ```sh
 npm install                      # also installs wrangler (pinned)
-cp .dev.vars.example .dev.vars   # local API token (gitignored)
+cp .dev.vars.example .dev.vars   # local setup token + passkey origin (gitignored)
 npm run db:migrate:local         # create local D1 schema
 npm run build                    # build the PWA into apps/web/dist
-npm run dev:worker               # Worker + assets + local D1/R2 on http://127.0.0.1:8787
+npm run dev:worker               # Worker + assets + local D1/R2
 ```
 
+Open **http://localhost:8787**, not 127.0.0.1: passkeys need a hostname. On
+first run, enter the `DIRECTORY_SETUP_TOKEN` from `.dev.vars` and create a
+passkey (Windows Hello, Touch ID, Face ID, or a security key).
+
 For UI work with hot reload, run `npm run dev` in a second terminal
-(http://localhost:5173, proxies `/api` to 8787). The service worker is disabled in
-the Vite dev server; test offline behaviour against `dev:worker`.
+(http://localhost:5173, proxies `/api` to 8787; that origin is already in
+`DIRECTORY_ORIGINS`). The service worker is disabled in the Vite dev server;
+test offline behaviour against `dev:worker`.
 
 `wrangler dev` does not pick up a rebuilt `apps/web/dist`. Restart it after
 `npm run build`, or new hashed assets fall through to the SPA fallback.
@@ -64,16 +69,18 @@ the Vite dev server; test offline behaviour against `dev:worker`.
 | --- | --- |
 | `npm run verify` | fmt + clippy + TS typecheck, Rust and web unit tests, PWA build, Worker build (deploy dry run) |
 | `npm test` | Rust core tests (`cargo test`) and web tests (Vitest) |
-| `npm run smoke` | End-to-end API checks against a running Worker (`BASE_URL`, default `http://127.0.0.1:8787`) |
-| `npm run test:offline` | Headless Chrome/Edge: SW install, offline reload, IndexedDB persistence (needs `npm run build`) |
+| `npm run smoke` | Starts an isolated `wrangler dev` (fresh D1/R2) and runs the API end-to-end: setup, passkey login (software authenticator), sessions, CSRF, device tokens, storage |
+| `npm run test:browser` | Headless Chrome/Edge with a virtual passkey: UI setup, upload, settings, sign-out/in, service worker, offline relaunch (run `npm run build` first) |
 
 ## Deploy
 
-See [docs/ARCHITECTURE.md › Deployment](docs/ARCHITECTURE.md#deployment) for the one-time
-Cloudflare setup (D1 database, private R2 bucket, API secret). After that:
+See [docs/ARCHITECTURE.md › Deployment](docs/ARCHITECTURE.md#deployment) for the
+one-time Cloudflare setup (D1 database, private R2 bucket, passkey hostname vars,
+setup secret). After that:
 
 ```sh
 npm run db:migrate:remote
 npm run deploy
-BASE_URL=https://directory.<subdomain>.workers.dev DIRECTORY_API_TOKEN=... npm run smoke
+# then sign in, create a device token in Settings, and:
+BASE_URL=https://directory.<subdomain>.workers.dev DIRECTORY_API_TOKEN=dir_... npm run smoke
 ```
