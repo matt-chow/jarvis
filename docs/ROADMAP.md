@@ -54,6 +54,7 @@ part of every slice, not deferred to the end.
   JARVIS never touches the database directly, only module commands.
 
 ## M3 Knowledge & Offline Beta (P3)
+- ✅ Private file management (folders, streamed content, quota).
 - ✅ Universal search (substring, all text modules). A full-text index is
   pending, behind `SearchSource`.
 - Wiki and PDF/ePub library on R2, with reading progress.

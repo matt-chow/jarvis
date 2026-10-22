@@ -21,7 +21,7 @@ the Worker, so they are free and unmetered. Only API calls run Rust code.
 
 | Layer | Location | Depends on | Responsibility |
 | --- | --- | --- | --- |
-| Domain core | `crates/directory-core` | `serde`, pure-Rust crypto (`p256`, `rsa`, `sha2`, `base64`) | Identity (WebAuthn verification, sessions, device tokens), owner-scoped storage rules, health, schema version. Defines repository traits (`IdentityRepository`, `ObjectStore`, `SystemRepository`) and `Entropy`. |
+| Domain core | `crates/directory-core` | `serde`, pure-Rust crypto (`p256`, `rsa`, `sha2`, `base64`) | Identity, every module's domain rules (tasks, projects, notes, journal, inbox, links, files, search, export, JARVIS), health, and schema version. Defines a repository/source trait per module plus `Entropy`. |
 | Worker adapter | `crates/directory-worker` | `worker` crate, core | `http/` (routing, JSON, auth guard), `d1/` repositories, `r2.rs` store, `entropy.rs` (Web Crypto RNG), `bindings.rs`. No business rules. |
 | Web app | `apps/web` | React, Tailwind | Shell, auth screens, modules, API client, WebAuthn glue, IndexedDB, service worker. |
 
@@ -108,8 +108,11 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | GET | `/api/v1/tasks?status=all|open|closed` | session or token | Owner's tasks and subtasks (max 1000) |
 | POST | `/api/v1/tasks` | session or token | `{ title, notes?, priority?, due_date?, parent_id?, project_id? }` → `201`. Subtasks are one level deep and can't set `project_id`. |
 | GET / PATCH / DELETE | `/api/v1/tasks/{id}` | session or token | PATCH: any of `title, notes, status, priority, due_date, project_id` (`null` clears the due date or project). DELETE cascades to subtasks. |
-| GET | `/api/v1/storage/objects?prefix=&limit=` | session or token | List the owner's objects (max 1000) |
-| PUT / GET / DELETE | `/api/v1/storage/objects/{key}` | session or token | Body ≤ 10 MB. GET is `attachment` with CSP `sandbox`. |
+| GET | `/api/v1/files?folder=` | session or token | `{ folder, folders, files }` from D1 metadata (no R2 list operations) |
+| POST | `/api/v1/files?folder=&name=` | session or token | Raw body with `Content-Length` (411 if missing). Streamed to R2 at `u/<owner>/f/<id>`. Limits: 95 MiB per file (413), owner quota (507; default 1 GiB, `DIRECTORY_QUOTA_BYTES`), duplicate name (409). |
+| GET | `/api/v1/files/usage` | session or token | `{ used, quota, max_file }` |
+| GET | `/api/v1/files/{id}/content` | session or token | Streamed from R2 as an attachment (RFC 6266 filename), CSP `sandbox` |
+| PATCH / DELETE | `/api/v1/files/{id}` | session or token | PATCH `{ name?, folder? }` (metadata only). DELETE removes metadata first, then the blob. |
 
 Keys are `segment(/segment)*` over `[A-Za-z0-9._-]`, with no `.`/`..` segments
 and at most 512 bytes. Errors are JSON `{ "error": code, "message"? }`.
@@ -120,7 +123,7 @@ JSON bodies are capped at 64 KiB.
 ## Data
 
 - **D1** migrations live in `migrations/NNNN_name.sql` and are append-only.
-  `system_meta.schema_version` must equal `EXPECTED_SCHEMA_VERSION` (now **11**).
+  `system_meta.schema_version` must equal `EXPECTED_SCHEMA_VERSION` (now **12**).
   - `0001`: `system_meta`
   - `0002`: `users`, `passkeys`, `auth_challenges`, `sessions`, `api_tokens`.
     Times are epoch milliseconds; secrets are stored only as SHA-256 hex.
@@ -136,8 +139,9 @@ JSON bodies are capped at 64 KiB.
   - `0009`: `links` (normalized pair `a < b`, unique per owner).
   - `0010`: `jarvis_plans` (actions and results as JSON; status lifecycle).
   - `0011`: `jarvis_presets`.
+  - `0012`: `files` (unique `owner_id, folder, name`).
 - **R2** bucket `directory-files` is private, with no r2.dev URL or custom domain.
-  Object keys are `u/<user_id>/<key>`.
+  File content lives at `u/<user_id>/f/<file_id>`; names and folders live in D1.
 - **IndexedDB** database `directory` (v1) has a `kv` store with cached
   copies for read-only offline viewing: health, the last verified session user,
   task, project, and note lists, each opened note (`note:<id>`), and each

@@ -54,8 +54,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   if needed, switch to `opt-level = 3` or Web Crypto verification.
 - `rsa` 0.9 has advisory RUSTSEC-2023-0071 (Marvin timing). It affects
   private-key operations only; we only verify public-key signatures.
-- Files: whole bodies are buffered (10 MB cap); no folders, metadata table, or
-  pagination cursor.
+- Files: the quota is checked before upload, so concurrent uploads can briefly
+  exceed it. A failed blob delete leaves an orphan object (no sweep yet).
 - Search uses SQLite `LIKE`, which is case-insensitive for ASCII only, and
   reads whole note and journal bodies for snippets. Move to FTS5 when data
   grows.
@@ -84,9 +84,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. Update docs/ARCHITECTURE.md and docs/MODULES.md for the files API (see
-   the last log entry).
-2. M3: PDF/ePub library with reading progress (built on Files), then the
+1. M3: PDF/ePub library with reading progress (built on Files), then the
    offline sync design.
 
 ---
@@ -106,8 +104,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - **Web:** Files module with breadcrumbs (`#/files?folder=`), new folder,
   multi/drag-drop upload, a usage bar, rename/move/delete, and download links.
 - **Tests:** core 76, web 26, smoke 27/27, browser e2e 16/16.
-- **Docs not yet updated for this slice:** ARCHITECTURE API table (replace
-  the storage rows with files rows) and MODULES (files row).
+- **Docs:** ARCHITECTURE (files API, data), MODULES, ROADMAP.
 
 ### 2026-10-21 — Universal search (+ JARVIS find)
 - **Core:** `search` module: validation, LIKE escaping, Unicode-safe
