@@ -146,6 +146,29 @@ impl NoteRepository for D1NoteRepository {
         Ok(changes(&r) > 0)
     }
 
+    async fn body_like(
+        &self,
+        owner_id: &str,
+        pattern: &str,
+        limit: u32,
+    ) -> Result<Vec<Note>, String> {
+        Ok(stmt(
+            &self.db,
+            "SELECT id, owner_id, title, body, pinned, created_at, updated_at FROM notes
+              WHERE owner_id = ?1 AND body LIKE ?2 ESCAPE '\\'
+              ORDER BY updated_at DESC LIMIT ?3",
+            &[text(owner_id), text(pattern), int(limit.into())],
+        )?
+        .all()
+        .await
+        .map_err(err)?
+        .results::<Row>()
+        .map_err(err)?
+        .into_iter()
+        .map(Note::from)
+        .collect())
+    }
+
     async fn delete(&self, owner_id: &str, id: &str) -> Result<bool, String> {
         let r = stmt(
             &self.db,

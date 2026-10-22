@@ -100,6 +100,7 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | GET | `/api/v1/journal?from=&to=` | session or token | Summaries (`date, excerpt, mood`) for a range of at most 366 days, newest first |
 | GET / PUT / DELETE | `/api/v1/journal/{YYYY-MM-DD}` | session or token | PUT upserts `{ body?, mood? (1–5 or null), expected_updated_at? }`. A stale version or a same-day create race gets `409 { entry }`. `expected_updated_at: 0` means create only (an existing entry → 409). |
 | GET | `/api/v1/notes` | session or token | Summaries `{ id, title, excerpt, pinned, … }`, without bodies. Pinned first, then newest. |
+| GET | `/api/v1/notes/{id}/backlinks` | session or token | Summaries of notes whose body has `[[<this note's title>]]` (alias form too; case-insensitive). A LIKE pre-filter over at most 50 candidates, then an exact parse in core. |
 | POST | `/api/v1/notes` | session or token | `{ id?, title?, body?, pinned? }` → `201` (optional client id; a repeat → `409 exists`). Body ≤ 100k chars (512 KiB request cap). |
 | GET / PATCH / DELETE | `/api/v1/notes/{id}` | session or token | PATCH `title, body, pinned, expected_updated_at?`. A stale version gets `409 { error: "conflict", note }`. |
 | GET | `/api/v1/projects[?include=archived]` | session or token | Owner's projects (active only by default) |

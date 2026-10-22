@@ -80,6 +80,19 @@ try {
     await shot("notes");
   });
 
+  await step("Wiki: a [[link]] to a missing note creates it; backlinks lead back", async () => {
+    await page.fill("Note body", "Meeting notes\nAgenda: launch plan\nSee [[Launch checklist]]");
+    await page.waitForText("+ create");
+    await waitFor("note saved", () => page.evaluate(`[...document.querySelectorAll('[role=status]')].some((s) => s.textContent === "saved")`));
+    await page.click("Create note “Launch checklist”");
+    await waitFor("new note open", () => page.evaluate(`document.querySelector('input[aria-label="Note title"]')?.value === "Launch checklist"`));
+    await page.waitForText("← Meeting notes");
+    await page.click("Open backlink “Meeting notes”");
+    await waitFor("back on the linking note", () => page.evaluate(`document.querySelector('textarea[aria-label="Note body"]')?.value.includes("[[Launch checklist]]")`));
+    await waitFor("link resolved", async () => !(await page.text()).includes("+ create"));
+    await shot("wiki");
+  });
+
   await step("Journal: today's entry with mood autosaves; day navigation", async () => {
     await page.hash("/journal");
     await page.waitForText("No entries this month");

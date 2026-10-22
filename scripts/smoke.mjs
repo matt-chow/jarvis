@@ -257,6 +257,18 @@ async function local() {
       expect((await api.req("GET", `/api/v1/notes/${n.json.id}`)).status === 404, "gone");
     });
 
+    await check("wiki: backlinks find notes that [[link]] to a note by title (aliases, case-insensitive)", async () => {
+      const mk = async (body, title) => (await api.req("POST", "/api/v1/notes", { body: { body, title } })).json;
+      const target = await mk("# Garden plan\nbeds and paths");
+      const linking = await mk("Start with [[garden PLAN|the plan]] and [[Tomatoes]].", "Spring");
+      const near = await mk("Not this: [[Garden plan B]], or 100% [[Garden_plan]].", "Near miss");
+      const back = await api.req("GET", `/api/v1/notes/${target.id}/backlinks`);
+      expect(back.status === 200 && back.json.notes.map((n) => n.id).join() === linking.id, `backlinks → ${back.text}`);
+      expect(back.json.notes[0].title === "Spring" && back.json.notes[0].body === undefined, "summaries only");
+      expect((await api.req("GET", `/api/v1/notes/${"0".repeat(32)}/backlinks`)).status === 404, "unknown note");
+      for (const n of [target, linking, near]) await api.req("DELETE", `/api/v1/notes/${n.id}`);
+    });
+
     await check("journal: upsert by date, mood, ranged list, conflicts, validation", async () => {
       expect((await api.req("GET", "/api/v1/journal/2026-10-21")).status === 404, "no entry yet");
       const created = await api.req("PUT", "/api/v1/journal/2026-10-21", { body: { body: "Shipped the journal.\nFelt good.", mood: 4 } });

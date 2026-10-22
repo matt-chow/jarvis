@@ -25,6 +25,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   - Owner-scoped private file upload, list, download, and delete.
   - Notes saved to the account: autosave, pin, conflict detection across
     devices, and a one-time migration of legacy Scratchpad notes.
+  - Wiki: `[[links]]` between notes, create a note from a missing link,
+    and backlinks.
   - Journal: one entry per day with mood, autosave, month list, and day
     navigation.
   - Inbox: quick capture (on Home and in Inbox) and triage into a task, a
@@ -48,10 +50,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | Command | Result (2026-10-21) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass (2026-10-22). Worker upload 1,323 KiB / 424 KiB gzipped |
-| `cargo test -p directory-core` | ✅ 83 passed |
-| Vitest | ✅ 37 passed |
+| `cargo test -p directory-core` | ✅ 85 passed |
+| Vitest | ✅ 39 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
-| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 18/18 |
+| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 19/19 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -92,12 +94,26 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. Wiki: notes with `[[wiki links]]` and backlinks (reuse links).
-2. Remaining owner decisions: deploy approval, voice, AI provider.
+1. JARVIS: project and link commands (M2 "more commands").
+2. M4 start: Habits (daily check-ins, streaks), then Calendar.
+3. Remaining owner decisions: deploy approval, voice, AI provider, reader
+   dependency.
 
 ---
 
 ## Log
+
+### 2026-10-22 — M3 slice: Wiki links and backlinks (D-019)
+- **Core:** `notes::wiki_links` (targets of `[[Title]]` / `[[Title|label]]`),
+  `display_title` (shared with summaries), `NoteService::backlinks`, and
+  `NoteRepository::body_like` (LIKE pre-filter, exact check in core).
+- **Worker:** `GET /api/v1/notes/{id}/backlinks`.
+- **Web:** `lib/wiki.ts` (same parsing; resolves against the cached notes
+  list, so outgoing links work offline). The note editor's wiki section
+  opens linked notes, creates missing ones (titled, offline too), and lists
+  backlinks (cached per note).
+- **Tests:** core 85, web 39, smoke (backlinks with alias/case, near misses
+  excluded, 404), browser e2e 19/19 (create from link, follow backlink).
 
 ### 2026-10-22 — M3 slice: Offline notes and journal (D-018)
 - **Core:** `NewNote.id` (client id; `NoteError::Exists` → 409). Journal

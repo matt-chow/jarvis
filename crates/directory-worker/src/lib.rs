@@ -74,6 +74,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get_async("/api/v1/notes", notes::list)
         .post_async("/api/v1/notes", notes::create)
         .get_async("/api/v1/notes/:id", notes::get)
+        .get_async("/api/v1/notes/:id/backlinks", notes::backlinks)
         .patch_async("/api/v1/notes/:id", notes::update)
         .delete_async("/api/v1/notes/:id", notes::delete)
         // Projects

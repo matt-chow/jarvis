@@ -9,7 +9,7 @@ part of every slice, not deferred to the end.
 | **M0 Foundation** | Monorepo, shell, Rust Worker, D1/R2, PWA, CI-ready checks | ✅ done (local) |
 | **M1 Private Alpha** | Owner auth + functional core (P1) | ✅ feature-complete locally; deploy awaits owner approval |
 | M2 JARVIS Alpha | Command layer and assistant (P2) | 🟡 in progress |
-| M3 Knowledge & Offline Beta | Wiki, library, files, search, sync (P3) | planned |
+| M3 Knowledge & Offline Beta | Wiki, library, files, search, sync (P3) | 🟡 core slices done; reader awaits a dependency decision |
 | M4 Personal OS | Habits, calendar, automations, music, dashboards (P4) | planned |
 | M5 1.0 | Production hardening (P5) | planned |
 
@@ -54,20 +54,14 @@ part of every slice, not deferred to the end.
   JARVIS never touches the database directly, only module commands.
 
 ## M3 Knowledge & Offline Beta (P3)
-- ✅ Private file management (folders, streamed content, quota).
-- ✅ Offline editing for Tasks via a replayable outbox (D-017), plus
-  Projects, Notes, Journal (coalesced versioned saves with stored conflicts,
-  D-018), and offline Inbox capture and discard.
-- ✅ PDF/ePub library with manual reading progress. An in-app reader
-  (pdf.js / epub.js) needs a dependency decision and would enable automatic
-  progress.
-- ✅ Universal search (substring, all text modules). A full-text index is
-  pending, behind `SearchSource`.
-- Wiki and PDF/ePub library on R2, with reading progress.
-- File management: folders, metadata in D1, multipart uploads, quotas.
-- Universal search.
-- ✅ Offline sync: IndexedDB outbox, server versions, conflict policy
-  (D-017, D-018). Remaining: links and pinning offline.
+
+| Slice | Status |
+| --- | --- |
+| Private file management (folders, streamed content, quota) | ✅ done |
+| Universal search (substring across text modules) | ✅ done; full-text index later, behind `SearchSource` |
+| PDF/ePub library with manual reading progress | ✅ done; in-app reader (pdf.js/epub.js) **needs a dependency decision** |
+| Offline editing: tasks, projects, inbox capture (D-017); notes, journal with stored conflicts (D-018) | ✅ done; links and pinning stay online-only |
+| Wiki: `[[links]]` between notes, create-from-link, backlinks (D-019) | ✅ done |
 
 ## M4 Personal OS (P4)
 Habits, calendar, automation engine, music library and playlists, streaming and

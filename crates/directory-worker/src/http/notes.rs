@@ -82,6 +82,15 @@ pub async fn get(req: Request, rc: RouteContext<()>) -> Result<Response> {
     }
 }
 
+/// Notes that wiki-link to this one.
+pub async fn backlinks(req: Request, rc: RouteContext<()>) -> Result<Response> {
+    let c = try_or_respond!(ctx(&req, &rc).await?);
+    match c.service().backlinks(&c.principal, &id_param(&rc)).await {
+        Ok(notes) => json(200, &body!({ "notes": notes })),
+        Err(e) => note_error(e),
+    }
+}
+
 pub async fn update(mut req: Request, rc: RouteContext<()>) -> Result<Response> {
     let c = try_or_respond!(ctx(&req, &rc).await?);
     let patch: NotePatch = try_or_respond!(read_json_limited(&mut req, NOTE_JSON_BYTES).await?);

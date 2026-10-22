@@ -3,6 +3,7 @@
 
 use crate::entropy::{is_id, new_id, Entropy};
 use crate::identity::Principal;
+use crate::search::like_pattern;
 use crate::validate;
 use serde::{Deserialize, Serialize};
 
@@ -48,22 +49,63 @@ pub struct NoteHead {
     pub updated_at: i64,
 }
 
+/// The title a note is shown (and wiki-linked) by: the explicit title, or the
+/// first non-empty body line without leading `#`s. Empty when neither exists.
+pub fn display_title(title: &str, body: &str) -> String {
+    let t = if title.is_empty() {
+        body.lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .unwrap_or("")
+            .trim_start_matches('#')
+            .trim()
+    } else {
+        title
+    };
+    t.chars().take(MAX_TITLE).collect()
+}
+
+/// Targets of `[[Title]]` and `[[Title|label]]` links in a body, trimmed,
+/// first occurrence kept, compared case-insensitively. Links can't span lines.
+pub fn wiki_links(body: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for line in body.lines() {
+        let mut rest = line;
+        while let Some(start) = rest.find("[[") {
+            let after = &rest[start + 2..];
+            let Some(end) = after.find("]]") else { break };
+            let inner = &after[..end];
+            let target = inner.split('|').next().unwrap_or("").trim();
+            if !target.is_empty()
+                && target.chars().count() <= MAX_TITLE
+                && !out
+                    .iter()
+                    .any(|t| t.to_lowercase() == target.to_lowercase())
+            {
+                out.push(target.to_owned());
+            }
+            rest = &after[end + 2..];
+        }
+    }
+    out
+}
+
+/// Candidate notes the repository returns for a backlinks lookup.
+pub const MAX_BACKLINK_CANDIDATES: u32 = 50;
+
 impl From<NoteHead> for NoteSummary {
     fn from(h: NoteHead) -> Self {
-        let mut lines = h.body_head.lines().map(str::trim).filter(|l| !l.is_empty());
-        let (title, rest): (String, Vec<&str>) = if h.title.is_empty() {
-            let first = lines.next().unwrap_or("").trim_start_matches('#').trim();
-            (first.to_owned(), lines.collect())
-        } else {
-            (h.title.clone(), lines.collect())
-        };
+        let lines = h.body_head.lines().map(str::trim).filter(|l| !l.is_empty());
+        let title = display_title(&h.title, &h.body_head);
+        // A derived title is the first line, so the excerpt starts after it.
+        let rest: Vec<&str> = lines.skip(usize::from(h.title.is_empty())).collect();
         let excerpt: String = rest.join(" ").chars().take(EXCERPT_CHARS).collect();
         NoteSummary {
             id: h.id,
             title: if title.is_empty() {
                 "Untitled".into()
             } else {
-                title.chars().take(MAX_TITLE).collect()
+                title
             },
             excerpt,
             pinned: h.pinned,
@@ -118,6 +160,14 @@ pub trait NoteRepository {
     /// Returns `false` when nothing matched (missing, or a concurrent change).
     async fn update_if(&self, note: &Note, expected_updated_at: i64) -> Result<bool, String>;
     async fn delete(&self, owner_id: &str, id: &str) -> Result<bool, String>;
+    /// Notes whose body matches LIKE `pattern` (escaped with `\`), newest first.
+    /// A coarse pre-filter: the service checks each candidate exactly.
+    async fn body_like(
+        &self,
+        owner_id: &str,
+        pattern: &str,
+        limit: u32,
+    ) -> Result<Vec<Note>, String>;
 }
 
 fn backend(e: String) -> NoteError {
@@ -254,6 +304,40 @@ impl<'a, R: NoteRepository, E: Entropy + ?Sized> NoteService<'a, R, E> {
             Err(NoteError::NotFound)
         }
     }
+
+    /// Notes that wiki-link to this one (`[[its title]]`), newest first.
+    pub async fn backlinks(&self, p: &Principal, id: &str) -> Result<Vec<NoteSummary>, NoteError> {
+        let note = self.get(p, id).await?;
+        let title = display_title(&note.title, &note.body);
+        if title.is_empty() {
+            return Ok(Vec::new());
+        }
+        let pattern = like_pattern(&format!("[[{title}"));
+        let wanted = title.to_lowercase();
+        Ok(self
+            .repo
+            .body_like(&p.user_id, &pattern, MAX_BACKLINK_CANDIDATES)
+            .await
+            .map_err(backend)?
+            .into_iter()
+            .filter(|n| n.id != note.id)
+            .filter(|n| {
+                wiki_links(&n.body)
+                    .iter()
+                    .any(|t| t.to_lowercase() == wanted)
+            })
+            .map(|n| {
+                NoteSummary::from(NoteHead {
+                    body_head: n.body.chars().take(HEAD_CHARS).collect(),
+                    id: n.id,
+                    title: n.title,
+                    pinned: n.pinned,
+                    created_at: n.created_at,
+                    updated_at: n.updated_at,
+                })
+            })
+            .collect())
+    }
 }
 
 #[cfg(test)]
@@ -320,6 +404,91 @@ pub(crate) mod tests {
             all.retain(|n| !(n.owner_id == owner_id && n.id == id));
             Ok(all.len() < before)
         }
+        async fn body_like(
+            &self,
+            owner_id: &str,
+            pattern: &str,
+            limit: u32,
+        ) -> Result<Vec<Note>, String> {
+            // Supports the `%literal%` patterns `like_pattern` builds, ASCII case-insensitive like SQLite.
+            let mut needle = String::new();
+            let mut chars = pattern.trim_matches('%').chars();
+            while let Some(c) = chars.next() {
+                needle.push(if c == '\\' {
+                    chars.next().unwrap_or(c)
+                } else {
+                    c
+                });
+            }
+            let needle = needle.to_ascii_lowercase();
+            let mut out: Vec<Note> = self
+                .0
+                .borrow()
+                .iter()
+                .filter(|n| n.owner_id == owner_id && n.body.to_ascii_lowercase().contains(&needle))
+                .cloned()
+                .collect();
+            out.sort_by_key(|n| std::cmp::Reverse(n.updated_at));
+            out.truncate(limit as usize);
+            Ok(out)
+        }
+    }
+
+    #[test]
+    fn wiki_links_parse_targets_and_aliases() {
+        assert_eq!(
+            wiki_links("See [[Garden plan]] and [[ garden PLAN |the plan]].\n[[Tomatoes|red]] [[]] [[open\nnext]]"),
+            vec!["Garden plan".to_string(), "Tomatoes".to_string()]
+        );
+        assert_eq!(
+            display_title("", "\n## Weekly review\nbody"),
+            "Weekly review"
+        );
+        assert_eq!(display_title("Explicit", "# Heading"), "Explicit");
+    }
+
+    #[test]
+    fn backlinks_find_notes_linking_by_title() {
+        let repo = Memory::default();
+        let e = CountingEntropy::default();
+        let svc = NoteService::new(&repo, &e, 1);
+        let mk = |title: &str, body: &str| {
+            block_on(svc.create(
+                &me(),
+                NewNote {
+                    title: Some(title.into()),
+                    body: Some(body.into()),
+                    ..Default::default()
+                },
+            ))
+            .unwrap()
+        };
+        let target = mk("", "# Garden plan\nbeds and paths");
+        let linking = mk("Spring", "Start with [[garden plan|the plan]].");
+        mk(
+            "Other",
+            "Mentions [[Garden plan B]] and garden plan without brackets.",
+        );
+        mk("Self-ish", "[[Garden]] is not the same note");
+        let back = block_on(svc.backlinks(&me(), &target.id)).unwrap();
+        assert_eq!(
+            back.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
+            vec![linking.id.as_str()]
+        );
+        assert_eq!(back[0].title, "Spring");
+
+        let other = Principal {
+            user_id: "u2".into(),
+            method: AuthMethod::Session,
+        };
+        assert_eq!(
+            block_on(svc.backlinks(&other, &target.id)).unwrap_err(),
+            NoteError::NotFound
+        );
+        let untitled = mk("", "");
+        assert!(block_on(svc.backlinks(&me(), &untitled.id))
+            .unwrap()
+            .is_empty());
     }
 
     fn me() -> Principal {

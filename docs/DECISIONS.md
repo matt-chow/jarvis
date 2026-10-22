@@ -136,6 +136,23 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-019 — The wiki is notes with `[[title]]` links, not a separate module
+**Status:** accepted
+- A wiki page is a note. `[[Title]]` or `[[Title|label]]` in a body links to
+  the note whose display title (explicit, or the first body line) matches
+  case-insensitively. Links can't span lines.
+- Outgoing links resolve on the client against the cached notes list, so they
+  work offline. A missing target offers "create", which makes a note with
+  that title.
+- Backlinks are computed on request (`GET /notes/{id}/backlinks`): a LIKE
+  pre-filter over at most 50 candidates, then an exact parse in core. Nothing
+  is stored, so renaming a note simply changes what links to it, and no
+  migration was needed. LIKE is case-insensitive for ASCII only, so
+  differently-cased non-ASCII titles can be missed. Move to an index if
+  note counts grow.
+- Explicit entity links (the `links` module) stay separate: they connect any
+  module, while wiki links are text inside a note.
+
 ## D-018 — Offline document edits: coalesced, versioned saves and stored conflicts
 **Status:** accepted (Notes, Journal)
 - **Coalescing:** autosaved edits to one note or journal day made while

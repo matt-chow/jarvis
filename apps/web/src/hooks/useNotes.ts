@@ -17,7 +17,8 @@ export interface NotesState {
   /** Set after legacy device-only notes were moved into the account. */
   migrated?: number;
   reload: () => void;
-  create: () => Promise<Note | undefined>;
+  /** A new note, optionally titled (e.g. from an unresolved wiki link). */
+  create: (title?: string) => Promise<Note | undefined>;
   /** Reflect a saved note in the list without refetching. */
   saved: (n: Note) => void;
   remove: (id: string) => Promise<boolean>;
@@ -29,7 +30,7 @@ const fetchAll = () => api.notes();
 function applyNoteLocally(list: NoteSummary[], op: Op, now = Date.now()): NoteSummary[] {
   switch (op.kind) {
     case "note.create":
-      return sortSummaries([summarize(blankNote(op.note.id, now)), ...list]);
+      return sortSummaries([summarize(blankNote(op.note.id, now, op.note.title)), ...list]);
     case "note.delete":
       return list.filter((s) => s.id !== op.id);
     default:
@@ -37,7 +38,7 @@ function applyNoteLocally(list: NoteSummary[], op: Op, now = Date.now()): NoteSu
   }
 }
 
-const blankNote = (id: string, now: number): Note => ({ id, title: "", body: "", pinned: false, created_at: now, updated_at: now });
+const blankNote = (id: string, now: number, title = ""): Note => ({ id, title, body: "", pinned: false, created_at: now, updated_at: now });
 
 /** Server notes list (summaries); create, edit, and delete work offline (D-017, D-018). */
 export function useNotes(online: boolean): NotesState {
@@ -79,9 +80,9 @@ export function useNotes(online: boolean): NotesState {
     return () => window.removeEventListener(SYNCED_EVENT, reload);
   }, [reload]);
 
-  const create = useCallback(async () => {
+  const create = useCallback(async (title?: string) => {
     const id = clientId();
-    const local = blankNote(id, Date.now());
+    const local = blankNote(id, Date.now(), title);
     // The editor opens a note created offline from this copy.
     await localDb()
       .then((db) => db.setValue(noteDoc(id), local))
@@ -89,9 +90,9 @@ export function useNotes(online: boolean): NotesState {
     return runOrQueue({
       list,
       noun: "note",
-      op: { kind: "note.create", note: { id } },
+      op: { kind: "note.create", note: { id, title } },
       doc: noteDoc(id),
-      server: () => api.createNote({ id }),
+      server: () => api.createNote({ id, title }),
       fromServer: (cur, n) => sortSummaries([summarize(n), ...cur]),
       applyLocal: applyNoteLocally,
       local: () => local,
