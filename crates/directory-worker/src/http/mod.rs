@@ -2,6 +2,7 @@
 //! No business rules here.
 
 pub mod auth;
+pub mod export;
 pub mod health;
 pub mod inbox;
 pub mod journal;

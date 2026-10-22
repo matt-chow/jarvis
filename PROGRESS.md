@@ -6,8 +6,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ## Current state (2026-10-21)
 
 - **Milestone:** M1 Private Alpha, in progress. Auth ✅, rate limiting ✅,
-  Tasks ✅, Projects ✅, Notes ✅, Journal ✅, Inbox ✅, Links ✅. Next: **Data
-  export**, then the M1 exit review.
+  Tasks ✅, Projects ✅, Notes ✅, Journal ✅, Inbox ✅, Links ✅, Export ✅.
+  Next: **M1 exit review**.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
   - Device tokens for native clients and scripts.
@@ -25,6 +25,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
     note, or today's journal.
   - Links between tasks, notes, projects, and journal days, with a
     cross-module picker and deep links.
+  - Full JSON data export from Settings.
   - PWA install and offline relaunch with the saved session.
   - Health dashboard.
 - **Not deployed.** Nothing has run on Cloudflare yet; that needs owner approval
@@ -36,10 +37,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 | Command | Result (2026-10-21) |
 | --- | --- |
-| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 1,050 KiB / 349 KiB gzipped |
-| `cargo test -p directory-core` | ✅ 59 passed |
+| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 1,070 KiB / 355 KiB gzipped |
+| `cargo test -p directory-core` | ✅ 60 passed |
 | Vitest | ✅ 26 passed (9 files) |
-| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 23/23 |
+| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 24/24 |
 | `npm run test:browser` (headless Edge 155, virtual passkey) | ✅ 14/14 |
 
 ### Known issues and technical debt
@@ -68,20 +69,27 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-**Data export (M1).**
-- `GET /api/v1/export` (session only): one JSON document with schema
-  version, exported-at, and every owned record (tasks, projects, notes,
-  journal, inbox, links, and the file metadata list). No secrets: no session,
-  passkey, or token material.
-- A Settings "Export my data" button that downloads the JSON.
-- A smoke check confirming the export round-trips the counts and holds no
-  secret fields.
-- Then: the **M1 exit review**, a deploy readiness checklist in
-  docs/ARCHITECTURE.md › Deployment, after which deploy needs owner approval.
+**M1 exit review**, then M2 (JARVIS) foundations, which don't depend on
+deployment:
+- A deploy readiness checklist, plus a single `npm run ci` gate (verify +
+  smoke + browser e2e).
+- A security pass over M1 (authz on every route, input limits, headers).
+- Then M2: a command registry with typed, validated commands per module, and
+  text commands with a deterministic parser (no AI provider without approval).
 
 ---
 
 ## Log
+
+### 2026-10-21 — M1 slice: Data export
+- **Core:** `export` module: versioned document, an `ExportSource` trait,
+  `LinkRecord`, and a test asserting no owner or credential fields.
+- **Worker:** `D1ExportSource` composes the existing repositories
+  (`all()` added for notes, journal, and links). `GET /api/v1/export` is
+  served as an attachment.
+- **Web:** a Settings "export my data" download.
+- **Tests:** a core export test, a smoke export check (completeness and a
+  secret scan), and a browser export step.
 
 ### 2026-10-21 — M1 slice: Entity linking
 - **Core:** `links` module: `EntityRef` (task, note, project, journal day),

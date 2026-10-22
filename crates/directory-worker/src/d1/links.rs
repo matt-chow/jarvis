@@ -15,6 +15,20 @@ impl D1LinkRepository {
         Self { db }
     }
 
+    /// Every link (data export).
+    pub async fn all(&self, owner_id: &str) -> Result<Vec<Link>, String> {
+        let sql = format!("SELECT {COLUMNS} FROM links WHERE owner_id = ?1 ORDER BY created_at");
+        stmt(&self.db, &sql, &[text(owner_id)])?
+            .all()
+            .await
+            .map_err(err)?
+            .results::<Row>()
+            .map_err(err)?
+            .into_iter()
+            .map(Link::try_from)
+            .collect()
+    }
+
     /// One text column from a row keyed by `(owner_id, id)`.
     async fn single_text(
         &self,

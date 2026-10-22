@@ -21,6 +21,7 @@ usable offline, with an AI assistant later.
 | F13 | Daily journal with mood | ✅ M1 |
 | F14 | Universal inbox: capture and triage | ✅ M1 |
 | F15 | Links between tasks, notes, projects, and journal days | ✅ M1 |
+| F16 | Full data export (JSON) | ✅ M1 |
 | F8 | Additional modules (tasks, bookmarks, journal, …) | Planned |
 | F9 | JARVIS: voice input and natural-language commands across modules | Planned |
 | F10 | Windows and iPhone clients using the same API | Planned |

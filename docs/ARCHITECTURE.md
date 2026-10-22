@@ -83,6 +83,7 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | DELETE | `/api/v1/auth/passkeys/{id}` | session only | `409 last_passkey` for the final one |
 | GET / POST | `/api/v1/auth/tokens` | session only | List / create device token (secret returned once) |
 | DELETE | `/api/v1/auth/tokens/{id}` | session only | Revoke |
+| GET | `/api/v1/export` | session or token | One JSON download (`format: "directory-export"`, `format_version: 1`): user, tasks, projects, notes with bodies, journal, inbox, links, and file metadata. No credential material. |
 | GET | `/api/v1/links?kind=task|note|project|journal&id=` | session or token | Items linked to an entity, with resolved titles. Links whose other end was deleted are dropped and removed. |
 | POST | `/api/v1/links` | session or token | `{ from: {kind,id}, to: {kind,id} }` → `201 { link_id, kind, id, title }`. Idempotent and symmetric; both ends must exist and be owned. |
 | DELETE | `/api/v1/links/{id}` | session or token | Unlink |

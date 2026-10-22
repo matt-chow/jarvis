@@ -1,5 +1,6 @@
 //! D1-backed implementations of core repositories.
 
+mod export;
 mod identity;
 mod inbox;
 mod journal;
@@ -9,6 +10,7 @@ mod projects;
 mod rate_limit;
 mod tasks;
 
+pub use export::D1ExportSource;
 pub use identity::D1IdentityRepository;
 pub use inbox::D1InboxRepository;
 pub use journal::D1JournalRepository;

@@ -26,8 +26,8 @@ part of every slice, not deferred to the end.
 | Notes: server persistence, autosave, conflict detection, legacy migration | ✅ done |
 | Journal (dated entries, mood) | ✅ done |
 | Entity linking (task ↔ note ↔ project ↔ journal) | ✅ done |
-| Data export (JSON) | next |
-| M1 exit review (deploy readiness) | planned |
+| Data export (JSON) | ✅ done |
+| M1 exit review (deploy readiness) | next |
 
 **Exit criteria:**
 - All P1 slices are done to the Definition of Done in AGENTS.md.

@@ -318,6 +318,28 @@ async function local() {
       await api.req("DELETE", `/api/v1/projects/${proj.id}`);
     });
 
+    await check("export: one JSON download with every record, no credential material", async () => {
+      const task = (await api.req("POST", "/api/v1/tasks", { body: { title: "Export me" } })).json;
+      const note = (await api.req("POST", "/api/v1/notes", { body: { body: "Exported note body" } })).json;
+      await api.req("POST", "/api/v1/links", { body: { from: { kind: "task", id: task.id }, to: { kind: "note", id: note.id } } });
+      await api.req("POST", "/api/v1/inbox", { body: { text: "still in the inbox" } });
+      await api.req("PUT", "/api/v1/storage/objects/export/check.txt", { body: "file", headers: { "Content-Type": "text/plain" } });
+
+      const r = await api.req("GET", "/api/v1/export");
+      expect(r.status === 200 && /attachment; filename="directory-export-\d{4}-\d{2}-\d{2}\.json"/.test(r.headers.get("content-disposition")), "download headers");
+      const doc = r.json;
+      expect(doc.format === "directory-export" && doc.format_version === 1 && doc.schema_version >= 9, "header fields");
+      expect(doc.user.display_name === "Smoke Owner", "user");
+      expect(doc.tasks.some((t) => t.id === task.id) && doc.notes.some((n) => n.body === "Exported note body"), "tasks + full note bodies");
+      expect(doc.journal.some((e) => e.date === "2026-10-21" && e.body.length > 0), "journal with bodies");
+      expect(doc.links.length >= 1 && doc.inbox.some((i) => i.text === "still in the inbox"), "links + inbox");
+      expect(doc.files.some((f) => f.key === "export/check.txt"), "file metadata");
+      for (const secret of ["token_hash", "public_key", "sign_count", "owner_id", "dir_", "__Host-"]) {
+        expect(!r.text.includes(secret), `leaked ${secret}`);
+      }
+      await api.req("DELETE", "/api/v1/storage/objects/export/check.txt");
+    });
+
     await check("device API token: create (shown once), use as bearer, cannot manage credentials", async () => {
       const r = await api.req("POST", "/api/v1/auth/tokens", { body: { name: "Smoke device" } });
       expect(r.status === 201 && r.json.secret.startsWith("dir_"), `${r.status} ${r.text}`);

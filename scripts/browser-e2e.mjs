@@ -181,6 +181,14 @@ try {
     await page.click("create");
     await page.waitForText("won't be shown again");
     await shot("settings");
+    await page.click("export my data");
+    await new Promise((r) => setTimeout(r, 1000));
+    const alert = await page.evaluate(`document.querySelector('[role="alert"]')?.innerText ?? ""`);
+    if (alert) throw new Error(`export error: ${alert}`);
+    const exported = await page.evaluate(`fetch("/api/v1/export").then((r) => r.json())`);
+    if (exported.format !== "directory-export" || !exported.notes.some((n) => n.body.includes("Agenda: launch plan"))) {
+      throw new Error("export content");
+    }
     const secret = await page.evaluate(`document.querySelector("code.select-all")?.innerText`);
     if (!secret?.startsWith("dir_")) throw new Error(`secret: ${secret}`);
     const r = await fetch(`${server.origin}/api/v1/storage/objects`, { headers: { Authorization: `Bearer ${secret}` } });

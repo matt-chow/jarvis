@@ -194,6 +194,13 @@ export class Api {
   updateTask = (id: string, patch: TaskPatch) => this.call<Task>("PATCH", `/api/v1/tasks/${encodeURIComponent(id)}`, patch);
   deleteTask = (id: string) => this.call<void>("DELETE", `/api/v1/tasks/${encodeURIComponent(id)}`);
 
+  // ---- Export ----
+  async exportData(): Promise<Blob> {
+    const res = await this.send("GET", "/api/v1/export");
+    if (!res.ok) return fail(res);
+    return res.blob();
+  }
+
   // ---- Files ----
   async listObjects(prefix?: string): Promise<ObjectInfo[]> {
     const q = prefix ? `?prefix=${encodeURIComponent(prefix)}` : "";

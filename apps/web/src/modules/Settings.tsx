@@ -5,6 +5,7 @@ import { Button, Panel } from "../components/ui";
 import { reportIfUnauthorized } from "../hooks/useSession";
 import { api, ApiError, isNetworkError, type DeviceToken, type PasskeyInfo } from "../lib/api";
 import { formatDate } from "../lib/format";
+import { localDate } from "../lib/tasks";
 import { creationRequest, describePasskeyError, encodeRegistration } from "../lib/webauthn";
 
 // Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
@@ -204,6 +205,24 @@ export function Settings({ online, session }: ModuleProps) {
           </ul>
         )}
       </Panel>
+
+      <Panel title="your data" className="lg:col-span-2">
+        <p className="text-sm text-muted">
+          Download everything as one JSON file: tasks, projects, notes, journal, inbox, links, and the file list. File
+          contents stay in Files. Sign-in credentials are never included.
+        </p>
+        <Button className="mt-3" disabled={busy || !online} onClick={() => void run(downloadExport)}>
+          export my data
+        </Button>
+      </Panel>
     </div>
   );
+}
+
+async function downloadExport() {
+  const blob = await api.exportData();
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), { href: url, download: `directory-export-${localDate()}.json` });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

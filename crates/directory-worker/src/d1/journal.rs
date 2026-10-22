@@ -13,6 +13,30 @@ impl D1JournalRepository {
     pub fn new(db: D1Database) -> Self {
         Self { db }
     }
+
+    /// Every entry with full body (data export).
+    pub async fn all(&self, owner_id: &str) -> Result<Vec<Entry>, String> {
+        Ok(stmt(
+            &self.db,
+            "SELECT owner_id, date, body, mood, created_at, updated_at FROM journal_entries WHERE owner_id = ?1 ORDER BY date",
+            &[text(owner_id)],
+        )?
+        .all()
+        .await
+        .map_err(err)?
+        .results::<Row>()
+        .map_err(err)?
+        .into_iter()
+        .map(|r| Entry {
+            owner_id: r.owner_id,
+            date: r.date,
+            body: r.body,
+            mood: r.mood.map(|m| m as u8),
+            created_at: r.created_at as i64,
+            updated_at: r.updated_at as i64,
+        })
+        .collect())
+    }
 }
 
 #[derive(Deserialize)]

@@ -13,6 +13,23 @@ impl D1NoteRepository {
     pub fn new(db: D1Database) -> Self {
         Self { db }
     }
+
+    /// Every note with full body (data export).
+    pub async fn all(&self, owner_id: &str) -> Result<Vec<Note>, String> {
+        Ok(stmt(
+            &self.db,
+            "SELECT id, owner_id, title, body, pinned, created_at, updated_at FROM notes WHERE owner_id = ?1 ORDER BY created_at",
+            &[text(owner_id)],
+        )?
+        .all()
+        .await
+        .map_err(err)?
+        .results::<Row>()
+        .map_err(err)?
+        .into_iter()
+        .map(Note::from)
+        .collect())
+    }
 }
 
 #[derive(Deserialize)]
