@@ -82,10 +82,10 @@ async function local() {
   let deviceTokenId;
 
   try {
-    await check("health ok, schema v2", async () => {
+    await check("health ok, schema at expected version", async () => {
       const r = await api.req("GET", "/api/v1/health");
       expect(r.status === 200 && r.json.status === "ok", JSON.stringify(r.json));
-      expect(r.json.checks.find((c) => c.name === "database").detail === "schema v2", "schema");
+      expect(/^schema v\d+$/.test(r.json.checks.find((c) => c.name === "database").detail), "schema");
       expect(r.headers.get("cache-control") === "no-store", "no-store");
     });
 
@@ -234,6 +234,19 @@ async function local() {
       expect(del.status === 204, `revoke ${del.status}`);
       const r = await fetch(`${baseUrl}/api/v1/storage/objects`, { headers: { Authorization: `Bearer ${deviceSecret}` } });
       expect(r.status === 401, `after revoke → ${r.status}`);
+    });
+
+    await check("sign-in endpoints are rate limited per client (429 + Retry-After)", async () => {
+      let limited;
+      for (let i = 0; i < 40 && !limited; i++) {
+        const r = await api.req("POST", "/api/v1/auth/login/options", { body: {}, cookie: false });
+        if (r.status === 429) limited = r;
+        else expect(r.status === 200, `unexpected ${r.status}`);
+      }
+      expect(limited, "never limited");
+      expect(limited.json.error === "rate_limited" && Number(limited.headers.get("retry-after")) > 0, "Retry-After");
+      const health = await api.req("GET", "/api/v1/health");
+      expect(health.status === 200, "other routes unaffected");
     });
 
     await staticChecks(baseUrl);

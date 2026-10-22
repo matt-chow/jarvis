@@ -1,12 +1,14 @@
 //! Authentication routes and the `authenticate` guard used by every private route.
 
 use super::{error, error_with, json, no_content, read_json};
-use crate::{bindings, d1::D1IdentityRepository, entropy::WebCryptoEntropy, try_or_respond};
+use crate::d1::{D1IdentityRepository, D1RateLimitStore};
+use crate::{bindings, entropy::WebCryptoEntropy, try_or_respond};
 use directory_core::identity::webauthn::RelyingParty;
 use directory_core::identity::{
     bearer_token, AssertionInput, AuthMethod, IdentityConfig, IdentityError, IdentityService,
     IssuedSession, Principal, RegistrationInput,
 };
+use directory_core::rate_limit::{self, Decision, AUTH_POLICY};
 use serde::{Deserialize, Serialize};
 use worker::{Date, Env, Method, Request, Response, Result, RouteContext};
 
@@ -152,6 +154,39 @@ fn require_session(p: &Principal) -> Option<Result<Response>> {
     (p.method != AuthMethod::Session).then(|| error(403, "session_required"))
 }
 
+/// Per-client throttle for unauthenticated sign-in and setup endpoints.
+/// Fails open on storage errors (logged): availability over strictness here,
+/// since WebAuthn itself is not guessable.
+async fn throttle(req: &Request, ctx: &RouteContext<()>) -> Result<Option<Response>> {
+    let ip = req
+        .headers()
+        .get("CF-Connecting-IP")?
+        .unwrap_or_else(|| "local".into());
+    let store = D1RateLimitStore::new(ctx.env.d1(bindings::DB)?);
+    let now = Date::now().as_millis() as i64;
+    match rate_limit::check(&store, AUTH_POLICY, &format!("auth:{ip}"), now).await {
+        Ok(Decision::Allowed) => Ok(None),
+        Ok(Decision::Limited { retry_after_secs }) => {
+            let mut resp = error(429, "rate_limited")?;
+            resp.headers_mut()
+                .set("Retry-After", &retry_after_secs.to_string())?;
+            Ok(Some(resp))
+        }
+        Err(e) => {
+            worker::console_error!("rate limit store error: {e}");
+            Ok(None)
+        }
+    }
+}
+
+macro_rules! throttled {
+    ($req:expr, $ctx:expr) => {
+        if let Some(resp) = throttle(&$req, &$ctx).await? {
+            return Ok(resp);
+        }
+    };
+}
+
 /// Shared guard for auth-only routes.
 macro_rules! principal {
     ($req:expr, $identity:expr) => {
@@ -211,6 +246,7 @@ struct SetupRequest {
 }
 
 pub async fn setup_options(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    throttled!(req, ctx);
     let body: SetupRequest = try_or_respond!(read_json(&mut req).await?);
     let identity = Identity::from_env(&ctx.env)?;
     match identity
@@ -224,6 +260,7 @@ pub async fn setup_options(mut req: Request, ctx: RouteContext<()>) -> Result<Re
 }
 
 pub async fn setup_verify(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    throttled!(req, ctx);
     let input: RegistrationInput = try_or_respond!(read_json(&mut req).await?);
     let identity = Identity::from_env(&ctx.env)?;
     match identity.service().finish_setup(&input).await {
@@ -238,7 +275,8 @@ pub async fn setup_verify(mut req: Request, ctx: RouteContext<()>) -> Result<Res
     }
 }
 
-pub async fn login_options(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
+pub async fn login_options(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    throttled!(req, ctx);
     let identity = Identity::from_env(&ctx.env)?;
     match identity.service().begin_login().await {
         Ok(opts) => json(200, &opts),
@@ -247,6 +285,7 @@ pub async fn login_options(_req: Request, ctx: RouteContext<()>) -> Result<Respo
 }
 
 pub async fn login_verify(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    throttled!(req, ctx);
     let input: AssertionInput = try_or_respond!(read_json(&mut req).await?);
     let identity = Identity::from_env(&ctx.env)?;
     match identity.service().finish_login(&input).await {

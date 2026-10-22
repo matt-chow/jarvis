@@ -18,6 +18,7 @@ const API_MESSAGES: Record<string, string> = {
   auth_not_configured: "Sign-in is not configured on the server (DIRECTORY_RP_ID / DIRECTORY_ORIGINS / setup token).",
   authentication_failed: "That passkey was not accepted.",
   challenge_invalid: "The sign-in request expired. Try again.",
+  rate_limited: "Too many attempts. Wait a few minutes and try again.",
 };
 
 function describe(e: unknown): string {

@@ -56,6 +56,11 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 - **Challenges** are single-use (`DELETE … RETURNING`), purpose-bound
   (setup/login/add-passkey), and expire after 5 minutes. Expired rows are purged
   on each insert.
+- **Rate limiting:** setup and login endpoints allow 30 requests per client IP
+  (`CF-Connecting-IP`) per 10-minute fixed window, stored in D1
+  `rate_limits`. Over the limit they return `429 rate_limited` with
+  `Retry-After`. If the counter store itself fails, requests are allowed
+  through and the error is logged.
 - **Fail closed:** if `DIRECTORY_RP_ID`/`DIRECTORY_ORIGINS` are missing, every
   auth flow returns `503 auth_not_configured`. A missing or weak setup token
   disables setup.
@@ -90,10 +95,11 @@ JSON bodies are capped at 64 KiB.
 ## Data
 
 - **D1** migrations live in `migrations/NNNN_name.sql` and are append-only.
-  `system_meta.schema_version` must equal `EXPECTED_SCHEMA_VERSION` (now **2**).
+  `system_meta.schema_version` must equal `EXPECTED_SCHEMA_VERSION` (now **3**).
   - `0001`: `system_meta`
   - `0002`: `users`, `passkeys`, `auth_challenges`, `sessions`, `api_tokens`.
     Times are epoch milliseconds; secrets are stored only as SHA-256 hex.
+  - `0003`: `rate_limits` (fixed-window counters).
 - **R2** bucket `directory-files` is private, with no r2.dev URL or custom domain.
   Object keys are `u/<user_id>/<key>`.
 - **IndexedDB** database `directory` (v1) has a `notes` store (keyPath `id`,

@@ -1,8 +1,10 @@
 //! D1-backed implementations of core repositories.
 
 mod identity;
+mod rate_limit;
 
 pub use identity::D1IdentityRepository;
+pub use rate_limit::D1RateLimitStore;
 
 use directory_core::system::SystemRepository;
 use worker::wasm_bindgen::JsValue;

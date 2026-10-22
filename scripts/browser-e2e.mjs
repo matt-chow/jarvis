@@ -40,8 +40,8 @@ try {
     await page.waitForText("Good to see you, Browser");
   });
 
-  await step("health shows schema v2", async () => {
-    await page.waitForText("schema v2");
+  await step("health shows database and storage ok", async () => {
+    await page.waitForText("[ ok ] schema v");
   });
 
   await step("Files: upload lists the file", async () => {

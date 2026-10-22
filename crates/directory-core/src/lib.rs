@@ -11,6 +11,7 @@
 pub mod encoding;
 pub mod health;
 pub mod identity;
+pub mod rate_limit;
 pub mod storage;
 pub mod system;
 

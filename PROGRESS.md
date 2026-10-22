@@ -24,16 +24,12 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | Command | Result (2026-10-21) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 795 KiB / 271 KiB gzipped |
-| `cargo test -p directory-core` | ✅ 31 passed |
+| `cargo test -p directory-core` | ✅ 33 passed |
 | Vitest | ✅ 14 passed (4 files) |
-| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 16/16 |
+| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 17/17 |
 | `npm run test:browser` (headless Edge 155, virtual passkey) | ✅ 8/8 |
 
 ### Known issues and technical debt
-- **No rate limiting** on `/auth/login/*` and `/auth/setup/*`, so challenge rows
-  can be spammed; they expire after 5 minutes and are purged on insert. Add
-  per-IP throttling (D1 counter or a Workers rate-limit binding, if free)
-  before deploying.
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
   measured against the Workers Free 10 ms CPU limit. Check after first deploy;
   if needed, switch to `opt-level = 3` or Web Crypto verification.
@@ -71,6 +67,13 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-21 — Security: auth rate limiting
+- Core `rate_limit` (fixed window, `RateLimitStore` trait).
+- D1 store with an atomic upsert and purge (migration 0003, schema v3).
+- Setup and login endpoints return 429 with `Retry-After` after 30 requests per
+  IP per 10 minutes.
+- Smoke check added; the sign-in screen shows a friendly message.
 
 ### 2026-10-21 — M1 slice: owner identity (passkeys)
 - **Core:**
