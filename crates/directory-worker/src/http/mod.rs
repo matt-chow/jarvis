@@ -3,6 +3,7 @@
 
 pub mod auth;
 pub mod health;
+pub mod notes;
 pub mod projects;
 pub mod storage;
 pub mod tasks;
@@ -60,19 +61,27 @@ pub fn no_content() -> Result<Response> {
     Ok(resp)
 }
 
-/// Parse a bounded JSON body; `Err(response)` is a ready 4xx.
+/// Parse a JSON body of at most 64 KiB; `Err(response)` is a ready 4xx.
 pub async fn read_json<T: DeserializeOwned>(
     req: &mut Request,
+) -> Result<std::result::Result<T, Response>> {
+    read_json_limited(req, MAX_JSON_BYTES).await
+}
+
+/// `read_json` with a route-specific byte limit (e.g. long note bodies).
+pub async fn read_json_limited<T: DeserializeOwned>(
+    req: &mut Request,
+    max_bytes: usize,
 ) -> Result<std::result::Result<T, Response>> {
     let declared = req
         .headers()
         .get("Content-Length")?
         .and_then(|v| v.parse::<usize>().ok());
-    if declared.is_some_and(|n| n > MAX_JSON_BYTES) {
+    if declared.is_some_and(|n| n > max_bytes) {
         return Ok(Err(error(413, "too_large")?));
     }
     let bytes = req.bytes().await?;
-    if bytes.len() > MAX_JSON_BYTES {
+    if bytes.len() > max_bytes {
         return Ok(Err(error(413, "too_large")?));
     }
     match serde_json::from_slice(&bytes) {

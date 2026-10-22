@@ -9,7 +9,7 @@ JARVIS commands will refer to them.
 | `home` | Home | ready | yes | `GET /api/v1/health` | Status dashboard; health cached in IndexedDB. |
 | `tasks` | Tasks | preview | read-only | `/api/v1/tasks` | Tasks and one-level subtasks, status, priority, due date, notes. Last list cached for offline viewing. |
 | `projects` | Projects | preview | read-only | `/api/v1/projects` | Group top-level tasks; progress, archive, and links into Tasks filtered by project. |
-| `notes` | Scratchpad | preview | yes | none yet | Device-local notes in IndexedDB. Server notes are an M1 slice. |
+| `notes` | Notes | preview | read-only | `/api/v1/notes` | Server notes with debounced autosave, pinning, and conflict detection (409, then "use theirs" or "keep mine"). Migrates legacy Scratchpad notes once. |
 | `files` | Files | preview | no | `/api/v1/storage/*` | Owner-scoped private R2 storage (10 MB cap, no folders yet). |
 | `jarvis` | JARVIS | planned | — | — | Status screen only; M2. |
 | `settings` | Settings | ready | no | `/api/v1/auth/*` | Passkeys, device tokens, sign-out. |
@@ -30,7 +30,7 @@ provisional (DECISIONS D-013): built from the shared `Panel`, `Button`, and
 | Home | `modules/Home.tsx` | provisional |
 | Tasks | `modules/Tasks.tsx` | awaiting design integration |
 | Projects | `modules/Projects.tsx` | awaiting design integration |
-| Scratchpad | `modules/Notes.tsx` | provisional |
+| Notes | `modules/Notes.tsx` | awaiting design integration |
 | Files | `modules/Files.tsx` | awaiting design integration |
 | Settings | `modules/Settings.tsx` | awaiting design integration |
 | JARVIS | `modules/Jarvis.tsx` | placeholder: no functionality until M2 |

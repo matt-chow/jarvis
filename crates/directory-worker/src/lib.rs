@@ -12,7 +12,7 @@ mod entropy;
 mod http;
 mod r2;
 
-use http::{auth, health, projects, storage, tasks};
+use http::{auth, health, notes, projects, storage, tasks};
 
 #[event(fetch)]
 async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
@@ -37,6 +37,12 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get_async("/api/v1/auth/tokens", auth::list_tokens)
         .post_async("/api/v1/auth/tokens", auth::create_token)
         .delete_async("/api/v1/auth/tokens/:id", auth::delete_token)
+        // Notes
+        .get_async("/api/v1/notes", notes::list)
+        .post_async("/api/v1/notes", notes::create)
+        .get_async("/api/v1/notes/:id", notes::get)
+        .patch_async("/api/v1/notes/:id", notes::update)
+        .delete_async("/api/v1/notes/:id", notes::delete)
         // Projects
         .get_async("/api/v1/projects", projects::list)
         .post_async("/api/v1/projects", projects::create)

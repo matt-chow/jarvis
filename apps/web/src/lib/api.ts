@@ -3,6 +3,7 @@
  * The browser authenticates with the HttpOnly session cookie (same origin);
  * native clients can pass a device token instead.
  */
+import type { Note, NotePatch, NoteSummary } from "./notes";
 import type { NewProject, Project, ProjectPatch } from "./projects";
 import type { NewTask, Task, TaskFilter, TaskPatch } from "./tasks";
 import type { AssertionJson, CreationOptionsJson, RegistrationJson, RequestOptionsJson } from "./webauthn";
@@ -57,6 +58,8 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     readonly detail?: string,
+    /** Parsed JSON error body (e.g. the current note on a 409 conflict). */
+    readonly body?: unknown,
   ) {
     super(`${status} ${code}`);
   }
@@ -75,14 +78,16 @@ export function objectPath(key: string): string {
 async function fail(res: Response): Promise<never> {
   let code = "request_failed";
   let detail: string | undefined;
+  let body: unknown;
   try {
-    const body = (await res.json()) as { error?: string; message?: string };
-    code = body.error ?? code;
-    detail = body.message;
+    body = await res.json();
+    const b = body as { error?: string; message?: string };
+    code = b.error ?? code;
+    detail = b.message;
   } catch {
     /* non-JSON body */
   }
-  throw new ApiError(res.status, code, detail);
+  throw new ApiError(res.status, code, detail, body);
 }
 
 export class Api {
@@ -134,6 +139,13 @@ export class Api {
   tokens = async () => (await this.call<{ tokens: DeviceToken[] }>("GET", "/api/v1/auth/tokens")).tokens;
   createToken = (name: string) => this.call<{ token: DeviceToken; secret: string }>("POST", "/api/v1/auth/tokens", { name });
   deleteToken = (id: string) => this.call<void>("DELETE", `/api/v1/auth/tokens/${encodeURIComponent(id)}`);
+
+  // ---- Notes ----
+  notes = async () => (await this.call<{ notes: NoteSummary[] }>("GET", "/api/v1/notes")).notes;
+  note = (id: string) => this.call<Note>("GET", `/api/v1/notes/${encodeURIComponent(id)}`);
+  createNote = (n: { title?: string; body?: string; pinned?: boolean }) => this.call<Note>("POST", "/api/v1/notes", n);
+  updateNote = (id: string, patch: NotePatch) => this.call<Note>("PATCH", `/api/v1/notes/${encodeURIComponent(id)}`, patch);
+  deleteNote = (id: string) => this.call<void>("DELETE", `/api/v1/notes/${encodeURIComponent(id)}`);
 
   // ---- Projects ----
   projects = async (includeArchived = false) =>

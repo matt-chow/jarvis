@@ -1,11 +1,13 @@
 //! D1-backed implementations of core repositories.
 
 mod identity;
+mod notes;
 mod projects;
 mod rate_limit;
 mod tasks;
 
 pub use identity::D1IdentityRepository;
+pub use notes::D1NoteRepository;
 pub use projects::D1ProjectRepository;
 pub use rate_limit::D1RateLimitStore;
 pub use tasks::D1TaskRepository;

@@ -123,10 +123,11 @@ export async function launch() {
     async fill(label, value) {
       await page.evaluate(`(() => {
         const label = ${JSON.stringify(label)};
-        const el = document.querySelector(\`input[aria-label="\${label}"]\`)
-          ?? [...document.querySelectorAll("label")].find((l) => l.innerText.trim().toLowerCase().startsWith(label.toLowerCase()))?.querySelector("input");
+        const el = document.querySelector(\`input[aria-label="\${label}"], textarea[aria-label="\${label}"]\`)
+          ?? [...document.querySelectorAll("label")].find((l) => l.innerText.trim().toLowerCase().startsWith(label.toLowerCase()))?.querySelector("input, textarea");
         if (!el) throw new Error("no input " + label);
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, ${JSON.stringify(value)});
+        const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(proto, "value").set.call(el, ${JSON.stringify(value)});
         el.dispatchEvent(new Event("input", { bubbles: true }));
       })()`);
     },

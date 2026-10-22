@@ -103,6 +103,15 @@ Alpha → M3 Knowledge & Offline Beta → M4 Personal OS → M5 1.0. Each milest
 has exit criteria in ROADMAP.md. A milestone ships to Cloudflare only after the
 owner approves deployment.
 
+## D-014 — Optimistic concurrency for long-form text
+**Status:** accepted
+Notes (and future long-form entities) use `updated_at` as a version. Clients
+send `expected_updated_at`; the repository writes with
+`… WHERE updated_at = ?`. A mismatch returns `409` with the current version,
+and the user chooses "use theirs" or "keep mine" (a forced write with no
+expected version). Versions strictly increase even within one millisecond.
+Short fields (tasks, projects) stay last-write-wins until M3 sync.
+
 ## D-013 — Provisional UI until Paper designs land
 **Status:** accepted
 No `DESIGN_HANDOFF.md` exists yet. New screens reuse the existing `Panel`,

@@ -48,6 +48,31 @@ try {
     await page.waitForText("[ ok ] schema v");
   });
 
+  await step("Notes: legacy device notes migrate; new note autosaves to the server", async () => {
+    // A Sprint 00 Scratchpad note that only exists in this browser's IndexedDB.
+    await page.evaluate(`new Promise((res, rej) => {
+      const r = indexedDB.open("directory");
+      r.onerror = () => rej(r.error);
+      r.onsuccess = () => {
+        const tx = r.result.transaction("notes", "readwrite");
+        tx.objectStore("notes").put({ id: "legacy", body: "Legacy scratch\\nfrom sprint 00", createdAt: 1, updatedAt: 1 });
+        tx.oncomplete = () => res(true);
+      };
+    })`);
+    await page.hash("/notes");
+    await page.waitForText("Moved 1 note from this device");
+    await page.waitForText("Legacy scratch");
+    await page.click("+ new");
+    await page.waitForText("Untitled");
+    await page.fill("Note body", "Meeting notes\nAgenda: launch plan");
+    await page.waitForText("SAVED".toLowerCase());
+    await page.waitForText("Agenda: launch plan");
+    const notes = await page.evaluate(`fetch("/api/v1/notes").then((r) => r.json())`);
+    const titles = notes.notes.map((n) => n.title);
+    if (!titles.includes("Meeting notes") || !titles.includes("Legacy scratch")) throw new Error(`server notes: ${titles}`);
+    await shot("notes");
+  });
+
   await step("Files: upload lists the file", async () => {
     const dir = mkdtempSync(join(tmpdir(), "directory-upload-"));
     const file = join(dir, "hello e2e.txt");
@@ -131,16 +156,7 @@ try {
     await waitFor("service worker", () => page.evaluate("!!navigator.serviceWorker.controller"), 30_000);
   });
 
-  await step("offline: with the server stopped, the app opens from cache with the saved session", async () => {
-    await page.evaluate(`new Promise((res, rej) => {
-      const r = indexedDB.open("directory");
-      r.onerror = () => rej(r.error);
-      r.onsuccess = () => {
-        const tx = r.result.transaction("notes", "readwrite");
-        tx.objectStore("notes").put({ id: "e2e", body: "written online", createdAt: 1, updatedAt: Date.now() });
-        tx.oncomplete = () => res(true);
-      };
-    })`);
+  await step("offline: with the server stopped, the app opens from cache with the saved session and cached data", async () => {
     server.stop();
     await waitFor("server down", async () => {
       try {
@@ -153,7 +169,15 @@ try {
     await page.reload();
     await page.waitForText("session saved on this device");
     await page.hash("/notes");
-    await page.waitForText("written online");
+    await page.waitForText("Offline: notes are read-only");
+    await page.click("Meeting notes");
+    await page.waitForText("read-only");
+    const body = await page.evaluate(`document.querySelector('textarea[aria-label="Note body"]')?.value`);
+    if (!body?.includes("Agenda: launch plan")) throw new Error(`cached body: ${body}`);
+    await page.hash("/tasks");
+    await page.waitForText("Offline: showing the tasks saved on this device");
+    await page.click("All");
+    await page.waitForText("Write the quarterly report");
   });
 } catch {
   // reported by step()

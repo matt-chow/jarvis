@@ -6,7 +6,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ## Current state (2026-10-21)
 
 - **Milestone:** M1 Private Alpha, in progress. Auth ✅, rate limiting ✅,
-  Tasks ✅, Projects ✅. Next: **Notes (server-backed)**.
+  Tasks ✅, Projects ✅, Notes ✅. Next: **Journal**.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
   - Device tokens for native clients and scripts.
@@ -16,7 +16,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   - Projects: create, rename, describe, archive, delete (tasks are kept),
     progress bars, and a link to the project's tasks.
   - Owner-scoped private file upload, list, download, and delete.
-  - Device-local Scratchpad.
+  - Notes saved to the account: autosave, pin, conflict detection across
+    devices, and a one-time migration of legacy Scratchpad notes.
   - PWA install and offline relaunch with the saved session.
   - Health dashboard.
 - **Not deployed.** Nothing has run on Cloudflare yet; that needs owner approval
@@ -28,11 +29,11 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 | Command | Result (2026-10-21) |
 | --- | --- |
-| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 886 KiB / 298 KiB gzipped |
-| `cargo test -p directory-core` | ✅ 45 passed |
-| Vitest | ✅ 20 passed (6 files) |
-| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 19/19 |
-| `npm run test:browser` (headless Edge 155, virtual passkey) | ✅ 10/10 |
+| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 933 KiB / 313 KiB gzipped |
+| `cargo test -p directory-core` | ✅ 48 passed |
+| Vitest | ✅ 22 passed (7 files) |
+| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 20/20 |
+| `npm run test:browser` (headless Edge 155, virtual passkey) | ✅ 11/11 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -42,7 +43,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   private-key operations only; we only verify public-key signatures.
 - Files: whole bodies are buffered (10 MB cap); no folders, metadata table, or
   pagination cursor.
-- Scratchpad is device-local only, pending the Notes slice.
+- Offline editing (tasks, notes, projects) is read-only until M3 sync; edits
+  made while offline are not queued.
 - `wrangler dev` must be restarted after rebuilding `apps/web/dist`.
 - The repo lives under OneDrive, which slows down and locks `node_modules` and
   `target`.
@@ -51,7 +53,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ### Design dependencies
 - Paper designs or `docs/DESIGN_HANDOFF.md` for the shell, auth, Tasks, Files,
-  Projects, Settings, and the upcoming Inbox, Journal, and Notes screens.
+  Projects, Notes, Settings, and the upcoming Journal and Inbox screens.
 
 ### Unresolved decisions (need the owner)
 - Approve the first Cloudflare deploy: R2 activation and the production
@@ -59,20 +61,41 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-**Notes slice (M1): server-backed notes that replace the device-only Scratchpad.**
-- Core `notes` module: title (optional, derived from the first line), Markdown
-  body (≤ 100 KB), pinned, and timestamps. Owner-scoped repository.
-- Migration `0006`: `notes`.
-- `/api/v1/notes` CRUD with a list that returns summaries (no body), sorted by
-  `updated_at`.
-- Web: a Notes module using the API, with debounced autosave and save-state
-  indicators. Migrate existing device-local Scratchpad notes into the account
-  (one-time, on first load, then clear them locally). Read-only offline cache.
-- Then: Journal, Inbox, Linking.
+**Journal slice (M1).**
+- Core `journal` module: one entry per local date (`YYYY-MM-DD`, unique per
+  owner), body text, optional mood (1–5), and the same optimistic concurrency
+  as notes.
+- Migration `0007`.
+- `/api/v1/journal`: list by month range, `GET/PUT /api/v1/journal/{date}`
+  (upsert), and delete.
+- UI: today's entry with autosave, a calendar or list of recent days, and date
+  navigation.
+- Then: Universal inbox, entity linking, the M1 exit (export plus first deploy
+  with approval).
 
 ---
 
 ## Log
+
+### 2026-10-21 — M1 slice: Notes
+- **Core:** `notes` module: summaries with derived titles and excerpts,
+  validation (100k chars), and optimistic concurrency (`NoteError::Conflict`
+  carries the winner; versions strictly increase).
+- **Worker:**
+  - `d1/notes.rs` (list returns only `substr(body, 1, 400)`; conditional
+    `update_if`) and `http/notes.rs` (409 body includes the current note).
+  - New `read_json_limited` (512 KiB for notes).
+  - Migration `0006_notes.sql` (schema v6).
+- **Web:**
+  - Notes module rewritten for the server: list, editor with 800 ms debounced
+    autosave and save-state indicator, flush on switch, pin, delete, a
+    conflict banner ("use theirs" / "keep mine"), and an offline read-only
+    cache per note.
+  - `useNotes` migrates legacy IndexedDB Scratchpad notes once.
+  - `ApiError.body`; `useCachedList` now returns a stable `reload`.
+- **Tests:** 3 core notes tests, web summary tests, a smoke notes check
+  (including 409), and browser e2e for legacy migration, autosave, and offline
+  cached notes and tasks.
 
 ### 2026-10-21 — M1 slice: Projects
 - **Core:**

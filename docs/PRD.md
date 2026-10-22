@@ -15,7 +15,7 @@ usable offline, with an AI assistant later.
 | F4 | Health endpoint reporting API, database, and storage status | Sprint 00 ✅ |
 | F5 | Private file storage: upload, list, download, delete | ✅ owner-scoped, session or device token |
 | F6 | Owner sign-in (passkeys), sessions, device tokens for native clients | ✅ M1 |
-| F7 | Notes synced between devices through D1 | Planned |
+| F7 | Notes stored in D1 and shared across devices (with conflict detection) | ✅ M1 (online; offline editing in M3) |
 | F11 | Tasks with subtasks, status, priority, due dates | ✅ M1 |
 | F12 | Projects grouping tasks, with progress and archiving | ✅ M1 |
 | F8 | Additional modules (tasks, bookmarks, journal, …) | Planned |

@@ -220,6 +220,27 @@ async function local() {
       await api.req("DELETE", `/api/v1/tasks/${task.json.id}`);
     });
 
+    await check("notes: summaries without bodies, optimistic concurrency (409 with current), pin, delete", async () => {
+      const n = await api.req("POST", "/api/v1/notes", { body: { body: "# Packing list\n\npassport\ncharger" } });
+      expect(n.status === 201 && n.json.title === "", `create → ${n.status} ${n.text}`);
+      const list = await api.req("GET", "/api/v1/notes");
+      const row = list.json.notes.find((x) => x.id === n.json.id);
+      expect(row && row.title === "Packing list" && row.excerpt === "passport charger" && !("body" in row), `summary → ${JSON.stringify(row)}`);
+
+      const v1 = n.json.updated_at;
+      const saved = await api.req("PATCH", `/api/v1/notes/${n.json.id}`, { body: { body: "edited on laptop", expected_updated_at: v1 } });
+      expect(saved.status === 200 && saved.json.updated_at > v1, `save → ${saved.status}`);
+      const stale = await api.req("PATCH", `/api/v1/notes/${n.json.id}`, { body: { body: "edited on phone", expected_updated_at: v1 } });
+      expect(stale.status === 409 && stale.json.error === "conflict" && stale.json.note.body === "edited on laptop", `stale → ${stale.status} ${stale.text}`);
+
+      const pinned = await api.req("PATCH", `/api/v1/notes/${n.json.id}`, { body: { pinned: true } });
+      expect(pinned.json.pinned === true && pinned.json.body === "edited on laptop", "pin keeps body");
+      const big = await api.req("POST", "/api/v1/notes", { body: { body: "x".repeat(100_001) } });
+      expect(big.status === 400 && /body/.test(big.json.message), `oversize body → ${big.status} ${big.text.slice(0, 80)}`);
+      expect((await api.req("DELETE", `/api/v1/notes/${n.json.id}`)).status === 204, "delete");
+      expect((await api.req("GET", `/api/v1/notes/${n.json.id}`)).status === 404, "gone");
+    });
+
     await check("device API token: create (shown once), use as bearer, cannot manage credentials", async () => {
       const r = await api.req("POST", "/api/v1/auth/tokens", { body: { name: "Smoke device" } });
       expect(r.status === 201 && r.json.secret.startsWith("dir_"), `${r.status} ${r.text}`);

@@ -90,5 +90,6 @@ export function useCachedList<T>(cacheKey: string, noun: string, fetchAll: () =>
     [commit, noun],
   );
 
-  return { items, loading, stale, error, reload: () => void reload(), mutate };
+  const reloadNow = useCallback(() => void reload(), [reload]);
+  return { items, loading, stale, error, reload: reloadNow, mutate };
 }

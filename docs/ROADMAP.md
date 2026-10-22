@@ -23,8 +23,8 @@ part of every slice, not deferred to the end.
 | Tasks: CRUD, status, due date, priority, subtasks (one level) | ✅ done |
 | Projects (group tasks; progress) | ✅ done |
 | Universal inbox (quick capture → triage into task/note/journal) | after Notes and Journal |
-| Notes: server persistence (replacing device-only Scratchpad) | next |
-| Journal (dated entries) | planned |
+| Notes: server persistence, autosave, conflict detection, legacy migration | ✅ done |
+| Journal (dated entries) | next |
 | Entity linking (task ↔ note ↔ project ↔ journal) | planned |
 
 **Exit criteria:**

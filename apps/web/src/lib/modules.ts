@@ -21,7 +21,7 @@ export const MODULES: readonly ModuleMeta[] = [
   { id: "home", label: "Home", glyph: "~", summary: "System status and overview.", stage: "ready", offline: true },
   { id: "tasks", label: "Tasks", glyph: "☐", summary: "Tasks and subtasks with due dates and priorities.", stage: "preview", offline: false },
   { id: "projects", label: "Projects", glyph: "▦", summary: "Group tasks and track progress.", stage: "preview", offline: false },
-  { id: "notes", label: "Scratchpad", glyph: "¶", summary: "Quick notes stored on this device.", stage: "preview", offline: true },
+  { id: "notes", label: "Notes", glyph: "¶", summary: "Notes saved to your account, with autosave.", stage: "preview", offline: false },
   { id: "files", label: "Files", glyph: "▤", summary: "Private cloud storage.", stage: "preview", offline: false },
   { id: "jarvis", label: "JARVIS", glyph: "◉", summary: "Voice and AI assistant.", stage: "planned", offline: false },
   { id: "settings", label: "Settings", glyph: "§", summary: "Passkeys, device tokens, and sign-out.", stage: "ready", offline: false },
