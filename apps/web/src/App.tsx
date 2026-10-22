@@ -11,6 +11,7 @@ import { Home } from "./modules/Home";
 import { Jarvis } from "./modules/Jarvis";
 import { Notes } from "./modules/Notes";
 import { Settings } from "./modules/Settings";
+import { Tasks } from "./modules/Tasks";
 
 export interface ModuleProps {
   online: boolean;
@@ -22,6 +23,7 @@ export interface ModuleProps {
 
 const VIEWS: Record<ModuleId, ComponentType<ModuleProps>> = {
   home: Home,
+  tasks: Tasks,
   notes: Notes,
   files: Files,
   jarvis: Jarvis,
@@ -169,13 +171,13 @@ export function App() {
           aria-label="Modules"
           className="pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-line bg-panel/95 backdrop-blur md:hidden"
         >
-          <ul className="grid grid-cols-5">
+          <ul className="grid grid-cols-6">
             {MODULES.map((m) => (
               <li key={m.id}>
                 <a
                   href={`#/${m.id}`}
                   aria-current={m.id === active ? "page" : undefined}
-                  className={`flex flex-col items-center gap-1 py-2.5 text-[11px] ${m.id === active ? "text-accent" : "text-muted"}`}
+                  className={`flex flex-col items-center gap-1 py-2.5 text-[10px] ${m.id === active ? "text-accent" : "text-muted"}`}
                 >
                   <span aria-hidden className="font-mono text-base leading-none">
                     {m.glyph}

@@ -10,6 +10,9 @@ import { join } from "node:path";
 import { launch, waitFor } from "./lib/cdp.mjs";
 import { startDevServer } from "./lib/devserver.mjs";
 
+const SHOTS = process.env.SCREENSHOT_DIR; // optional: save screenshots for design review
+const shot = async (name, opts) => SHOTS && page.screenshot(join(SHOTS, `${name}.png`), opts);
+
 let failures = 0;
 async function step(name, fn) {
   try {
@@ -34,6 +37,7 @@ try {
 
   await step("first run shows setup; passkey setup signs the owner in", async () => {
     await page.waitForText("first-run setup".toUpperCase());
+    await shot("setup", { width: 390, height: 760 });
     await page.fill("your name", "Browser Owner");
     await page.fill("setup token", server.setupToken);
     await page.click("create passkey");
@@ -54,12 +58,39 @@ try {
     await page.waitForText("Uploaded uploads/hello-e2e.txt");
   });
 
+  await step("Tasks: quick add, subtask, complete, filters", async () => {
+    await page.hash("/tasks");
+    await page.waitForText("Add a task");
+    await page.fill("New task", "Write the quarterly report");
+    await page.click("add");
+    await page.waitForText("Write the quarterly report");
+    await page.click("Write the quarterly report");
+    await page.fill("New subtask", "Gather numbers");
+    await page.evaluate(`document.querySelector('input[aria-label="New subtask"]').form.requestSubmit()`);
+    await page.waitForText("0/1 subtasks");
+    await page.click("Complete “Gather numbers”");
+    await page.waitForText("1/1 subtasks");
+    await shot("tasks-desktop");
+    await shot("tasks-phone", { width: 390, height: 844 });
+    await page.click("Complete “Write the quarterly report”");
+    await page.waitForText("Nothing open");
+    await page.click("Done");
+    await page.waitForText("Write the quarterly report");
+    // Persisted server-side, not just in UI state.
+    const tasks = await page.evaluate(`fetch("/api/v1/tasks").then((r) => r.json())`);
+    const parent = tasks.tasks.find((t) => t.title === "Write the quarterly report");
+    if (!parent || parent.status !== "done" || !tasks.tasks.some((t) => t.parent_id === parent.id && t.status === "done")) {
+      throw new Error(`server state: ${JSON.stringify(tasks)}`);
+    }
+  });
+
   await step("Settings lists one passkey; device token is shown once", async () => {
     await page.hash("/settings");
     await page.waitForText("PASSKEYS · 1");
     await page.fill("Token name", "E2E device");
     await page.click("create");
     await page.waitForText("won't be shown again");
+    await shot("settings");
     const secret = await page.evaluate(`document.querySelector("code.select-all")?.innerText`);
     if (!secret?.startsWith("dir_")) throw new Error(`secret: ${secret}`);
     const r = await fetch(`${server.origin}/api/v1/storage/objects`, { headers: { Authorization: `Bearer ${secret}` } });

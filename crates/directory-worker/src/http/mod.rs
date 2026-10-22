@@ -4,6 +4,7 @@
 pub mod auth;
 pub mod health;
 pub mod storage;
+pub mod tasks;
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;

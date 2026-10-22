@@ -161,6 +161,39 @@ async function local() {
       expect((await api.req("GET", `/api/v1/storage/objects/${objectKey}`)).status === 404, "gone");
     });
 
+    await check("tasks: create, validate, subtasks one level deep, filters, completion, clear due date, cascade delete", async () => {
+      const bad = await api.req("POST", "/api/v1/tasks", { body: { title: "   " } });
+      expect(bad.status === 400 && bad.json.error === "invalid_input" && /title/.test(bad.json.message), `blank title → ${bad.status}`);
+      const badDate = await api.req("POST", "/api/v1/tasks", { body: { title: "x", due_date: "2026-02-30" } });
+      expect(badDate.status === 400 && /due_date/.test(badDate.json.message), `bad date → ${badDate.status}`);
+
+      const parent = await api.req("POST", "/api/v1/tasks", {
+        body: { title: "Plan trip", priority: "high", due_date: "2026-12-01", notes: "flights\nhotel" },
+      });
+      expect(parent.status === 201 && parent.json.status === "todo" && parent.json.priority === "high", `create → ${parent.status} ${parent.text}`);
+      expect(!("owner_id" in parent.json), "owner_id hidden");
+      const child = await api.req("POST", "/api/v1/tasks", { body: { title: "Book flights", parent_id: parent.json.id } });
+      expect(child.status === 201 && child.json.parent_id === parent.json.id, `subtask → ${child.status}`);
+      const grandchild = await api.req("POST", "/api/v1/tasks", { body: { title: "Nope", parent_id: child.json.id } });
+      expect(grandchild.status === 400, `grandchild → ${grandchild.status}`);
+
+      const done = await api.req("PATCH", `/api/v1/tasks/${child.json.id}`, { body: { status: "done" } });
+      expect(done.status === 200 && done.json.completed_at > 0, `complete → ${done.status} ${done.text}`);
+      const open = await api.req("GET", "/api/v1/tasks?status=open");
+      expect(open.json.tasks.some((t) => t.id === parent.json.id) && !open.json.tasks.some((t) => t.id === child.json.id), "open filter");
+      const closed = await api.req("GET", "/api/v1/tasks?status=closed");
+      expect(closed.json.tasks.some((t) => t.id === child.json.id), "closed filter");
+      expect((await api.req("GET", "/api/v1/tasks?status=bogus")).status === 400, "bad filter");
+
+      const cleared = await api.req("PATCH", `/api/v1/tasks/${parent.json.id}`, { body: { due_date: null, title: "Plan the trip" } });
+      expect(cleared.json.due_date === null && cleared.json.title === "Plan the trip" && cleared.json.priority === "high", `patch → ${cleared.text}`);
+
+      expect((await api.req("GET", `/api/v1/tasks/${"0".repeat(32)}`)).status === 404, "unknown id");
+      expect((await api.req("DELETE", `/api/v1/tasks/${parent.json.id}`)).status === 204, "delete");
+      expect((await api.req("GET", `/api/v1/tasks/${child.json.id}`)).status === 404, "subtask deleted with parent");
+      expect((await fetch(`${baseUrl}/api/v1/tasks`)).status === 401, "anonymous → 401");
+    });
+
     await check("device API token: create (shown once), use as bearer, cannot manage credentials", async () => {
       const r = await api.req("POST", "/api/v1/auth/tokens", { body: { name: "Smoke device" } });
       expect(r.status === 201 && r.json.secret.startsWith("dir_"), `${r.status} ${r.text}`);

@@ -5,11 +5,14 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Current state (2026-10-21)
 
-- **Milestone:** M1 Private Alpha, in progress. Auth slice ✅. Next: **Tasks**.
+- **Milestone:** M1 Private Alpha, in progress. Auth ✅, rate limiting ✅,
+  Tasks ✅. Next: **Projects**.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
   - Device tokens for native clients and scripts.
   - Settings: passkeys and tokens.
+  - Tasks with one level of subtasks: status, priority, due date, notes,
+    Open/Done/All filters, and a read-only offline copy.
   - Owner-scoped private file upload, list, download, and delete.
   - Device-local Scratchpad.
   - PWA install and offline relaunch with the saved session.
@@ -23,11 +26,11 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 | Command | Result (2026-10-21) |
 | --- | --- |
-| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 795 KiB / 271 KiB gzipped |
-| `cargo test -p directory-core` | ✅ 33 passed |
-| Vitest | ✅ 14 passed (4 files) |
-| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 17/17 |
-| `npm run test:browser` (headless Edge 155, virtual passkey) | ✅ 8/8 |
+| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 850 KiB / 289 KiB gzipped |
+| `cargo test -p directory-core` | ✅ 43 passed |
+| Vitest | ✅ 18 passed (5 files) |
+| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 18/18 |
+| `npm run test:browser` (headless Edge 155, virtual passkey) | ✅ 9/9 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -45,8 +48,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - iOS Safari is not verified on a device.
 
 ### Design dependencies
-- Paper designs or `docs/DESIGN_HANDOFF.md` for the shell, auth, Files,
-  Settings, and the upcoming Tasks, Projects, Inbox, Journal, and Notes screens.
+- Paper designs or `docs/DESIGN_HANDOFF.md` for the shell, auth, Tasks, Files,
+  Settings, and the upcoming Projects, Inbox, Journal, and Notes screens.
 
 ### Unresolved decisions (need the owner)
 - Approve the first Cloudflare deploy: R2 activation and the production
@@ -54,19 +57,37 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-**Tasks slice (M1).**
-- Core `tasks` module: model, validation, status transitions, and a repository
-  trait with an in-memory test double.
-- D1 migration `0003_tasks`.
-- `/api/v1/tasks` CRUD, owner-scoped.
-- Tasks UI: list, create, edit, complete, delete, with loading, empty, and error
-  states.
+**Projects slice (M1).**
+- Core `projects` module: name, description, status (active/archived), and an
+  owner-scoped repository.
+- Migration `0005`: `projects` table, plus a nullable `tasks.project_id` (ALTER
+  TABLE ADD COLUMN).
+- `/api/v1/projects` CRUD, and `project_id` on task create/patch with
+  ownership validation.
+- UI: a Projects view with progress, plus a project picker and filter in Tasks.
 - Smoke and browser e2e steps.
-- Projects and subtasks build on this.
 
 ---
 
 ## Log
+
+### 2026-10-21 — M1 slice: Tasks
+- **Core:**
+  - `tasks` module: model, status/priority enums, `completed_at` bookkeeping,
+    and one-level subtasks validated against the owner.
+  - `validate` helpers (line, text, `YYYY-MM-DD` date, PATCH double-option).
+  - `Entropy` moved to a shared `entropy` module with `new_id`/`is_id`.
+- **Worker:** `d1/tasks.rs` (explicit cascade delete), `http/tasks.rs`, and
+  routes. Migration `0004_tasks.sql` (schema v4).
+- **Web:**
+  - `lib/tasks.ts` (sorting, due labels, tree) with tests.
+  - `useTasks` hook (server state with an IndexedDB read-only cache).
+  - `modules/Tasks.tsx`: quick add, filters, completion checkbox, a detail
+    editor (title, status, priority, due date, notes, subtasks), and a delete
+    confirmation.
+  - Shared `inputClass`.
+- **Tests:** 9 new core tests, 4 web tests, a smoke task check, and a browser
+  e2e Tasks step. Optional `SCREENSHOT_DIR` screenshots in the browser e2e.
 
 ### 2026-10-21 — Security: auth rate limiting
 - Core `rate_limit` (fixed window, `RateLimitStore` trait).

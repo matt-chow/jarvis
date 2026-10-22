@@ -140,16 +140,4 @@ impl IdentityRepository for MemoryIdentity {
     }
 }
 
-/// Deterministic entropy: an incrementing byte stream.
-#[derive(Default)]
-pub struct CountingEntropy(pub std::cell::Cell<u8>);
-
-impl Entropy for CountingEntropy {
-    fn fill(&self, buf: &mut [u8]) {
-        for b in buf {
-            let next = self.0.get().wrapping_add(1);
-            self.0.set(next);
-            *b = next;
-        }
-    }
-}
+pub use crate::entropy::testing::CountingEntropy;

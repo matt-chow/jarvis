@@ -8,7 +8,7 @@
 
 pub mod webauthn;
 
-use crate::encoding::{b64url_decode, b64url_encode, constant_time_eq, hex, sha256_hex};
+use crate::encoding::{b64url_decode, b64url_encode, constant_time_eq, sha256_hex};
 use serde::{Deserialize, Serialize};
 use webauthn::{Assertion, Registration, RelyingParty, WebAuthnError};
 
@@ -22,10 +22,7 @@ pub const API_TOKEN_PREFIX: &str = "dir_";
 pub const MIN_SETUP_TOKEN_LEN: usize = 32;
 const MAX_NAME_LEN: usize = 64;
 
-/// Source of cryptographically secure random bytes (injected per runtime).
-pub trait Entropy {
-    fn fill(&self, buf: &mut [u8]);
-}
+pub use crate::entropy::Entropy;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct User {
@@ -370,7 +367,7 @@ impl<'a, R: IdentityRepository, E: Entropy> IdentityService<'a, R, E> {
     }
 
     fn random_id(&self) -> String {
-        hex(&self.random(16))
+        crate::entropy::new_id(self.entropy)
     }
 
     async fn new_challenge(&self, purpose: ChallengePurpose) -> Result<Challenge, IdentityError> {

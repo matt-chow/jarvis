@@ -2,9 +2,11 @@
 
 mod identity;
 mod rate_limit;
+mod tasks;
 
 pub use identity::D1IdentityRepository;
 pub use rate_limit::D1RateLimitStore;
+pub use tasks::D1TaskRepository;
 
 use directory_core::system::SystemRepository;
 use worker::wasm_bindgen::JsValue;

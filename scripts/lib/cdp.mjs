@@ -1,6 +1,6 @@
 // Headless Chrome/Edge driven over the DevTools Protocol, with no dependencies.
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -130,11 +130,14 @@ export async function launch() {
         el.dispatchEvent(new Event("input", { bubbles: true }));
       })()`);
     },
-    /** Click the first enabled button or link whose text contains `text`. */
+    /** Click the first enabled button or link whose text or aria-label contains `text`. */
     async click(text) {
       await waitFor(`clickable "${text}"`, () =>
         page.evaluate(`(() => {
-          const el = [...document.querySelectorAll("button, a")].find((b) => !b.disabled && b.innerText.toLowerCase().includes(${JSON.stringify(text.toLowerCase())}));
+          const needle = ${JSON.stringify(text.toLowerCase())};
+          const candidates = [...document.querySelectorAll("button, a")].filter((b) => !b.disabled);
+          const el = candidates.find((b) => b.innerText.toLowerCase().includes(needle))
+            ?? candidates.find((b) => (b.getAttribute("aria-label") ?? "").toLowerCase().includes(needle));
           if (!el) return false;
           el.click();
           return true;
@@ -145,6 +148,15 @@ export async function launch() {
       const { root } = await send("DOM.getDocument", {});
       const { nodeId } = await send("DOM.querySelector", { nodeId: root.nodeId, selector });
       await send("DOM.setFileInputFiles", { nodeId, files: [path] });
+    },
+    /** Save a PNG; `width` < 600 emulates a phone. */
+    async screenshot(path, { width = 1280, height = 860 } = {}) {
+      const mobile = width < 600;
+      await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: mobile ? 2 : 1, mobile });
+      await new Promise((r) => setTimeout(r, 400));
+      const { data } = await send("Page.captureScreenshot", { format: "png" });
+      writeFileSync(path, Buffer.from(data, "base64"));
+      await send("Emulation.clearDeviceMetricsOverride", {});
     },
     /** Platform authenticator with resident keys and verified user (passkeys). */
     async addVirtualAuthenticator() {

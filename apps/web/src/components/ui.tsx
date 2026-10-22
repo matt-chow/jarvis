@@ -79,3 +79,7 @@ export function StageTag({ stage }: { stage: "ready" | "preview" | "planned" }) 
   const tone = { ready: "text-ok", preview: "text-accent", planned: "text-muted" }[stage];
   return <span className={`font-mono text-[10px] tracking-widest uppercase ${tone}`}>[{stage}]</span>;
 }
+
+/** Shared text input / select / textarea styling. */
+export const inputClass =
+  "min-h-9 rounded-sm border border-line bg-sunken/40 px-3 text-sm text-ink outline-none focus:border-accent disabled:opacity-60";

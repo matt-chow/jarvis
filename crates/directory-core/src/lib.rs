@@ -9,11 +9,14 @@
 #![allow(async_fn_in_trait)]
 
 pub mod encoding;
+pub mod entropy;
 pub mod health;
 pub mod identity;
 pub mod rate_limit;
 pub mod storage;
 pub mod system;
+pub mod tasks;
+pub mod validate;
 
 #[cfg(test)]
 pub(crate) mod test_util;

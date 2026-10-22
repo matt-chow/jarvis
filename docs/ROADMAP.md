@@ -19,8 +19,9 @@ part of every slice, not deferred to the end.
 | --- | --- |
 | Owner auth: passkeys, sessions, device tokens, settings | ✅ done |
 | App shell (auth gate, offline session, module registry) | ✅ done (provisional design) |
-| Tasks: CRUD, status, due date, priority | next |
-| Projects and subtasks | planned |
+| Security: auth rate limiting | ✅ done |
+| Tasks: CRUD, status, due date, priority, subtasks (one level) | ✅ done |
+| Projects (group tasks; progress) | next |
 | Universal inbox (quick capture → triage into task/note/journal) | planned |
 | Notes: server persistence (replacing device-only Scratchpad) | planned |
 | Journal (dated entries) | planned |

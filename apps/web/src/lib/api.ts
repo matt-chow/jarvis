@@ -3,6 +3,7 @@
  * The browser authenticates with the HttpOnly session cookie (same origin);
  * native clients can pass a device token instead.
  */
+import type { NewTask, Task, TaskFilter, TaskPatch } from "./tasks";
 import type { AssertionJson, CreationOptionsJson, RegistrationJson, RequestOptionsJson } from "./webauthn";
 
 export interface HealthCheck {
@@ -132,6 +133,13 @@ export class Api {
   tokens = async () => (await this.call<{ tokens: DeviceToken[] }>("GET", "/api/v1/auth/tokens")).tokens;
   createToken = (name: string) => this.call<{ token: DeviceToken; secret: string }>("POST", "/api/v1/auth/tokens", { name });
   deleteToken = (id: string) => this.call<void>("DELETE", `/api/v1/auth/tokens/${encodeURIComponent(id)}`);
+
+  // ---- Tasks ----
+  tasks = async (filter: TaskFilter = "all") =>
+    (await this.call<{ tasks: Task[] }>("GET", `/api/v1/tasks?status=${filter}`)).tasks;
+  createTask = (t: NewTask) => this.call<Task>("POST", "/api/v1/tasks", t);
+  updateTask = (id: string, patch: TaskPatch) => this.call<Task>("PATCH", `/api/v1/tasks/${encodeURIComponent(id)}`, patch);
+  deleteTask = (id: string) => this.call<void>("DELETE", `/api/v1/tasks/${encodeURIComponent(id)}`);
 
   // ---- Files ----
   async listObjects(prefix?: string): Promise<ObjectInfo[]> {
