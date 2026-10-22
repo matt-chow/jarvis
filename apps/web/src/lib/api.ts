@@ -4,6 +4,7 @@
  * native clients can pass a device token instead.
  */
 import type { InboxItem, Triaged, TriageTarget } from "./inbox";
+import type { Plan } from "./jarvis";
 import type { JournalEntry, JournalSummary, PutJournal } from "./journal";
 import type { EntityRef, Linked } from "./links";
 import type { Note, NotePatch, NoteSummary } from "./notes";
@@ -193,6 +194,13 @@ export class Api {
   createTask = (t: NewTask) => this.call<Task>("POST", "/api/v1/tasks", t);
   updateTask = (id: string, patch: TaskPatch) => this.call<Task>("PATCH", `/api/v1/tasks/${encodeURIComponent(id)}`, patch);
   deleteTask = (id: string) => this.call<void>("DELETE", `/api/v1/tasks/${encodeURIComponent(id)}`);
+
+  // ---- JARVIS ----
+  /** Preview a command. Read-only plans come back already executed. */
+  jarvisPlan = (input: string, today: string) => this.call<Plan>("POST", "/api/v1/jarvis/plan", { input, today });
+  jarvisExecute = (id: string) => this.call<Plan>("POST", `/api/v1/jarvis/plans/${encodeURIComponent(id)}/execute`);
+  jarvisCancel = (id: string) => this.call<Plan>("POST", `/api/v1/jarvis/plans/${encodeURIComponent(id)}/cancel`);
+  jarvisHistory = async () => (await this.call<{ plans: Plan[] }>("GET", "/api/v1/jarvis/history")).plans;
 
   // ---- Export ----
   async exportData(): Promise<Blob> {

@@ -248,7 +248,7 @@ pub(crate) mod tests {
     use std::cell::RefCell;
 
     #[derive(Default)]
-    pub struct Memory(RefCell<Vec<Note>>);
+    pub struct Memory(pub RefCell<Vec<Note>>);
 
     impl NoteRepository for Memory {
         async fn list(&self, owner_id: &str, limit: u32) -> Result<Vec<NoteHead>, String> {

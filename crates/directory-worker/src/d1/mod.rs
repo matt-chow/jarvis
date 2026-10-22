@@ -3,6 +3,7 @@
 mod export;
 mod identity;
 mod inbox;
+mod jarvis;
 mod journal;
 mod links;
 mod notes;
@@ -13,6 +14,7 @@ mod tasks;
 pub use export::D1ExportSource;
 pub use identity::D1IdentityRepository;
 pub use inbox::D1InboxRepository;
+pub use jarvis::D1JarvisRepository;
 pub use journal::D1JournalRepository;
 pub use links::D1LinkRepository;
 pub use notes::D1NoteRepository;

@@ -25,7 +25,7 @@ export const MODULES: readonly ModuleMeta[] = [
   { id: "notes", label: "Notes", glyph: "¶", summary: "Notes saved to your account, with autosave.", stage: "preview", offline: false },
   { id: "journal", label: "Journal", glyph: "≡", summary: "One entry per day, with mood.", stage: "preview", offline: false },
   { id: "files", label: "Files", glyph: "▤", summary: "Private cloud storage.", stage: "preview", offline: false },
-  { id: "jarvis", label: "JARVIS", glyph: "◉", summary: "Voice and AI assistant.", stage: "planned", offline: false },
+  { id: "jarvis", label: "JARVIS", glyph: "◉", summary: "Text commands with preview and approval.", stage: "preview", offline: false },
   { id: "settings", label: "Settings", glyph: "§", summary: "Passkeys, device tokens, and sign-out.", stage: "ready", offline: false },
 ];
 

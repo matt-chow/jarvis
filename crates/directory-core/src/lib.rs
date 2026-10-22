@@ -14,6 +14,7 @@ pub mod export;
 pub mod health;
 pub mod identity;
 pub mod inbox;
+pub mod jarvis;
 pub mod journal;
 pub mod links;
 pub mod notes;

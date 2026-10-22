@@ -174,6 +174,25 @@ try {
     await shot("projects");
   });
 
+  await step("JARVIS: command preview, approve, results link to items", async () => {
+    await page.hash("/jarvis");
+    await page.waitForText("No commands yet");
+    await page.fill("Command", "dance wildly");
+    await page.click("run");
+    await page.waitForText("I don't know how to");
+    await page.fill("Command", "add task Plan the offsite due tomorrow; journal started planning the offsite");
+    await page.click("run");
+    await page.waitForText("Create task “Plan the offsite” due");
+    const before = await page.evaluate(`fetch("/api/v1/tasks").then((r) => r.json())`);
+    if (before.tasks.some((t) => t.title === "Plan the offsite")) throw new Error("created before approval");
+    await shot("jarvis-preview");
+    await page.click("approve");
+    await page.waitForText("Created task “Plan the offsite”.");
+    await page.waitForText("EXECUTED"); // innerText reflects CSS text-transform
+    const after = await page.evaluate(`fetch("/api/v1/tasks").then((r) => r.json())`);
+    if (!after.tasks.some((t) => t.title === "Plan the offsite" && t.due_date)) throw new Error("task missing after approval");
+  });
+
   await step("Settings lists one passkey; device token is shown once", async () => {
     await page.hash("/settings");
     await page.waitForText("PASSKEYS · 1");
@@ -227,8 +246,9 @@ try {
     await page.waitForText("Offline: notes are read-only");
     await page.click("Meeting notes");
     await page.waitForText("read-only");
-    const body = await page.evaluate(`document.querySelector('textarea[aria-label="Note body"]')?.value`);
-    if (!body?.includes("Agenda: launch plan")) throw new Error(`cached body: ${body}`);
+    await waitFor("cached note body", async () =>
+      ((await page.evaluate(`document.querySelector('textarea[aria-label="Note body"]')?.value ?? ""`))).includes("Agenda: launch plan"),
+    );
     await page.hash("/tasks");
     await page.waitForText("Offline: showing the tasks saved on this device");
     await page.click("All");

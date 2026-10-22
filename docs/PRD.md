@@ -23,7 +23,7 @@ usable offline, with an AI assistant later.
 | F15 | Links between tasks, notes, projects, and journal days | ✅ M1 |
 | F16 | Full data export (JSON) | ✅ M1 |
 | F8 | Additional modules (tasks, bookmarks, journal, …) | Planned |
-| F9 | JARVIS: voice input and natural-language commands across modules | Planned |
+| F9 | JARVIS: text commands with preview/approval across modules (voice and AI later) | 🟡 M2: command layer ✅ |
 | F10 | Windows and iPhone clients using the same API | Planned |
 
 ## Non-functional requirements

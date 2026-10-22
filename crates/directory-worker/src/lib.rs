@@ -12,7 +12,7 @@ mod entropy;
 mod http;
 mod r2;
 
-use http::{auth, export, health, inbox, journal, links, notes, projects, storage, tasks};
+use http::{auth, export, health, inbox, jarvis, journal, links, notes, projects, storage, tasks};
 
 #[event(fetch)]
 async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
@@ -37,6 +37,11 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get_async("/api/v1/auth/tokens", auth::list_tokens)
         .post_async("/api/v1/auth/tokens", auth::create_token)
         .delete_async("/api/v1/auth/tokens/:id", auth::delete_token)
+        // JARVIS
+        .post_async("/api/v1/jarvis/plan", jarvis::plan)
+        .post_async("/api/v1/jarvis/plans/:id/execute", jarvis::execute)
+        .post_async("/api/v1/jarvis/plans/:id/cancel", jarvis::cancel)
+        .get_async("/api/v1/jarvis/history", jarvis::history)
         // Data export
         .get_async("/api/v1/export", export::export)
         // Links

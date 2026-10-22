@@ -4,7 +4,7 @@
 
 use crate::entropy::{is_id, new_id, Entropy};
 use crate::identity::Principal;
-use crate::journal::{self, JournalError, JournalRepository, JournalService, PutEntry};
+use crate::journal::{self, JournalError, JournalRepository, JournalService};
 use crate::notes::{self, NewNote, NoteError, NoteRepository, NoteService};
 use crate::tasks::{self, NewTask, TaskError, TaskRepository, TaskService};
 use crate::validate;
@@ -219,25 +219,8 @@ impl<'a, R: InboxRepository, E: Entropy + ?Sized> InboxService<'a, R, E> {
                     .date
                     .ok_or(InboxError::Invalid("date", "required for journal"))?;
                 let svc = JournalService::new(targets.journal, self.now);
-                let existing = match svc.get(p, &date).await {
-                    Ok(e) => Some(e),
-                    Err(JournalError::NotFound) => None,
-                    Err(e) => return Err(e.into()),
-                };
-                let (body, expected) = match &existing {
-                    Some(e) if !e.body.trim().is_empty() => {
-                        (format!("{}\n\n{}", e.body, item.text), Some(e.updated_at))
-                    }
-                    Some(e) => (item.text.clone(), Some(e.updated_at)),
-                    None => (item.text.clone(), None),
-                };
-                let put = PutEntry {
-                    body: Some(body),
-                    mood: None,
-                    expected_updated_at: expected,
-                };
                 Triaged::Journal {
-                    entry: svc.put(p, &date, put).await?,
+                    entry: svc.append(p, &date, &item.text).await?,
                 }
             }
         };

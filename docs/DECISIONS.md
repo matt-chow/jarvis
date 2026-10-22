@@ -121,6 +121,21 @@ JARVIS commands will follow in M2. There are no cross-module D1 transactions:
 operations are ordered so that a failure can only leave a duplicate source
 (e.g. an inbox item still present), never lose data.
 
+## D-016 — JARVIS: typed commands, preview, approval, provider-independent
+**Status:** accepted
+- **Input:** text becomes typed `Command`s through an `IntentProvider`. Today
+  that's a deterministic parser; an AI provider can implement the same trait
+  later, which needs owner approval for any paid or external service.
+- **Execution:** every command runs through the module services as the
+  caller (D-015). JARVIS never touches tables directly.
+- **Approval:** read-only plans execute immediately. Anything that writes is
+  stored `pending` with a preview and a 10-minute expiry, and runs only after
+  approval via an atomic `pending → running` claim (no double execution).
+  Multi-step plans stop at the first failure (`failed`, later steps skipped).
+- **Resolution:** name-based references ("complete dentist") are resolved
+  during planning. Zero or several matches are rejected with a clear message
+  rather than guessed.
+
 ## D-013 — Provisional UI until Paper designs land
 **Status:** accepted
 No `DESIGN_HANDOFF.md` exists yet. New screens reuse the existing `Panel`,

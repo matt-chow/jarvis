@@ -221,6 +221,28 @@ impl<'a, R: JournalRepository> JournalService<'a, R> {
         }
     }
 
+    /// Append a paragraph to a day's entry, creating it if needed.
+    pub async fn append(&self, p: &Principal, d: &str, text: &str) -> Result<Entry, JournalError> {
+        let existing = match self.get(p, d).await {
+            Ok(e) => Some(e),
+            Err(JournalError::NotFound) => None,
+            Err(e) => return Err(e),
+        };
+        let (body, expected) = match &existing {
+            Some(e) if !e.body.trim().is_empty() => {
+                (format!("{}\n\n{}", e.body, text), Some(e.updated_at))
+            }
+            Some(e) => (text.to_owned(), Some(e.updated_at)),
+            None => (text.to_owned(), None),
+        };
+        let put = PutEntry {
+            body: Some(body),
+            mood: None,
+            expected_updated_at: expected,
+        };
+        self.put(p, d, put).await
+    }
+
     pub async fn delete(&self, p: &Principal, d: &str) -> Result<(), JournalError> {
         let d = date(d, "date").map_err(|_| JournalError::NotFound)?;
         if self.repo.delete(&p.user_id, &d).await.map_err(backend)? {
@@ -244,7 +266,7 @@ pub(crate) mod tests {
     use std::cell::RefCell;
 
     #[derive(Default)]
-    pub struct Memory(RefCell<Vec<Entry>>);
+    pub struct Memory(pub RefCell<Vec<Entry>>);
 
     impl JournalRepository for Memory {
         async fn list(

@@ -8,7 +8,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - **Milestone:** M1 Private Alpha is **feature-complete locally**. All M1
   slices are done and `npm run ci` is green. The first deploy is **blocked on
   owner approval** (see the readiness checklist in docs/ARCHITECTURE.md ›
-  Deployment). M2 JARVIS Alpha is now in progress.
+  Deployment). **M2 JARVIS Alpha:** command layer ✅. Next: presets, then
+  voice.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
   - Device tokens for native clients and scripts.
@@ -27,6 +28,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   - Links between tasks, notes, projects, and journal days, with a
     cross-module picker and deep links.
   - Full JSON data export from Settings.
+  - JARVIS text commands (tasks, notes, journal, capture, list) with preview,
+    approve, results, and history.
   - PWA install and offline relaunch with the saved session.
   - Health dashboard.
 - **Not deployed.** Nothing has run on Cloudflare yet; that needs owner approval
@@ -38,11 +41,11 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 | Command | Result (2026-10-21) |
 | --- | --- |
-| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 1,070 KiB / 355 KiB gzipped |
-| `cargo test -p directory-core` | ✅ 60 passed |
+| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 1,205 KiB / 389 KiB gzipped |
+| `cargo test -p directory-core` | ✅ 72 passed |
 | Vitest | ✅ 26 passed (9 files) |
-| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 24/24 |
-| `npm run test:browser` (headless Edge 155, virtual passkey) | ✅ 14/14 |
+| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 25/25 |
+| `npm run test:browser` (headless Edge 155, virtual passkey) | ✅ 15/15 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -74,24 +77,35 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-**M2 slice 1: JARVIS command layer (no AI provider).**
-- Core `commands` module:
-  - A registry of typed commands, each with a name, description, arguments
-    schema, risk level (read / write / destructive), and handler, run through
-    module services as `Principal` (D-015).
-  - A deterministic text parser for a small grammar ("add task …", "note …",
-    "journal …", "capture …", "complete task …", "list tasks").
-  - A plan/preview step, plus execute only after approval for write and
-    destructive commands.
-  - Execution history stored in D1.
-- `/api/v1/jarvis/plan` (text → previewed actions), `/api/v1/jarvis/execute`
-  (approved plan id), and `/api/v1/jarvis/history`.
-- UI: the JARVIS module becomes a command console with preview cards,
-  approve/cancel, and history.
+**M2 slice 2: JARVIS presets.**
+- Saved commands with a name and command text, stored in D1 and owner-scoped.
+- Running a preset goes through the same plan → approve path.
+- `/api/v1/jarvis/presets` CRUD.
+- UI: a preset chips row in the console, plus "save as preset" from history.
+- Then: voice input (Web Speech API, progressive enhancement), and more
+  commands (projects, linking).
 
 ---
 
 ## Log
+
+### 2026-10-21 — M2 slice: JARVIS command layer
+- **Core:**
+  - `jarvis` module: `Command` enum with risk and summaries, the
+    `IntentProvider` trait, and `DeterministicParser`. The grammar covers
+    tasks with due dates (today, tomorrow, weekdays, ISO), complete-by-name,
+    note, journal, capture, list, and `;`/`then` chaining; it's ASCII-safe
+    for any Unicode input.
+  - `JarvisService`: plan, resolve, execute (claim), cancel, and history.
+  - `JournalService::append` is shared with the inbox. New date arithmetic
+    in `validate`.
+- **Worker:** `d1/jarvis.rs` (JSON columns; atomic claim), `http/jarvis.rs`.
+  Migration `0010_jarvis.sql` (schema v10).
+- **Web:** the JARVIS console (preview cards, approve/cancel, results with
+  deep links, example chips, history).
+- **Tests:** 11 new core tests (parser and service), a smoke JARVIS check, and
+  a browser e2e JARVIS step. Two e2e timing issues fixed (uppercase
+  `innerText`, a remounted editor).
 
 ### 2026-10-21 — M1 exit review
 - **Security pass:** every non-public handler resolves a `Principal`

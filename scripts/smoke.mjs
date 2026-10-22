@@ -340,6 +340,42 @@ async function local() {
       await api.req("DELETE", "/api/v1/storage/objects/export/check.txt");
     });
 
+    await check("jarvis: read plans run now; write plans need approval, run once; cancel; history; parse errors", async () => {
+      const plan = (input) => api.req("POST", "/api/v1/jarvis/plan", { body: { input, today: "2026-10-21" } });
+
+      const read = await plan("list tasks");
+      expect(read.status === 200 && read.json.status === "executed" && !read.json.requires_approval, `read → ${read.text}`);
+
+      const write = await plan("add task Buy stamps due tomorrow; capture check postage rates");
+      expect(write.json.status === "pending" && write.json.requires_approval && write.json.actions.length === 2, `write → ${write.text}`);
+      expect(write.json.actions[0].summary === "Create task “Buy stamps” due 2026-10-22", write.json.actions[0].summary);
+      const before = await api.req("GET", "/api/v1/tasks");
+      expect(!before.json.tasks.some((t) => t.title === "Buy stamps"), "nothing written before approval");
+
+      const ran = await api.req("POST", `/api/v1/jarvis/plans/${write.json.id}/execute`);
+      expect(ran.status === 200 && ran.json.status === "executed" && ran.json.results.every((r) => r.ok), `execute → ${ran.text}`);
+      const task = (await api.req("GET", "/api/v1/tasks")).json.tasks.find((t) => t.title === "Buy stamps");
+      expect(task && task.due_date === "2026-10-22", "task created with due date");
+      const twice = await api.req("POST", `/api/v1/jarvis/plans/${write.json.id}/execute`);
+      expect(twice.status === 409 && twice.json.message === "executed", `second execute → ${twice.status}`);
+
+      const complete = await plan("done stamps");
+      expect(complete.json.actions[0].summary === "Complete task “Buy stamps”", complete.text);
+      const cancelled = await api.req("POST", `/api/v1/jarvis/plans/${complete.json.id}/cancel`);
+      expect(cancelled.json.status === "cancelled", "cancel");
+      expect((await api.req("POST", `/api/v1/jarvis/plans/${complete.json.id}/execute`)).status === 409, "cancelled can't run");
+
+      const unknown = await plan("dance wildly");
+      expect(unknown.status === 400 && unknown.json.error === "not_understood" && unknown.json.examples.length > 0, `parse error → ${unknown.text}`);
+      const unresolved = await plan("complete nonexistent thing");
+      expect(unresolved.status === 422 && unresolved.json.error === "unresolved", `unresolved → ${unresolved.status}`);
+
+      const history = await api.req("GET", "/api/v1/jarvis/history");
+      expect(history.json.plans[0].id === complete.json.id && history.json.plans.length >= 3, "history newest first");
+      expect((await fetch(`${baseUrl}/api/v1/jarvis/history`)).status === 401, "anonymous → 401");
+      await api.req("DELETE", `/api/v1/tasks/${task.id}`);
+    });
+
     await check("device API token: create (shown once), use as bearer, cannot manage credentials", async () => {
       const r = await api.req("POST", "/api/v1/auth/tokens", { body: { name: "Smoke device" } });
       expect(r.status === 201 && r.json.secret.startsWith("dir_"), `${r.status} ${r.text}`);

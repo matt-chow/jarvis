@@ -37,6 +37,15 @@ part of every slice, not deferred to the end.
   with a remote smoke test passing.
 
 ## M2 JARVIS Alpha (P2)
+
+| Slice | Status |
+| --- | --- |
+| Command layer: typed commands, deterministic parser, preview/approve/execute-once, multi-step, history | ✅ done |
+| Command presets (saved commands, one-tap run) | next |
+| Voice input (Web Speech API where available; text fallback) | planned |
+| More commands (projects, links, search) | planned |
+| AI intent provider | needs owner approval (provider, budget) |
+
 - A command registry where modules expose typed, validated commands.
 - Text command input, then voice (Web Speech API).
 - Permission and approval workflow with action previews; multi-step plans.

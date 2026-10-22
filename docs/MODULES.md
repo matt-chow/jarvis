@@ -13,7 +13,7 @@ JARVIS commands will refer to them.
 | `notes` | Notes | preview | read-only | `/api/v1/notes` | Server notes with debounced autosave, pinning, and conflict detection (409, then "use theirs" or "keep mine"). Migrates legacy Scratchpad notes once. |
 | `journal` | Journal | preview | read-only | `/api/v1/journal` | One entry per day with mood (1–5), autosave, month list, and day navigation. |
 | `files` | Files | preview | no | `/api/v1/storage/*` | Owner-scoped private R2 storage (10 MB cap, no folders yet). |
-| `jarvis` | JARVIS | planned | — | — | Status screen only; M2. |
+| `jarvis` | JARVIS | preview | no | `/api/v1/jarvis/*` | Text command console: preview → approve → results (with links to items), clickable examples, history. Deterministic parser; no AI provider yet. |
 | `settings` | Settings | ready | no | `/api/v1/auth/*` | Passkeys, device tokens, sign-out. |
 
 **Links** aren't a module either. The `LinkedSection` component appears in the
@@ -42,7 +42,7 @@ provisional (DECISIONS D-013): built from the shared `Panel`, `Button`, and
 | Journal | `modules/Journal.tsx` | awaiting design integration |
 | Files | `modules/Files.tsx` | awaiting design integration |
 | Settings | `modules/Settings.tsx` | awaiting design integration |
-| JARVIS | `modules/Jarvis.tsx` | placeholder: no functionality until M2 |
+| JARVIS console | `modules/Jarvis.tsx` | awaiting design integration |
 
 ## Adding a module
 
