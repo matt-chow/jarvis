@@ -175,7 +175,7 @@ export class Api {
   // ---- Projects ----
   projects = async (includeArchived = false) =>
     (await this.call<{ projects: Project[] }>("GET", `/api/v1/projects${includeArchived ? "?include=archived" : ""}`)).projects;
-  createProject = (p: NewProject) => this.call<Project>("POST", "/api/v1/projects", p);
+  createProject = (p: NewProject & { id?: string }) => this.call<Project>("POST", "/api/v1/projects", p);
   updateProject = (id: string, patch: ProjectPatch) =>
     this.call<Project>("PATCH", `/api/v1/projects/${encodeURIComponent(id)}`, patch);
   deleteProject = (id: string) => this.call<void>("DELETE", `/api/v1/projects/${encodeURIComponent(id)}`);

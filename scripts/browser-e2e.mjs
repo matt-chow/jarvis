@@ -181,7 +181,7 @@ try {
     await page.waitForText("Meeting notes");
   });
 
-  await step("Offline edits: a task and an inbox capture made offline are queued, then synced", async () => {
+  await step("Offline edits: a task, an inbox capture, and a project made offline are queued, then synced", async () => {
     await page.hash("/tasks");
     await waitFor("tasks loaded", () => page.evaluate(`!!document.querySelector('input[aria-label="New task"]')`));
     await page.send("Network.enable", {});
@@ -199,13 +199,26 @@ try {
     await page.click("capture");
     await page.waitForText("Idea from the train");
     await page.waitForText("2 pending");
+    await page.hash("/projects");
+    await page.waitForText("changes are saved on this device");
+    await page.fill("New project", "Planned offline");
+    await page.click("create");
+    await page.waitForText("Planned offline");
+    await page.waitForText("3 pending");
     await net(false);
     await waitFor("synced", async () => !(await page.text()).includes("pending"), 30_000);
     const tasks = await page.evaluate(`fetch("/api/v1/tasks").then((r) => r.json())`);
     if (!tasks.tasks.some((t) => t.title === "Written offline")) throw new Error("offline task not on server");
     const inbox = await page.evaluate(`fetch("/api/v1/inbox").then((r) => r.json())`);
     if (!inbox.items.some((i) => i.text === "Idea from the train")) throw new Error("offline capture not on server");
-    // Leave the inbox empty for later steps.
+    const projects = await page.evaluate(`fetch("/api/v1/projects").then((r) => r.json())`);
+    const planned = projects.projects.find((p) => p.name === "Planned offline");
+    if (!planned) throw new Error("offline project not on server");
+    // Leave the inbox and projects empty for later steps.
+    await page.click("Planned offline");
+    await page.click("delete");
+    await page.click("confirm delete");
+    await waitFor("project deleted", async () => !(await page.text()).includes("Planned offline"));
     await page.evaluate(`fetch("/api/v1/inbox").then((r) => r.json()).then((b) => Promise.all(b.items.map((i) => fetch("/api/v1/inbox/" + i.id, { method: "DELETE", headers: { Origin: location.origin } }))))`);
   });
 

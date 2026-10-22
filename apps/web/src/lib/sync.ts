@@ -8,6 +8,7 @@
  */
 import { ApiError, isNetworkError } from "./api";
 import type { InboxItem } from "./inbox";
+import type { NewProject, Project, ProjectPatch } from "./projects";
 import type { NewTask, Task, TaskPatch } from "./tasks";
 
 export type Op =
@@ -15,7 +16,10 @@ export type Op =
   | { kind: "task.update"; id: string; patch: TaskPatch }
   | { kind: "task.delete"; id: string }
   | { kind: "inbox.capture"; item: { id: string; text: string } }
-  | { kind: "inbox.delete"; id: string };
+  | { kind: "inbox.delete"; id: string }
+  | { kind: "project.create"; project: NewProject & { id: string } }
+  | { kind: "project.update"; id: string; patch: ProjectPatch }
+  | { kind: "project.delete"; id: string };
 
 export interface Outbox {
   outbox(): Promise<{ seq?: number; op: unknown }[]>;
@@ -28,6 +32,9 @@ export interface SyncApi {
   deleteTask(id: string): Promise<void>;
   capture(text: string, id?: string): Promise<InboxItem>;
   deleteInboxItem(id: string): Promise<void>;
+  createProject(p: NewProject & { id: string }): Promise<Project>;
+  updateProject(id: string, patch: ProjectPatch): Promise<Project>;
+  deleteProject(id: string): Promise<void>;
 }
 
 export interface SyncResult {
@@ -63,11 +70,20 @@ async function apply(api: SyncApi, op: Op): Promise<void> {
       case "inbox.delete":
         await api.deleteInboxItem(op.id);
         return;
+      case "project.create":
+        await api.createProject(op.project);
+        return;
+      case "project.update":
+        await api.updateProject(op.id, op.patch);
+        return;
+      case "project.delete":
+        await api.deleteProject(op.id);
+        return;
     }
   } catch (e) {
     // Already applied by an earlier, interrupted replay.
-    const isCreate = op.kind === "task.create" || op.kind === "inbox.capture";
-    const isDelete = op.kind === "task.delete" || op.kind === "inbox.delete";
+    const isCreate = op.kind.endsWith(".create") || op.kind === "inbox.capture";
+    const isDelete = op.kind.endsWith(".delete");
     if (e instanceof ApiError && isCreate && e.code === "exists") return;
     if (e instanceof ApiError && isDelete && e.status === 404) return;
     throw e;
@@ -86,6 +102,12 @@ function describeOp(op: Op): string {
       return `capture “${op.item.text.slice(0, 40)}”`;
     case "inbox.delete":
       return "discard an inbox item";
+    case "project.create":
+      return `create project “${op.project.name}”`;
+    case "project.update":
+      return "update a project";
+    case "project.delete":
+      return "delete a project";
   }
 }
 
@@ -159,5 +181,21 @@ export function applyInboxLocally(items: InboxItem[], op: Op, now = Date.now()):
       return items.filter((i) => i.id !== op.id);
     default:
       return items;
+  }
+}
+
+/** Apply a project op to a local project list. */
+export function applyProjectLocally(projects: Project[], op: Op, now = Date.now()): Project[] {
+  switch (op.kind) {
+    case "project.create": {
+      const p = op.project;
+      return [...projects, { id: p.id, name: p.name.trim(), description: p.description ?? "", status: "active", created_at: now, updated_at: now }];
+    }
+    case "project.update":
+      return projects.map((p) => (p.id === op.id ? { ...p, ...op.patch, updated_at: now } : p));
+    case "project.delete":
+      return projects.filter((p) => p.id !== op.id);
+    default:
+      return projects;
   }
 }

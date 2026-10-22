@@ -37,7 +37,9 @@ export function Projects({ online }: ModuleProps) {
   const { tasks } = useTasks(online);
   const [selected, setSelected] = useState<string>();
   const [showArchived, setShowArchived] = useState(false);
-  const readOnly = state.stale || !online;
+  // Edits work offline: they apply locally and sync later (useProjects / D-017).
+  const readOnly = !state.projects;
+  const offline = state.stale || !online;
 
   const active = useMemo(() => (state.projects ?? []).filter((p) => p.status === "active"), [state.projects]);
   const archived = useMemo(() => (state.projects ?? []).filter((p) => p.status === "archived"), [state.projects]);
@@ -73,13 +75,13 @@ export function Projects({ online }: ModuleProps) {
   return (
     <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_24rem]">
       <Panel title={`projects${state.projects ? ` · ${active.length} active` : ""}`}>
-        {readOnly && state.projects && (
+        {offline && state.projects && (
           <p className="mb-3 rounded-sm border border-line bg-sunken/60 px-3 py-2 text-sm text-muted">
-            Offline: showing the projects saved on this device.
+            Offline: changes are saved on this device and sync when you reconnect.
           </p>
         )}
         <NewProjectForm disabled={readOnly} onCreate={async (name) => (await state.create({ name })) !== undefined} />
-        {state.error && !readOnly && (
+        {state.error && !offline && (
           <p role="alert" className="mt-3 text-sm text-bad">
             {state.error}
           </p>
@@ -119,6 +121,7 @@ export function Projects({ online }: ModuleProps) {
           tasks={tasks ?? []}
           state={state}
           readOnly={readOnly}
+          offline={offline}
           onClose={() => setSelected(undefined)}
           onViewTasks={() => (location.hash = `/tasks?project=${current.id}`)}
         />
@@ -160,6 +163,8 @@ function ProjectDetail(props: {
   tasks: Task[];
   state: ProjectsState;
   readOnly: boolean;
+  /** Links need a connection. */
+  offline: boolean;
   onClose: () => void;
   onViewTasks: () => void;
 }) {
@@ -215,7 +220,7 @@ function ProjectDetail(props: {
           <p className="mt-1 font-mono text-[11px] text-muted">{progress.open} open</p>
         </div>
         <Button onClick={props.onViewTasks}>view tasks →</Button>
-        <LinkedSection entity={{ kind: "project", id: project.id }} disabled={readOnly} />
+        <LinkedSection entity={{ kind: "project", id: project.id }} disabled={props.offline} />
 
         <div className="flex items-center justify-between gap-2 border-t border-line pt-3">
           <Button

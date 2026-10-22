@@ -2,7 +2,7 @@ import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import { LocalDb } from "./db";
-import { applyInboxLocally, applyLocally, clientId, replay, type Op, type SyncApi } from "./sync";
+import { applyInboxLocally, applyLocally, applyProjectLocally, clientId, replay, type Op, type SyncApi } from "./sync";
 import type { Task } from "./tasks";
 
 const task = (id: string, over: Partial<Task> = {}): Task => ({
@@ -34,6 +34,9 @@ function fakeApi(fail: (op: string) => unknown = () => undefined) {
     deleteTask: async (id) => void (await run(`delete:${id}`)),
     capture: async (_text, id) => ({ id: (await run(`capture:${id}`)).id, text: "", created_at: 0 }),
     deleteInboxItem: async (id) => void (await run(`discard:${id}`)),
+    createProject: async (p) => ({ ...(await run(`project:${p.id}`)), name: p.name, description: "", status: "active" }),
+    updateProject: async (id) => ({ ...(await run(`project-update:${id}`)), name: "", description: "", status: "active" }),
+    deleteProject: async (id) => void (await run(`project-delete:${id}`)),
   };
   return { api, calls };
 }
@@ -109,5 +112,24 @@ describe("inbox ops", () => {
     const items = applyInboxLocally([], { kind: "inbox.capture", item: { id: "i1", text: " thought " } }, 3);
     expect(items).toEqual([{ id: "i1", text: "thought", created_at: 3 }]);
     expect(applyInboxLocally(items, { kind: "inbox.delete", id: "i1" })).toEqual([]);
+  });
+});
+
+describe("project ops", () => {
+  it("replays creates idempotently and applies locally", async () => {
+    const db = await outboxWith([
+      { kind: "project.create", project: { id: "p1", name: "Garden" } },
+      { kind: "project.update", id: "p1", patch: { status: "archived" } },
+      { kind: "project.delete", id: "p0" },
+    ]);
+    const { api, calls } = fakeApi((op) => (op === "project:p1" ? new ApiError(409, "exists") : op === "project-delete:p0" ? new ApiError(404, "not_found") : undefined));
+    expect(await replay(db, api)).toMatchObject({ applied: 3, rejected: [] });
+    expect(calls).toEqual(["project:p1", "project-update:p1", "project-delete:p0"]);
+
+    let list = applyProjectLocally([], { kind: "project.create", project: { id: "p1", name: " Garden " } }, 4);
+    expect(list).toEqual([{ id: "p1", name: "Garden", description: "", status: "active", created_at: 4, updated_at: 4 }]);
+    list = applyProjectLocally(list, { kind: "project.update", id: "p1", patch: { status: "archived" } }, 6);
+    expect(list[0]).toMatchObject({ status: "archived", updated_at: 6 });
+    expect(applyProjectLocally(list, { kind: "project.delete", id: "p1" })).toEqual([]);
   });
 });

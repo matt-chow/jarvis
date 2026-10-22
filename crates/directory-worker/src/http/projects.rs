@@ -13,6 +13,7 @@ fn project_error(e: ProjectError) -> Result<Response> {
         ProjectError::Invalid(field, why) => {
             error_with(400, "invalid_input", format!("{field}: {why}"))
         }
+        ProjectError::Exists => error(409, "exists"),
         ProjectError::NotFound => error(404, "not_found"),
         ProjectError::Backend(detail) => {
             worker::console_error!("projects backend error: {detail}");

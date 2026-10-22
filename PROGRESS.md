@@ -44,8 +44,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | Command | Result (2026-10-21) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass (2026-10-22). Worker upload 1,323 KiB / 424 KiB gzipped |
-| `cargo test -p directory-core` | ✅ 81 passed |
-| Vitest | ✅ 33 passed |
+| `cargo test -p directory-core` | ✅ 82 passed |
+| Vitest | ✅ 34 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
 | `npm run test:browser` (headless Edge, virtual passkey) | ✅ 18/18 |
 
@@ -60,8 +60,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Search uses SQLite `LIKE`, which is case-insensitive for ASCII only, and
   reads whole note and journal bodies for snippets. Move to FTS5 when data
   grows.
-- Offline editing covers Tasks and Inbox capture/discard; notes, journal,
-  and projects are read-only offline, and inbox triage needs a connection.
+- Offline editing covers Tasks, Projects, and Inbox capture/discard; notes
+  and journal are read-only offline, and inbox triage and links need a
+  connection. A project deleted offline leaves its tasks showing the old
+  project until the next sync refresh.
 - `wrangler dev` must be restarted after rebuilding `apps/web/dist`.
 - The repo lives under OneDrive, which slows down and locks `node_modules` and
   `target`.
@@ -85,14 +87,23 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. Extend offline editing to Projects (same outbox pattern). Then notes and
-   journal with a queued-conflict UI (D-014 + D-017).
+1. Offline notes and journal with a queued-conflict UI (D-014 + D-017).
 2. Wiki: notes with `[[wiki links]]` and backlinks (reuse links).
 3. Remaining owner decisions: deploy approval, voice, AI provider.
 
 ---
 
 ## Log
+
+### 2026-10-22 — M3 slice: Offline Projects
+- **Core:** `NewProject.id` (optional client id; `ProjectError::Exists` →
+  409), with a unit test.
+- **Web:** `project.create/update/delete` outbox ops and
+  `applyProjectLocally`. `useProjects` uses `runOrQueue` and reloads after
+  sync. The Projects screen stays editable offline; links stay online-only.
+- **Tests:** core 82, web 34, smoke (project client-id replay → 409),
+  browser e2e 18/18 (the offline step also creates a project, then deletes
+  it through the UI after sync).
 
 ### 2026-10-22 — M3 slice: Offline Inbox capture
 - **Core:** `Capture.id` (optional client id; `InboxError::Exists` → 409).

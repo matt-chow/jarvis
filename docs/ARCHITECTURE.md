@@ -103,7 +103,7 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | POST | `/api/v1/notes` | session or token | `{ title?, body?, pinned? }` → `201`. Body ≤ 100k chars (512 KiB request cap). |
 | GET / PATCH / DELETE | `/api/v1/notes/{id}` | session or token | PATCH `title, body, pinned, expected_updated_at?`. A stale version gets `409 { error: "conflict", note }`. |
 | GET | `/api/v1/projects[?include=archived]` | session or token | Owner's projects (active only by default) |
-| POST | `/api/v1/projects` | session or token | `{ name, description? }` → `201` |
+| POST | `/api/v1/projects` | session or token | `{ id?, name, description? }` → `201` (optional client id; a repeat → `409 exists`) |
 | GET / PATCH / DELETE | `/api/v1/projects/{id}` | session or token | PATCH `name, description, status`. DELETE keeps the project's tasks and unassigns them. |
 | GET | `/api/v1/tasks?status=all|open|closed` | session or token | Owner's tasks and subtasks (max 1000) |
 | POST | `/api/v1/tasks` | session or token | `{ title, notes?, priority?, due_date?, parent_id?, project_id? }` → `201`. Subtasks are one level deep and can't set `project_id`. |

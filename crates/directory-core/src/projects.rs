@@ -47,6 +47,9 @@ pub struct Project {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct NewProject {
+    /// Client-chosen id (offline create); must be a fresh 32-hex id.
+    #[serde(default)]
+    pub id: Option<String>,
     pub name: String,
     #[serde(default)]
     pub description: Option<String>,
@@ -65,6 +68,8 @@ pub struct ProjectPatch {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProjectError {
     Invalid(&'static str, &'static str),
+    /// A client-supplied id is already in use (a replayed offline create).
+    Exists,
     NotFound,
     Backend(String),
 }
@@ -125,8 +130,25 @@ impl<'a, R: ProjectRepository, E: Entropy + ?Sized> ProjectService<'a, R, E> {
     }
 
     pub async fn create(&self, p: &Principal, input: NewProject) -> Result<Project, ProjectError> {
+        let id = match input.id {
+            Some(id) if !is_id(&id) => {
+                return Err(ProjectError::Invalid("id", "expected 32 hex characters"))
+            }
+            Some(id)
+                if self
+                    .repo
+                    .get(&p.user_id, &id)
+                    .await
+                    .map_err(backend)?
+                    .is_some() =>
+            {
+                return Err(ProjectError::Exists)
+            }
+            Some(id) => id,
+            None => new_id(self.entropy),
+        };
         let project = Project {
-            id: new_id(self.entropy),
+            id,
             owner_id: p.user_id.clone(),
             name: field("name", validate::line(&input.name, MAX_NAME))?,
             description: field(
@@ -259,6 +281,7 @@ mod tests {
         let p = block_on(svc.create(
             &me,
             NewProject {
+                id: None,
                 name: " Home renovation ".into(),
                 description: None,
             },
@@ -272,6 +295,7 @@ mod tests {
             block_on(svc.create(
                 &me,
                 NewProject {
+                    id: None,
                     name: "".into(),
                     description: None
                 }
@@ -306,5 +330,29 @@ mod tests {
             block_on(svc.get(&me, &p.id)).unwrap_err(),
             ProjectError::NotFound
         );
+    }
+
+    #[test]
+    fn client_ids_make_offline_creates_idempotent() {
+        let repo = MemoryProjects::default();
+        let e = CountingEntropy::default();
+        let svc = ProjectService::new(&repo, &e, 1);
+        let me = owner("u1");
+        let new = |id: &str| NewProject {
+            id: Some(id.into()),
+            name: "Garden".into(),
+            description: None,
+        };
+        let id = "f".repeat(32);
+        assert_eq!(block_on(svc.create(&me, new(&id))).unwrap().id, id);
+        assert_eq!(
+            block_on(svc.create(&me, new(&id))).unwrap_err(),
+            ProjectError::Exists
+        );
+        assert_eq!(
+            block_on(svc.create(&me, new("nope"))).unwrap_err(),
+            ProjectError::Invalid("id", "expected 32 hex characters")
+        );
+        assert_eq!(block_on(svc.list(&me, true)).unwrap().len(), 1);
     }
 }
