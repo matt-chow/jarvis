@@ -9,7 +9,7 @@ JARVIS commands will refer to them.
 | `home` | Home | ready | yes | `GET /api/v1/health` | Status dashboard; health cached in IndexedDB. |
 | `search` | Search | preview | no | `/api/v1/search` | Debounced search with highlighted titles and snippets, query in the URL (`#/search?q=`), and `/` to open from anywhere. Also the JARVIS `find …` command. |
 | `inbox` | Inbox | preview | read-only | `/api/v1/inbox` | Quick capture (also on Home); triage into task (first line becomes the title), note, or today's journal. |
-| `tasks` | Tasks | preview | read-only | `/api/v1/tasks` | Tasks and one-level subtasks, status, priority, due date, notes. Last list cached for offline viewing. |
+| `tasks` | Tasks | preview | yes | `/api/v1/tasks` | Tasks and one-level subtasks, status, priority, due date, notes. Editable offline: changes queue and sync on reconnect. |
 | `projects` | Projects | preview | read-only | `/api/v1/projects` | Group top-level tasks; progress, archive, and links into Tasks filtered by project. |
 | `notes` | Notes | preview | read-only | `/api/v1/notes` | Server notes with debounced autosave, pinning, and conflict detection (409, then "use theirs" or "keep mine"). Migrates legacy Scratchpad notes once. |
 | `journal` | Journal | preview | read-only | `/api/v1/journal` | One entry per day with mood (1–5), autosave, month list, and day navigation. |

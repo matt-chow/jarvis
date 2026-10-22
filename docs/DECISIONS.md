@@ -136,6 +136,23 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-017 — Offline edits through a replayable outbox
+**Status:** accepted (Tasks first)
+- **Queueing:** offline changes apply to the local copy immediately and are
+  queued in an IndexedDB `outbox` (schema v2), then replayed in order on load,
+  on reconnect, and after each enqueue. While anything is queued, new edits
+  also queue, so order is preserved.
+- **Safe replay:** every operation can be replayed without harm. Creates
+  carry a client-generated 32-hex id (the server answers `409 exists` to a
+  repeat, which counts as applied). Updates send only the changed fields
+  (last write wins per field). Deletes treat 404 as done.
+- **Failure handling:** network, 5xx, and 401 errors stop the replay and keep
+  the queue. Other 4xx errors drop that change and show a visible "couldn't
+  …" message.
+- **Not yet covered:** notes and journal stay read-only offline; their
+  versioned conflict flow (D-014) needs a queued-conflict UI. Projects,
+  inbox, and links come next.
+
 ## D-013 — Provisional UI until Paper designs land
 **Status:** accepted
 No `DESIGN_HANDOFF.md` exists yet. New screens reuse the existing `Panel`,

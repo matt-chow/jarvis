@@ -13,6 +13,7 @@ fn task_error(e: TaskError) -> Result<Response> {
         TaskError::Invalid(field, why) => {
             error_with(400, "invalid_input", format!("{field}: {why}"))
         }
+        TaskError::Exists => error(409, "exists"),
         TaskError::NotFound => error(404, "not_found"),
         TaskError::Backend(detail) => {
             worker::console_error!("tasks backend error: {detail}");

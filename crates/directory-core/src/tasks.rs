@@ -117,6 +117,9 @@ impl Filter {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct NewTask {
+    /// Client-chosen id (offline creates); must be a fresh 32-hex id.
+    #[serde(default)]
+    pub id: Option<String>,
     pub title: String,
     #[serde(default)]
     pub notes: Option<String>,
@@ -151,6 +154,8 @@ pub struct TaskPatch {
 pub enum TaskError {
     /// (field, reason)
     Invalid(&'static str, &'static str),
+    /// A client-supplied id is already in use (a replayed offline create).
+    Exists,
     NotFound,
     Backend(String),
 }
@@ -252,8 +257,26 @@ impl<'a, R: TaskRepository, E: Entropy + ?Sized> TaskService<'a, R, E> {
             }
             self.check_project(p, project_id).await?;
         }
+        let id = match input.id {
+            Some(id) if !is_id(&id) => {
+                return Err(TaskError::Invalid("id", "expected 32 hex characters"))
+            }
+            // Replaying an offline create that already reached the server.
+            Some(id)
+                if self
+                    .repo
+                    .get(&p.user_id, &id)
+                    .await
+                    .map_err(backend)?
+                    .is_some() =>
+            {
+                return Err(TaskError::Exists)
+            }
+            Some(id) => id,
+            None => new_id(self.entropy),
+        };
         let task = Task {
-            id: new_id(self.entropy),
+            id,
             owner_id: p.user_id.clone(),
             parent_id: input.parent_id,
             project_id: input.project_id,
@@ -417,6 +440,7 @@ mod tests {
 
     fn new(title: &str) -> NewTask {
         NewTask {
+            id: None,
             title: title.into(),
             notes: None,
             priority: None,
@@ -676,5 +700,43 @@ mod tests {
         assert_eq!(Status::parse("in_progress"), Some(Status::InProgress));
         assert_eq!(Priority::parse("high").map(Priority::as_str), Some("high"));
         assert_eq!(Filter::parse("open"), Some(Filter::Open));
+    }
+
+    #[test]
+    fn client_ids_make_offline_creates_idempotent() {
+        let f = F::new();
+        let me = owner("u1");
+        let id = "c".repeat(32);
+        let t = block_on(f.at(1).create(
+            &me,
+            NewTask {
+                id: Some(id.clone()),
+                ..new("Offline")
+            },
+        ))
+        .unwrap();
+        assert_eq!(t.id, id);
+        assert_eq!(
+            block_on(f.at(2).create(
+                &me,
+                NewTask {
+                    id: Some(id.clone()),
+                    ..new("Replay")
+                }
+            ))
+            .unwrap_err(),
+            TaskError::Exists
+        );
+        assert!(matches!(
+            block_on(f.at(2).create(
+                &me,
+                NewTask {
+                    id: Some("nope".into()),
+                    ..new("Bad")
+                }
+            )),
+            Err(TaskError::Invalid("id", _))
+        ));
+        assert_eq!(f.repo.0.borrow().len(), 1);
     }
 }

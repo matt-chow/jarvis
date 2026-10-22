@@ -181,6 +181,24 @@ try {
     await page.waitForText("Meeting notes");
   });
 
+  await step("Offline edits: a task added offline is queued, then synced on reconnect", async () => {
+    await page.hash("/tasks");
+    await waitFor("tasks loaded", () => page.evaluate(`!!document.querySelector('input[aria-label="New task"]')`));
+    await page.send("Network.enable", {});
+    const net = (offline) => page.send("Network.emulateNetworkConditions", { offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    await net(true);
+    await waitFor("browser offline", () => page.evaluate("!navigator.onLine"));
+    await page.waitForText("changes are saved on this device");
+    await page.fill("New task", "Written offline");
+    await page.click("add");
+    await page.waitForText("Written offline");
+    await page.waitForText("1 pending");
+    await net(false);
+    await waitFor("synced", async () => !(await page.text()).includes("pending"), 30_000);
+    const tasks = await page.evaluate(`fetch("/api/v1/tasks").then((r) => r.json())`);
+    if (!tasks.tasks.some((t) => t.title === "Written offline")) throw new Error("offline task not on server");
+  });
+
   await step("Projects: create, add a task from the project, progress updates", async () => {
     await page.hash("/projects");
     await page.waitForText("No active projects");
@@ -300,7 +318,7 @@ try {
       ((await page.evaluate(`document.querySelector('textarea[aria-label="Note body"]')?.value ?? ""`))).includes("Agenda: launch plan"),
     );
     await page.hash("/tasks");
-    await page.waitForText("Offline: showing the tasks saved on this device");
+    await page.waitForText("Offline: changes are saved on this device");
     await page.click("All");
     await page.waitForText("Write the quarterly report");
   });

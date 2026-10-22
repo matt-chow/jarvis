@@ -60,8 +60,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Search uses SQLite `LIKE`, which is case-insensitive for ASCII only, and
   reads whole note and journal bodies for snippets. Move to FTS5 when data
   grows.
-- Offline editing (tasks, notes, projects) is read-only until M3 sync; edits
-  made while offline are not queued.
+- Offline editing works for Tasks only; notes, journal, projects, and inbox
+  are read-only offline.
 - `wrangler dev` must be restarted after rebuilding `apps/web/dist`.
 - The repo lives under OneDrive, which slows down and locks `node_modules` and
   `target`.
@@ -85,17 +85,29 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-**M3: offline sync design and the first offline-editable module (tasks).**
-- An IndexedDB outbox of mutations replayed in order on reconnect.
-- A conflict policy: last write wins for task fields, with server
-  `updated_at` checks surfaced as conflicts like notes.
-- UI: show pending changes and a sync state in the header.
-- Write a design note in DECISIONS first.
-- Wiki is still open (it could reuse notes with `[[links]]`).
+1. Extend offline editing to Projects and Inbox capture (same outbox pattern).
+   Then notes and journal with a queued-conflict UI (D-014 + D-017).
+2. Wiki: notes with `[[wiki links]]` and backlinks (reuse links).
+3. Remaining owner decisions: deploy approval, voice, AI provider.
 
 ---
 
 ## Log
+
+### 2026-10-22 — M3 slice: Offline edits for Tasks
+- **Core:** `NewTask.id` (an optional client id; `TaskError::Exists` → 409).
+- **Web:**
+  - IndexedDB v2 with an `outbox` store (a version change closes old
+    connections).
+  - `lib/sync.ts`: replay with idempotency rules, plus `applyLocally` and
+    `clientId`.
+  - `useSync`: replays on load, on reconnect, and on enqueue; drives the
+    pending chip and rejected alerts.
+  - `useTasks` queues offline (or when earlier changes are queued) and
+    reloads after sync. Tasks stay editable offline.
+- **Tests:** web 32 (6 sync tests with fake-indexeddb), smoke 29/29
+  (idempotent create), browser e2e 18/18 (offline via DevTools emulation:
+  queue → reconnect → on server).
 
 ### 2026-10-22 — M3 slice: Document library
 - **Core:** `library` module: documents are files by type or extension.

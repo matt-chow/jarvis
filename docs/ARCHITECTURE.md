@@ -145,7 +145,7 @@ JSON bodies are capped at 64 KiB.
   - `0013`: `reading_progress` (keyed `owner_id, file_id`; cascades with the file).
 - **R2** bucket `directory-files` is private, with no r2.dev URL or custom domain.
   File content lives at `u/<user_id>/f/<file_id>`; names and folders live in D1.
-- **IndexedDB** database `directory` (v1) has a `kv` store with cached
+- **IndexedDB** database `directory` (v2, adds `outbox`) has a `kv` store with cached
   copies for read-only offline viewing: health, the last verified session user,
   task, project, and note lists, each opened note (`note:<id>`), and each
   journal month and day (`journal:<YYYY-MM>`, `journal:<date>`). It also
@@ -161,6 +161,11 @@ JSON bodies are capped at 64 KiB.
   are cache-first. `/api/*` is never cached by the service worker.
 - Updates: a new SW waits, the app shows "Reload to update", and the page then
   posts `SKIP_WAITING` and reloads on `controllerchange`.
+- **Offline edits (Tasks):** changes apply locally and queue in the IndexedDB
+  `outbox`, then replay in order when the connection returns (D-017). The
+  header shows `sync: N pending`; rejected changes appear as a dismissible
+  alert. Task creates accept a client `id` (32 hex; a repeat gives
+  `409 exists`).
 - **Offline sessions:** if the session check can't reach the server, the app
   uses the last verified user cached in IndexedDB and says so in Settings.
   Device-local modules keep working. A `401` from any call re-checks the session

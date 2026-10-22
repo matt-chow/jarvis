@@ -74,7 +74,7 @@ impl From<TaskError> for InboxError {
     fn from(e: TaskError) -> Self {
         match e {
             TaskError::Invalid(f, w) => Self::Invalid(f, w),
-            TaskError::NotFound => Self::NotFound,
+            TaskError::NotFound | TaskError::Exists => Self::NotFound,
             TaskError::Backend(b) => Self::Backend(b),
         }
     }
@@ -118,6 +118,7 @@ pub fn task_from_text(text: &str) -> NewTask {
         (false, _) => rest.to_owned(),
     };
     NewTask {
+        id: None,
         title,
         notes: (!notes.is_empty()).then_some(notes),
         priority: None,

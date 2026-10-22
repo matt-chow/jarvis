@@ -65,7 +65,9 @@ export function Tasks({ online }: ModuleProps) {
   const projectName = useMemo(() => new Map((projects ?? []).map((p) => [p.id, p.name])), [projects]);
   const activeProjects = useMemo(() => (projects ?? []).filter((p) => p.status === "active" || p.id === project), [projects, project]);
   const selectedNode = useMemo(() => taskTree(state.tasks ?? [], "all").find((n) => n.task.id === selected), [state.tasks, selected]);
-  const readOnly = state.stale || !online;
+  // Edits work offline: they apply locally and sync later (useTasks / D-017).
+  const readOnly = !state.tasks;
+  const offline = state.stale || !online;
 
   // Deep link (#/tasks?task=…): open that task (or a subtask's parent).
   const deepTask = useHashParam("task");
@@ -104,9 +106,9 @@ export function Tasks({ online }: ModuleProps) {
           </div>
         }
       >
-        {readOnly && state.tasks && (
+        {offline && state.tasks && (
           <p className="mb-3 rounded-sm border border-line bg-sunken/60 px-3 py-2 text-sm text-muted">
-            Offline: showing the tasks saved on this device. Editing resumes when you reconnect.
+            Offline: changes are saved on this device and sync when you reconnect.
           </p>
         )}
         <label className="mb-3 flex items-center gap-2">
@@ -130,7 +132,7 @@ export function Tasks({ online }: ModuleProps) {
           disabled={readOnly}
           onAdd={(title) => state.create({ title, project_id: project && project !== NO_PROJECT ? project : undefined })}
         />
-        {state.error && !readOnly && (
+        {state.error && !offline && (
           <p role="alert" className="mt-3 text-sm text-bad">
             {state.error}
           </p>

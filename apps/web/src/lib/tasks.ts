@@ -19,6 +19,8 @@ export interface Task {
 }
 
 export interface NewTask {
+  /** Client-chosen id (used for offline creates). */
+  id?: string;
   title: string;
   notes?: string;
   priority?: TaskPriority;

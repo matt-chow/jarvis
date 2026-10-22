@@ -263,7 +263,7 @@ fn failure(message: String) -> ActionResult {
 fn task_failure(e: TaskError) -> ActionResult {
     failure(match e {
         TaskError::Invalid(f, w) => format!("Invalid {f}: {w}."),
-        TaskError::NotFound => "That task no longer exists.".into(),
+        TaskError::NotFound | TaskError::Exists => "That task no longer exists.".into(),
         TaskError::Backend(_) => "The task service is unavailable.".into(),
     })
 }
@@ -531,6 +531,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         match command {
             Command::CreateTask { title, due_date } => {
                 let input = NewTask {
+                    id: None,
                     title: title.clone(),
                     notes: None,
                     priority: None,

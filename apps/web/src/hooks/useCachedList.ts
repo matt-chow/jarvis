@@ -12,6 +12,11 @@ export interface CachedList<T> {
   reload: () => void;
   /** Run a server mutation and apply its result to the list (and the cache). */
   mutate: <R>(fn: () => Promise<R>, apply: (current: T[], result: R) => T[]) => Promise<R | undefined>;
+  /** Current items (including local edits not yet rendered). */
+  latest: () => T[];
+  /** Replace items locally (and in the offline copy) without a server call. */
+  replace: (next: T[]) => void;
+  setError: (message: string | undefined) => void;
 }
 
 export function describeError(e: unknown, noun: string): string {
@@ -91,5 +96,16 @@ export function useCachedList<T>(cacheKey: string, noun: string, fetchAll: () =>
   );
 
   const reloadNow = useCallback(() => void reload(), [reload]);
-  return { items, loading, stale, error, reload: reloadNow, mutate };
+  const latestItems = useCallback(() => latest.current ?? [], []);
+  const replace = useCallback(
+    (next: T[]) => {
+      latest.current = next;
+      setItems(next);
+      void localDb()
+        .then((db) => db.setValue(cacheKey, next))
+        .catch(() => {});
+    },
+    [cacheKey],
+  );
+  return { items, loading, stale, error, reload: reloadNow, mutate, latest: latestItems, replace, setError };
 }

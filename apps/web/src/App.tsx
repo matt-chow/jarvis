@@ -4,6 +4,7 @@ import { StatusChip, StageTag, type Tone } from "./components/ui";
 import { useHealth, type HealthState } from "./hooks/useHealth";
 import { useOnline } from "./hooks/useOnline";
 import { useSession, type SessionApi } from "./hooks/useSession";
+import { useSync } from "./hooks/useSync";
 import { useServiceWorker, type SwState } from "./hooks/useServiceWorker";
 import { MODULES, moduleFromHash, type ModuleId } from "./lib/modules";
 import { Files } from "./modules/Files";
@@ -80,6 +81,7 @@ export function App() {
   const health = useHealth(online);
   const sw = useServiceWorker();
   const session = useSession(online);
+  const sync = useSync(online);
   const current = MODULES.find((m) => m.id === active)!;
   const View = VIEWS[active];
   const swState = swChip(sw);
@@ -172,8 +174,23 @@ export function App() {
               <StatusChip tone={online ? "ok" : "warn"} label="net" value={online ? "online" : "offline"} />
               <StatusChip tone={api.tone} label="api" value={api.value} />
               <StatusChip tone={swState.tone} label="offline" value={swState.value} title="Service worker / app-shell cache" />
+              {sync.pending > 0 && (
+                <StatusChip tone="warn" label="sync" value={sync.syncing ? "syncing…" : `${sync.pending} pending`} title="Changes saved on this device, waiting to sync" />
+              )}
             </div>
           </div>
+          {sync.rejected.length > 0 && (
+            <div role="alert" className="flex items-start justify-between gap-3 border-t border-line bg-sunken px-4 py-2 text-xs md:px-8">
+              <ul className="text-bad">
+                {sync.rejected.map((r, i) => (
+                  <li key={i}>{r}</li>
+                ))}
+              </ul>
+              <button type="button" onClick={sync.dismiss} className="font-mono text-muted underline underline-offset-4">
+                dismiss
+              </button>
+            </div>
+          )}
           {sw.kind === "update" && (
             <div className="flex items-center justify-between gap-3 border-t border-line bg-sunken px-4 py-2 font-mono text-xs md:px-8">
               <span>A new version of Directory is ready.</span>

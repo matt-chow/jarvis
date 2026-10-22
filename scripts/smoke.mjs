@@ -453,6 +453,16 @@ async function local() {
       expect((await api.req("GET", "/api/v1/library")).json.items.length === 0, "library empties with files");
     });
 
+    await check("offline sync support: client-chosen task ids make replayed creates idempotent", async () => {
+      const id = "ab".repeat(16);
+      const first = await api.req("POST", "/api/v1/tasks", { body: { id, title: "From the outbox" } });
+      expect(first.status === 201 && first.json.id === id, `create → ${first.text}`);
+      const replayed = await api.req("POST", "/api/v1/tasks", { body: { id, title: "From the outbox" } });
+      expect(replayed.status === 409 && replayed.json.error === "exists", `replay → ${replayed.status}`);
+      expect((await api.req("POST", "/api/v1/tasks", { body: { id: "zz", title: "x" } })).status === 400, "malformed id");
+      await api.req("DELETE", `/api/v1/tasks/${id}`);
+    });
+
     await check("device API token: create (shown once), use as bearer, cannot manage credentials", async () => {
       const r = await api.req("POST", "/api/v1/auth/tokens", { body: { name: "Smoke device" } });
       expect(r.status === 201 && r.json.secret.startsWith("dir_"), `${r.status} ${r.text}`);
