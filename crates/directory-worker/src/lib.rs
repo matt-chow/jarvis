@@ -14,7 +14,7 @@ mod r2;
 
 use http::{
     auth, events, export, files, habits, health, inbox, jarvis, journal, library, links, notes,
-    projects, search, tasks,
+    preferences, projects, search, tasks,
 };
 
 #[event(fetch)]
@@ -90,6 +90,9 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get_async("/api/v1/notes/:id/backlinks", notes::backlinks)
         .patch_async("/api/v1/notes/:id", notes::update)
         .delete_async("/api/v1/notes/:id", notes::delete)
+        // Preferences
+        .get_async("/api/v1/preferences", preferences::get)
+        .patch_async("/api/v1/preferences", preferences::update)
         // Projects
         .get_async("/api/v1/projects", projects::list)
         .post_async("/api/v1/projects", projects::create)

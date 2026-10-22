@@ -2,7 +2,8 @@
 
 use super::{
     D1EventRepository, D1FileRepository, D1HabitRepository, D1InboxRepository, D1JournalRepository,
-    D1LibraryRepository, D1LinkRepository, D1NoteRepository, D1ProjectRepository, D1TaskRepository,
+    D1LibraryRepository, D1LinkRepository, D1NoteRepository, D1PreferencesRepository,
+    D1ProjectRepository, D1TaskRepository,
 };
 use directory_core::calendar::{Event, EventRepository, MAX_EVENTS};
 use directory_core::export::ExportSource;
@@ -13,6 +14,7 @@ use directory_core::journal::Entry;
 use directory_core::library::{LibraryRepository, Progress};
 use directory_core::links::Link;
 use directory_core::notes::Note;
+use directory_core::preferences::{from_stored, Preferences, PreferencesRepository};
 use directory_core::projects::{Project, ProjectRepository};
 use directory_core::tasks::{Filter, Task, TaskRepository};
 
@@ -30,6 +32,7 @@ pub struct D1ExportSource {
     pub library: D1LibraryRepository,
     pub habits: D1HabitRepository,
     pub events: D1EventRepository,
+    pub preferences: D1PreferencesRepository,
 }
 
 impl ExportSource for D1ExportSource {
@@ -67,5 +70,13 @@ impl ExportSource for D1ExportSource {
     }
     async fn events(&self, owner_id: &str) -> Result<Vec<Event>, String> {
         self.events.list(owner_id, MAX_EVENTS).await
+    }
+    async fn preferences(&self, owner_id: &str) -> Result<Preferences, String> {
+        Ok(self
+            .preferences
+            .get(owner_id)
+            .await?
+            .map(|d| from_stored(&d))
+            .unwrap_or_default())
     }
 }

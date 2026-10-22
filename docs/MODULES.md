@@ -6,7 +6,7 @@ JARVIS commands will refer to them.
 
 | Id | Name | Stage | Offline | Backend | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `home` | Home | ready | yes | `GET /api/v1/health` | Status dashboard; health cached in IndexedDB. |
+| `home` | Home | ready | yes | `/api/v1/health`, `/api/v1/preferences` | Customizable dashboard: capture, today (events, tasks due/overdue with complete), habits to check off, recent notes, system status, modules. Reorder/hide/add widgets; the layout is saved to the account (works offline, syncs). |
 | `search` | Search | preview | no | `/api/v1/search` | Debounced search with highlighted titles and snippets, query in the URL (`#/search?q=`), and `/` to open from anywhere. Also the JARVIS `find …` command. |
 | `inbox` | Inbox | preview | capture | `/api/v1/inbox` | Quick capture (also on Home); triage into task (first line becomes the title), note, or today's journal. Capture and discard work offline (queued); triage needs a connection. |
 | `tasks` | Tasks | preview | yes | `/api/v1/tasks` | Tasks and one-level subtasks, status, priority, due date, notes. Editable offline: changes queue and sync on reconnect. |

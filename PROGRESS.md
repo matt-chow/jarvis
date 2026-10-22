@@ -11,7 +11,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   Deployment). **M2 JARVIS Alpha:** command layer ✅, presets ✅, `find` ✅,
   project commands ✅.
   Voice is blocked on owner approval. **M3:** search ✅, files ✅, library ✅,
-  offline editing ✅, wiki ✅. **M4:** habits ✅, calendar ✅.
+  offline editing ✅, wiki ✅. **M4:** habits ✅, calendar ✅, dashboard ✅.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
   - Device tokens for native clients and scripts.
@@ -44,7 +44,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
     approve, results, history, and saved presets.
   - Universal search (`/` from anywhere), plus JARVIS `find`.
   - PWA install and offline relaunch with the saved session.
-  - Health dashboard.
+  - Customizable Home dashboard (today, habits, recent notes, capture,
+    status, modules), with the layout saved to the account.
 - **Not deployed.** Nothing has run on Cloudflare yet; that needs owner approval
   (R2 activation asks for a payment method) and hostname vars.
 - **Design:** no Paper handoff yet. All screens are provisional
@@ -55,10 +56,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | Command | Result (2026-10-22) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
-| `cargo test -p directory-core` | ✅ 98 passed |
-| Vitest | ✅ 49 passed |
+| `cargo test -p directory-core` | ✅ 100 passed |
+| Vitest | ✅ 51 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
-| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 21/21 |
+| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 22/22 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -99,14 +100,33 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. Search over events and habits (SearchSource + JARVIS find).
-2. M4 next: customizable dashboard (Home), then automations.
+1. M4: automations (rule engine over module events, e.g. "when a task in
+   project X is done, journal it"). Design the trigger/action model first.
+2. Search over events and habits.
 3. Remaining owner decisions: deploy approval, voice, AI provider, reader
    dependency, music storage (R2 quota).
 
 ---
 
 ## Log
+
+### 2026-10-22 — M4 slice: Customizable dashboard (D-023)
+- **Migration 0016:** `preferences`. Schema version 16.
+- **Core:** `preferences` module (typed document, validated widgets,
+  lenient reads, partial PATCH with `null` reset), included in the export.
+- **Worker:** `GET`/`PATCH /api/v1/preferences`.
+- **Web:**
+  - Home is now a dashboard of widgets: capture, today (events and due or
+    overdue tasks, completable), habits (check off), recent notes, system
+    status (with offline readiness), and modules.
+  - Customize mode reorders, hides, adds, and resets widgets.
+    `usePreferences` caches the layout and queues changes offline.
+- **Tests:**
+  - core 100: validation, reset, lenient reads.
+  - web 51: layout helpers.
+  - smoke: validate, patch, reset, export, 401.
+  - browser e2e 22/22: hide and move widgets, persisted on the server
+    and across a reload, then reset.
 
 ### 2026-10-22 — Hardening: no silent list truncation (D-022)
 - **Bug:** the tasks list was `ORDER BY created_at LIMIT 1000`. Past 1,000

@@ -305,6 +305,27 @@ try {
     await page.waitForText("Nothing scheduled.");
   });
 
+  await step("Dashboard: widgets show today's habit, layout changes persist across reloads", async () => {
+    await page.hash("/home");
+    await page.waitForText("Stretch"); // habits widget, from the Habits step
+    await page.waitForText("Nothing scheduled or due today.");
+    await page.click("customize");
+    await page.click("Hide Recent notes");
+    await page.click("Move Habits up");
+    await page.click("done");
+    await waitFor("notes widget hidden", async () => !(await page.text()).includes("RECENT NOTES"));
+    const prefs = await page.evaluate(`fetch("/api/v1/preferences").then((r) => r.json())`);
+    if (prefs.dashboard?.widgets.join() !== "capture,habits,today,status,modules") throw new Error(`server layout: ${JSON.stringify(prefs)}`);
+    await page.reload();
+    await page.waitForText("Stretch");
+    if ((await page.text()).includes("RECENT NOTES")) throw new Error("layout not kept after reload");
+    await shot("dashboard");
+    await page.click("customize");
+    await page.click("reset to default");
+    await page.click("done");
+    await page.waitForText("RECENT NOTES");
+  });
+
   await step("Projects: create, add a task from the project, progress updates", async () => {
     await page.hash("/projects");
     await page.waitForText("No active projects");

@@ -71,7 +71,7 @@ part of every slice, not deferred to the end.
 | Calendar: month/day views, timed/all-day/multi-day/repeating events, tasks due, offline (D-021) | ✅ done |
 | Automation engine | planned |
 | Music library, playlists, streaming and offline media | planned (R2 storage and quota implications need review) |
-| Customizable dashboard | planned |
+| Customizable dashboard (widgets, layout saved to the account) | ✅ done |
 
 ## M5 1.0 (P5)
 Security review, performance, accessibility audit, backup/restore, error

@@ -15,6 +15,7 @@ import { withCheck, type Habit, type HabitPatch, type HabitView, type NewHabit }
 import type { InboxItem } from "./inbox";
 import type { JournalEntry, PutJournal } from "./journal";
 import type { Note, NotePatch } from "./notes";
+import type { Preferences, PreferencesPatch } from "./preferences";
 import type { NewProject, Project, ProjectPatch } from "./projects";
 import type { NewTask, Task, TaskPatch } from "./tasks";
 
@@ -40,7 +41,9 @@ export type Op =
   | { kind: "habit.check"; id: string; date: string; done: boolean }
   | { kind: "event.create"; event: NewEvent & { id: string } }
   | { kind: "event.update"; id: string; patch: EventPatch }
-  | { kind: "event.delete"; id: string };
+  | { kind: "event.delete"; id: string }
+  /** Last write wins, so replays are safe. */
+  | { kind: "prefs.update"; patch: PreferencesPatch };
 
 export interface NoteFields {
   title: string;
@@ -91,6 +94,7 @@ export interface SyncApi {
   createEvent(e: NewEvent & { id: string }): Promise<CalendarEvent>;
   updateEvent(id: string, patch: EventPatch): Promise<CalendarEvent>;
   deleteEvent(id: string): Promise<void>;
+  updatePreferences(patch: PreferencesPatch): Promise<Preferences>;
 }
 
 export interface SyncResult {
@@ -171,6 +175,9 @@ async function apply(api: SyncApi, op: Op): Promise<number | void> {
       case "event.delete":
         await api.deleteEvent(op.id);
         return;
+      case "prefs.update":
+        await api.updatePreferences(op.patch);
+        return;
     }
   } catch (e) {
     // Already applied by an earlier, interrupted replay.
@@ -223,6 +230,8 @@ function describeOp(op: Op): string {
       return "update an event";
     case "event.delete":
       return "delete an event";
+    case "prefs.update":
+      return "save your dashboard layout";
   }
 }
 

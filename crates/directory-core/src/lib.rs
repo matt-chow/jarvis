@@ -22,6 +22,7 @@ pub mod journal;
 pub mod library;
 pub mod links;
 pub mod notes;
+pub mod preferences;
 pub mod projects;
 pub mod rate_limit;
 pub mod search;

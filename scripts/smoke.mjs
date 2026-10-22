@@ -403,6 +403,17 @@ async function local() {
       expect((await api.req("GET", "/api/v1/events")).json.events.length === 0, "empty");
     });
 
+    await check("preferences: dashboard layout validated, patched, reset, exported", async () => {
+      expect(JSON.stringify((await api.req("GET", "/api/v1/preferences")).json) === "{}", "default is empty");
+      const set = await api.req("PATCH", "/api/v1/preferences", { body: { dashboard: { widgets: ["today", "capture"] } } });
+      expect(set.status === 200 && set.json.dashboard.widgets.join() === "today,capture", `patch → ${set.text}`);
+      expect((await api.req("PATCH", "/api/v1/preferences", { body: { dashboard: { widgets: ["weather"] } } })).status === 400, "unknown widget");
+      expect((await api.req("PATCH", "/api/v1/preferences", { body: {} })).json.dashboard.widgets.length === 2, "omitted = unchanged");
+      expect((await api.req("GET", "/api/v1/export")).json.preferences.dashboard.widgets[0] === "today", "in export");
+      expect((await api.req("PATCH", "/api/v1/preferences", { body: { dashboard: null } })).json.dashboard === undefined, "reset");
+      expect((await fetch(`${baseUrl}/api/v1/preferences`)).status === 401, "anonymous → 401");
+    });
+
     await check("export: one JSON download with every record, no credential material", async () => {
       const task = (await api.req("POST", "/api/v1/tasks", { body: { title: "Export me" } })).json;
       const note = (await api.req("POST", "/api/v1/notes", { body: { body: "Exported note body" } })).json;

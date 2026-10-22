@@ -136,6 +136,17 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-023 — Preferences are one validated JSON document per owner
+**Status:** accepted
+- Settings that should follow the owner across devices, starting with the
+  dashboard layout, are stored in `preferences` as one JSON document. Core
+  owns the typed shape and validation; unknown stored values are dropped
+  when read, so old clients and removed widgets can't break it.
+- PATCH is partial and last write wins. Offline changes queue in the outbox
+  (`prefs.update`) and replay safely.
+- Per-device conveniences (like a remembered filter) stay in the URL or
+  IndexedDB, not here.
+
 ## D-022 — Lists are never silently cut: caps are enforced when creating
 **Status:** accepted
 - **Problem:** list queries had fixed `LIMIT`s (tasks 1,000 ordered oldest

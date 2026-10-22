@@ -12,6 +12,7 @@ import type { JournalEntry, JournalSummary, PutJournal } from "./journal";
 import type { LibraryItem, Progress, ProgressPatch } from "./library";
 import type { EntityRef, Linked } from "./links";
 import type { Note, NotePatch, NoteSummary } from "./notes";
+import type { Preferences, PreferencesPatch } from "./preferences";
 import type { NewProject, Project, ProjectPatch } from "./projects";
 import type { SearchHit } from "./search";
 import type { NewTask, Task, TaskFilter, TaskPatch } from "./tasks";
@@ -176,6 +177,10 @@ export class Api {
   createNote = (n: { id?: string; title?: string; body?: string; pinned?: boolean }) => this.call<Note>("POST", "/api/v1/notes", n);
   updateNote = (id: string, patch: NotePatch) => this.call<Note>("PATCH", `/api/v1/notes/${encodeURIComponent(id)}`, patch);
   deleteNote = (id: string) => this.call<void>("DELETE", `/api/v1/notes/${encodeURIComponent(id)}`);
+
+  // ---- Preferences ----
+  preferences = () => this.call<Preferences>("GET", "/api/v1/preferences");
+  updatePreferences = (patch: PreferencesPatch) => this.call<Preferences>("PATCH", "/api/v1/preferences", patch);
 
   // ---- Calendar ----
   /** Every event, repeats not expanded (see lib/calendar `occurrences`). */

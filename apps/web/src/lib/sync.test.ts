@@ -63,6 +63,10 @@ function fakeApi(fail: (op: string) => unknown = () => undefined) {
       return applyEventLocally([], { kind: "event.create", event: { id, title: "", start_date: "2026-01-01" } })[0];
     },
     deleteEvent: async (id) => void (await run(`event-delete:${id}`)),
+    updatePreferences: async (patch) => {
+      await run(`prefs:${JSON.stringify(patch)}`);
+      return {};
+    },
     putJournal: async (date, e) => {
       await run(`journal:${date}@${e.expected_updated_at}`);
       return { date, body: "", mood: null, created_at: 0, updated_at: 60 };
