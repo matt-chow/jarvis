@@ -67,6 +67,7 @@ test offline behaviour against `dev:worker`.
 
 | Command | What it checks |
 | --- | --- |
+| `npm run ci` | Everything below in order: the full pre-deploy gate |
 | `npm run verify` | fmt + clippy + TS typecheck, Rust and web unit tests, PWA build, Worker build (deploy dry run) |
 | `npm test` | Rust core tests (`cargo test`) and web tests (Vitest) |
 | `npm run smoke` | Starts an isolated `wrangler dev` (fresh D1/R2) and runs the API end-to-end: setup, passkey login (software authenticator), sessions, CSRF, device tokens, storage |

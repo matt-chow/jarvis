@@ -121,15 +121,19 @@ export async function launch() {
     waitForText: (text, timeoutMs) => waitFor(`text "${text}"`, async () => (await page.text()).includes(text), timeoutMs),
     /** Set a React-controlled input by its aria-label or label text. */
     async fill(label, value) {
-      await page.evaluate(`(() => {
-        const label = ${JSON.stringify(label)};
-        const el = document.querySelector(\`input[aria-label="\${label}"], textarea[aria-label="\${label}"]\`)
-          ?? [...document.querySelectorAll("label")].find((l) => l.innerText.trim().toLowerCase().startsWith(label.toLowerCase()))?.querySelector("input, textarea");
-        if (!el) throw new Error("no input " + label);
-        const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-        Object.getOwnPropertyDescriptor(proto, "value").set.call(el, ${JSON.stringify(value)});
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-      })()`);
+      // Waits for the (enabled) field to exist: editors often mount after a fetch.
+      await waitFor(`input "${label}"`, () =>
+        page.evaluate(`(() => {
+          const label = ${JSON.stringify(label)};
+          const el = document.querySelector(\`input[aria-label="\${label}"], textarea[aria-label="\${label}"]\`)
+            ?? [...document.querySelectorAll("label")].find((l) => l.innerText.trim().toLowerCase().startsWith(label.toLowerCase()))?.querySelector("input, textarea");
+          if (!el || el.disabled) return false;
+          const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          Object.getOwnPropertyDescriptor(proto, "value").set.call(el, ${JSON.stringify(value)});
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          return true;
+        })()`),
+      );
     },
     /** Click the first enabled button or link whose text or aria-label contains `text`. */
     async click(text) {

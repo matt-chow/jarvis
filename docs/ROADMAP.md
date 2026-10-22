@@ -7,8 +7,8 @@ part of every slice, not deferred to the end.
 | Milestone | Theme | Status |
 | --- | --- | --- |
 | **M0 Foundation** | Monorepo, shell, Rust Worker, D1/R2, PWA, CI-ready checks | ✅ done (local) |
-| **M1 Private Alpha** | Owner auth + functional core (P1) | 🟡 in progress |
-| M2 JARVIS Alpha | Command layer and assistant (P2) | planned |
+| **M1 Private Alpha** | Owner auth + functional core (P1) | ✅ feature-complete locally; deploy awaits owner approval |
+| M2 JARVIS Alpha | Command layer and assistant (P2) | 🟡 in progress |
 | M3 Knowledge & Offline Beta | Wiki, library, files, search, sync (P3) | planned |
 | M4 Personal OS | Habits, calendar, automations, music, dashboards (P4) | planned |
 | M5 1.0 | Production hardening (P5) | planned |
@@ -27,7 +27,7 @@ part of every slice, not deferred to the end.
 | Journal (dated entries, mood) | ✅ done |
 | Entity linking (task ↔ note ↔ project ↔ journal) | ✅ done |
 | Data export (JSON) | ✅ done |
-| M1 exit review (deploy readiness) | next |
+| M1 exit review (deploy readiness checklist, `npm run ci`) | ✅ done; first deploy blocked on owner approval |
 
 **Exit criteria:**
 - All P1 slices are done to the Definition of Done in AGENTS.md.

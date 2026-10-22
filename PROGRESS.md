@@ -5,9 +5,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Current state (2026-10-21)
 
-- **Milestone:** M1 Private Alpha, in progress. Auth ✅, rate limiting ✅,
-  Tasks ✅, Projects ✅, Notes ✅, Journal ✅, Inbox ✅, Links ✅, Export ✅.
-  Next: **M1 exit review**.
+- **Milestone:** M1 Private Alpha is **feature-complete locally**. All M1
+  slices are done and `npm run ci` is green. The first deploy is **blocked on
+  owner approval** (see the readiness checklist in docs/ARCHITECTURE.md ›
+  Deployment). M2 JARVIS Alpha is now in progress.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
   - Device tokens for native clients and scripts.
@@ -64,22 +65,42 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   Projects, Notes, Journal, Inbox, and Settings.
 
 ### Unresolved decisions (need the owner)
-- Approve the first Cloudflare deploy: R2 activation and the production
-  hostname for `DIRECTORY_RP_ID`/`DIRECTORY_ORIGINS`.
+- **Blocker for the M1 release:** approve the first Cloudflare deploy. This
+  needs `wrangler login`, R2 activation (asks for a payment method; free
+  within limits), and the production hostname for
+  `DIRECTORY_RP_ID`/`DIRECTORY_ORIGINS`.
+- **M2:** which AI provider (if any) JARVIS may call, and its budget. Until
+  then, JARVIS uses a deterministic command parser only.
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-**M1 exit review**, then M2 (JARVIS) foundations, which don't depend on
-deployment:
-- A deploy readiness checklist, plus a single `npm run ci` gate (verify +
-  smoke + browser e2e).
-- A security pass over M1 (authz on every route, input limits, headers).
-- Then M2: a command registry with typed, validated commands per module, and
-  text commands with a deterministic parser (no AI provider without approval).
+**M2 slice 1: JARVIS command layer (no AI provider).**
+- Core `commands` module:
+  - A registry of typed commands, each with a name, description, arguments
+    schema, risk level (read / write / destructive), and handler, run through
+    module services as `Principal` (D-015).
+  - A deterministic text parser for a small grammar ("add task …", "note …",
+    "journal …", "capture …", "complete task …", "list tasks").
+  - A plan/preview step, plus execute only after approval for write and
+    destructive commands.
+  - Execution history stored in D1.
+- `/api/v1/jarvis/plan` (text → previewed actions), `/api/v1/jarvis/execute`
+  (approved plan id), and `/api/v1/jarvis/history`.
+- UI: the JARVIS module becomes a command console with preview cards,
+  approve/cancel, and history.
 
 ---
 
 ## Log
+
+### 2026-10-21 — M1 exit review
+- **Security pass:** every non-public handler resolves a `Principal`
+  (audited mechanically); the public set is health, auth setup/login
+  (throttled), and logout.
+- **CI:** `npm run ci` runs verify, smoke, and browser e2e as one gate. The
+  browser e2e `fill` now waits for editors to mount (fixed a flaky step).
+- **Docs:** a deploy readiness checklist in docs/ARCHITECTURE.md; ROADMAP
+  marks M1 feature-complete.
 
 ### 2026-10-21 — M1 slice: Data export
 - **Core:** `export` module: versioned document, an `ExportSource` trait,

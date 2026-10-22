@@ -40,6 +40,7 @@ No inert controls, and no mock-only features presented as done.
 ## Commands
 
 ```sh
+npm run ci              # full gate: verify + smoke + browser e2e (run before committing a slice)
 npm run verify          # fmt, clippy, typecheck, all unit tests, builds, deploy dry run
 npm run dev:worker      # local Worker with D1/R2 (restart after `npm run build`)
 npm run smoke           # API end-to-end on an isolated wrangler dev (or BASE_URL)

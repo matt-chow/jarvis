@@ -161,6 +161,25 @@ logged server-side and never returned.
 
 Everything below is free-tier. No step enables a paid product.
 
+### Readiness checklist (M1 exit)
+- [x] `npm run ci` is green: verify, isolated-Worker smoke, and browser e2e.
+- [x] Every data route resolves a `Principal` and scopes by `user_id`. The
+  only public routes are health, auth setup and login (rate-limited), and
+  logout (cookie plus origin check).
+- [x] Secrets live only in Worker secrets. `.dev.vars` is gitignored, and
+  the export contains no credential material.
+- [x] Auth fails closed without `DIRECTORY_RP_ID`, `DIRECTORY_ORIGINS`, or a
+  setup token (503).
+- [x] Worker size is about 355 KiB gzipped (limit 3 MB).
+- [ ] **Owner:** `wrangler login`, approve R2 activation (it asks for a
+  payment method), and choose the hostname.
+- [ ] After deploy: complete setup, create a device token, run the remote smoke
+  test, and check Worker CPU time (Workers Free: 10 ms) in the dashboard,
+  especially `/auth/login/verify`.
+- [ ] After deploy: take an export from Settings as the first backup.
+
+### Steps
+
 1. `npx wrangler login`
 2. `npx wrangler d1 create directory-db`. Copy the `database_id` into
    `wrangler.toml`.
