@@ -124,7 +124,7 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | GET | `/api/v1/files?folder=` | session or token | `{ folder, folders, files }` from D1 metadata (no R2 list operations) |
 | POST | `/api/v1/files?folder=&name=` | session or token | Raw body with `Content-Length` (411 if missing). Streamed to R2 at `u/<owner>/f/<id>`. Limits: 95 MiB per file (413), owner quota (507; default 1 GiB, `DIRECTORY_QUOTA_BYTES`), duplicate name (409). |
 | GET | `/api/v1/files/usage` | session or token | `{ used, quota, max_file }` |
-| GET | `/api/v1/files/{id}/content` | session or token | Streamed from R2 as an attachment (RFC 6266 filename), CSP `sandbox` |
+| GET | `/api/v1/files/{id}/content` | session or token | Streamed from R2 as an attachment (RFC 6266 filename), CSP `sandbox` Supports a single `Range: bytes=…` (206 with `Content-Range`; 416 past the end), so media can seek and downloads resume. |
 | PATCH / DELETE | `/api/v1/files/{id}` | session or token | PATCH `{ name?, folder? }` (metadata only). DELETE removes metadata first, then the blob. |
 
 Keys are `segment(/segment)*` over `[A-Za-z0-9._-]`, with no `.`/`..` segments

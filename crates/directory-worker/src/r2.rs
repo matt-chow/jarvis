@@ -1,7 +1,7 @@
 //! Private R2 bucket access for file content. The bucket has no public access;
 //! content is only reachable through authenticated Worker routes.
 
-use worker::{Bucket, Data, HttpMetadata, Object};
+use worker::{Bucket, Data, HttpMetadata, Object, Range};
 
 pub struct R2Blobs {
     bucket: Bucket,
@@ -31,6 +31,21 @@ impl R2Blobs {
     pub async fn get(&self, key: &str) -> Result<Option<Object>, String> {
         self.bucket
             .get(key)
+            .execute()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    /// `length` bytes from `offset` (for HTTP Range requests).
+    pub async fn get_range(
+        &self,
+        key: &str,
+        offset: u64,
+        length: u64,
+    ) -> Result<Option<Object>, String> {
+        self.bucket
+            .get(key)
+            .range(Range::OffsetWithLength { offset, length })
             .execute()
             .await
             .map_err(|e| e.to_string())

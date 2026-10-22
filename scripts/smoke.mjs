@@ -162,6 +162,17 @@ async function local() {
       expect(get.status === 200 && get.text === payload, "content streamed back");
       expect(/^attachment; filename="R_sum_\.txt"; filename\*=UTF-8''R%C3%A9sum%C3%A9\.txt$/.test(get.headers.get("content-disposition")), get.headers.get("content-disposition"));
       expect(get.headers.get("content-security-policy").includes("sandbox"), "sandboxed");
+      expect(get.headers.get("accept-ranges") === "bytes", "advertises ranges");
+
+      // Range requests (media seeking, resumed downloads).
+      const size = Buffer.byteLength(payload);
+      const part = await api.req("GET", `/api/v1/files/${up.json.id}/content`, { headers: { Range: "bytes=0-4" } });
+      expect(part.status === 206 && part.text === Buffer.from(payload).subarray(0, 5).toString(), `range → ${part.status} ${part.text}`);
+      expect(part.headers.get("content-range") === `bytes 0-4/${size}` && part.headers.get("content-length") === "5", part.headers.get("content-range"));
+      const tail = await api.req("GET", `/api/v1/files/${up.json.id}/content`, { headers: { Range: "bytes=-3" } });
+      expect(tail.status === 206 && tail.headers.get("content-range") === `bytes ${size - 3}-${size - 1}/${size}`, "suffix range");
+      const past = await api.req("GET", `/api/v1/files/${up.json.id}/content`, { headers: { Range: `bytes=${size}-` } });
+      expect(past.status === 416 && past.headers.get("content-range") === `bytes */${size}`, `unsatisfiable → ${past.status}`);
 
       const moved = await api.req("PATCH", `/api/v1/files/${up.json.id}`, { body: { folder: "archive", name: "cv.txt" } });
       expect(moved.json.folder === "archive" && moved.json.name === "cv.txt", `move → ${moved.text}`);

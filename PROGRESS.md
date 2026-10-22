@@ -114,6 +114,14 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-10-22 — Files: HTTP Range support
+- **Core:** `files::parse_range` (single range, suffix ranges, clamping;
+  malformed, other units, and multi-range headers are ignored).
+- **Worker:** file content answers `206` with `Content-Range` from an R2
+  ranged read, `416` past the end, and always sends `Accept-Ranges: bytes`.
+- **Tests:** core 105, smoke (prefix, suffix, and unsatisfiable ranges on
+  local R2).
+
 ### 2026-10-22 — M4 slice: Automations (D-024)
 - **Migration 0017:** `automations`. Schema version 17.
 - **Core:**

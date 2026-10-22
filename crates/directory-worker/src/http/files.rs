@@ -6,7 +6,8 @@ use crate::{
     bindings, d1::D1FileRepository, entropy::WebCryptoEntropy, r2::R2Blobs, try_or_respond,
 };
 use directory_core::files::{
-    blob_key, content_disposition, FileError, FilePatch, FileService, DEFAULT_QUOTA_BYTES,
+    blob_key, content_disposition, parse_range, ByteRange, FileError, FilePatch, FileService,
+    DEFAULT_QUOTA_BYTES,
 };
 use directory_core::identity::Principal;
 use worker::{Data, Date, Env, Request, Response, ResponseBody, Result, RouteContext};
@@ -160,11 +161,20 @@ pub async fn content(req: Request, rc: RouteContext<()>) -> Result<Response> {
         Ok(e) => e,
         Err(e) => return file_error(e),
     };
-    let object = match c
-        .blobs
-        .get(&blob_key(&c.principal.user_id, &entry.id))
-        .await
-    {
+    let key = blob_key(&c.principal.user_id, &entry.id);
+    // Range requests let media players seek and downloads resume.
+    let range = parse_range(req.headers().get("Range")?.as_deref(), entry.size);
+    let fetched = match range {
+        ByteRange::Unsatisfiable => {
+            let mut resp = error(416, "range_not_satisfiable")?;
+            resp.headers_mut()
+                .set("Content-Range", &format!("bytes */{}", entry.size))?;
+            return Ok(resp);
+        }
+        ByteRange::Full => c.blobs.get(&key).await,
+        ByteRange::Partial { start, end } => c.blobs.get_range(&key, start, end - start + 1).await,
+    };
+    let object = match fetched {
         Ok(Some(o)) => o,
         Ok(None) => {
             worker::console_error!("files: metadata without content for {}", entry.id);
@@ -181,10 +191,23 @@ pub async fn content(req: Request, rc: RouteContext<()>) -> Result<Response> {
         None => ResponseBody::Empty,
     };
     let mut resp = Response::from_body(body)?;
+    if let ByteRange::Partial { .. } = range {
+        resp = resp.with_status(206);
+    }
     let headers = resp.headers_mut();
     harden(headers)?;
     headers.set("Content-Type", &entry.content_type)?;
-    headers.set("Content-Length", &entry.size.to_string())?;
+    headers.set("Accept-Ranges", "bytes")?;
+    match range {
+        ByteRange::Partial { start, end } => {
+            headers.set("Content-Length", &(end - start + 1).to_string())?;
+            headers.set(
+                "Content-Range",
+                &format!("bytes {start}-{end}/{}", entry.size),
+            )?;
+        }
+        _ => headers.set("Content-Length", &entry.size.to_string())?,
+    }
     // Never render user content on the app origin.
     headers.set("Content-Disposition", &content_disposition(&entry.name))?;
     headers.set("Content-Security-Policy", "default-src 'none'; sandbox")?;

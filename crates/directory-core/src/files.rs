@@ -63,6 +63,60 @@ pub fn normalize_content_type(raw: Option<&str>) -> String {
     }
 }
 
+/// What a `Range` request header asks for (RFC 9110; one range only).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ByteRange {
+    /// No usable range: send the whole object.
+    Full,
+    /// Inclusive byte positions.
+    Partial { start: u64, end: u64 },
+    /// Starts past the end: answer 416.
+    Unsatisfiable,
+}
+
+/// Parse `Range: bytes=…` for an object of `size` bytes. Malformed headers,
+/// other units, and multiple ranges are ignored (the whole object is sent).
+pub fn parse_range(header: Option<&str>, size: u64) -> ByteRange {
+    let Some(spec) = header.and_then(|h| h.trim().strip_prefix("bytes=")) else {
+        return ByteRange::Full;
+    };
+    let Some((a, b)) = spec.split_once('-').filter(|_| !spec.contains(',')) else {
+        return ByteRange::Full;
+    };
+    let (a, b) = (a.trim(), b.trim());
+    let num = |s: &str| s.parse::<u64>().ok();
+    match (a.is_empty(), b.is_empty()) {
+        (true, true) => ByteRange::Full,
+        // Suffix: the last `n` bytes.
+        (true, false) => match num(b) {
+            Some(0) => ByteRange::Unsatisfiable,
+            Some(_) if size == 0 => ByteRange::Unsatisfiable,
+            Some(n) => ByteRange::Partial {
+                start: size.saturating_sub(n),
+                end: size - 1,
+            },
+            None => ByteRange::Full,
+        },
+        (false, _) => {
+            let Some(start) = num(a) else {
+                return ByteRange::Full;
+            };
+            if start >= size {
+                return ByteRange::Unsatisfiable;
+            }
+            let end = if b.is_empty() {
+                size - 1
+            } else {
+                match num(b) {
+                    Some(e) if e >= start => e.min(size - 1),
+                    _ => return ByteRange::Full,
+                }
+            };
+            ByteRange::Partial { start, end }
+        }
+    }
+}
+
 /// RFC 6266 attachment header: ASCII fallback plus UTF-8 `filename*`.
 pub fn content_disposition(name: &str) -> String {
     let ascii: String = name
@@ -481,6 +535,49 @@ mod tests {
         let e = block_on(svc.prepare_upload(&me(), folder, name, size, Some("text/plain")))?;
         block_on(svc.commit_upload(&e))?;
         Ok(e)
+    }
+
+    #[test]
+    fn byte_ranges() {
+        use ByteRange::*;
+        let r = |h: &str| parse_range(Some(h), 1000);
+        assert_eq!(parse_range(None, 1000), Full);
+        assert_eq!(r("bytes=0-99"), Partial { start: 0, end: 99 });
+        assert_eq!(
+            r("bytes=900-"),
+            Partial {
+                start: 900,
+                end: 999
+            }
+        );
+        assert_eq!(
+            r("bytes=900-5000"),
+            Partial {
+                start: 900,
+                end: 999
+            }
+        );
+        assert_eq!(
+            r("bytes=-100"),
+            Partial {
+                start: 900,
+                end: 999
+            }
+        );
+        assert_eq!(r("bytes=-5000"), Partial { start: 0, end: 999 });
+        assert_eq!(r("bytes=1000-"), Unsatisfiable);
+        assert_eq!(r("bytes=-0"), Unsatisfiable);
+        for ignored in [
+            "items=0-1",
+            "bytes=5-2",
+            "bytes=a-b",
+            "bytes=0-1,5-6",
+            "bytes=-",
+            "bytes",
+        ] {
+            assert_eq!(r(ignored), Full, "{ignored}");
+        }
+        assert_eq!(parse_range(Some("bytes=0-"), 0), Unsatisfiable);
     }
 
     #[test]
