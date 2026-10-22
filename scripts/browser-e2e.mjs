@@ -73,6 +73,21 @@ try {
     await shot("notes");
   });
 
+  await step("Journal: today's entry with mood autosaves; day navigation", async () => {
+    await page.hash("/journal");
+    await page.waitForText("No entries this month");
+    await page.click("good");
+    await page.fill("Journal entry", "Walked by the river.");
+    await page.waitForText("Walked by the river.");
+    await waitFor("journal saved", async () => (await page.text()).toLowerCase().includes("saved") && !(await page.text()).includes("unsaved"));
+    const today = await page.evaluate(`(() => { const d = new Date(); const p = (n) => String(n).padStart(2, "0"); return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()); })()`);
+    const entry = await page.evaluate(`fetch("/api/v1/journal/${today}").then((r) => r.json())`);
+    if (entry.mood !== 4 || entry.body !== "Walked by the river.") throw new Error(`server entry: ${JSON.stringify(entry)}`);
+    await page.click("Previous day");
+    await page.waitForText("NEW".toLowerCase());
+    await shot("journal");
+  });
+
   await step("Files: upload lists the file", async () => {
     const dir = mkdtempSync(join(tmpdir(), "directory-upload-"));
     const file = join(dir, "hello e2e.txt");

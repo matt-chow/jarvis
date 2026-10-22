@@ -6,7 +6,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ## Current state (2026-10-21)
 
 - **Milestone:** M1 Private Alpha, in progress. Auth ✅, rate limiting ✅,
-  Tasks ✅, Projects ✅, Notes ✅. Next: **Journal**.
+  Tasks ✅, Projects ✅, Notes ✅, Journal ✅. Next: **Universal inbox**.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
   - Device tokens for native clients and scripts.
@@ -18,6 +18,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   - Owner-scoped private file upload, list, download, and delete.
   - Notes saved to the account: autosave, pin, conflict detection across
     devices, and a one-time migration of legacy Scratchpad notes.
+  - Journal: one entry per day with mood, autosave, month list, and day
+    navigation.
   - PWA install and offline relaunch with the saved session.
   - Health dashboard.
 - **Not deployed.** Nothing has run on Cloudflare yet; that needs owner approval
@@ -29,11 +31,11 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 | Command | Result (2026-10-21) |
 | --- | --- |
-| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 933 KiB / 313 KiB gzipped |
-| `cargo test -p directory-core` | ✅ 48 passed |
-| Vitest | ✅ 22 passed (7 files) |
-| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 20/20 |
-| `npm run test:browser` (headless Edge 155, virtual passkey) | ✅ 11/11 |
+| `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass. Worker upload 967 KiB / 323 KiB gzipped |
+| `cargo test -p directory-core` | ✅ 52 passed |
+| Vitest | ✅ 24 passed (8 files) |
+| `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ 21/21 |
+| `npm run test:browser` (headless Edge 155, virtual passkey) | ✅ 12/12 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -53,7 +55,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ### Design dependencies
 - Paper designs or `docs/DESIGN_HANDOFF.md` for the shell, auth, Tasks, Files,
-  Projects, Notes, Settings, and the upcoming Journal and Inbox screens.
+  Projects, Notes, Journal, Settings, and the upcoming Inbox screen.
 
 ### Unresolved decisions (need the owner)
 - Approve the first Cloudflare deploy: R2 activation and the production
@@ -61,21 +63,37 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-**Journal slice (M1).**
-- Core `journal` module: one entry per local date (`YYYY-MM-DD`, unique per
-  owner), body text, optional mood (1–5), and the same optimistic concurrency
-  as notes.
-- Migration `0007`.
-- `/api/v1/journal`: list by month range, `GET/PUT /api/v1/journal/{date}`
-  (upsert), and delete.
-- UI: today's entry with autosave, a calendar or list of recent days, and date
-  navigation.
-- Then: Universal inbox, entity linking, the M1 exit (export plus first deploy
-  with approval).
+**Universal inbox slice (M1).**
+- Core `inbox` module: quick-capture items (text ≤ 2,000 chars) and a
+  triage service that converts an item into a task, note, or journal append in
+  one operation, then removes it. Conversion goes through the existing module
+  services; there's no direct cross-module SQL.
+- Migration `0008`.
+- `/api/v1/inbox` (list, capture, delete) and
+  `POST /api/v1/inbox/{id}/triage { to: task|note|journal }`.
+- UI: a capture box always reachable from the shell (header on desktop, Home
+  on phone), plus an Inbox module with triage actions.
+- Then: entity linking, data export, and the M1 exit review.
 
 ---
 
 ## Log
+
+### 2026-10-21 — M1 slice: Journal
+- **Core:** `journal` module: entries keyed by `(owner, date)`, mood 1–5,
+  upsert with optimistic concurrency, a create race resolved as conflict, and
+  range validation (≤ 366 days, leap-aware).
+- **Worker:** `d1/journal.rs` (`ON CONFLICT DO NOTHING` insert, conditional
+  update), `http/journal.rs`, and routes. Migration `0007_journal.sql`
+  (schema v7).
+- **Web:**
+  - New `useAutosaveDoc` hook (shared load, offline fallback, debounced
+    versioned saves, conflicts, flush on unmount), adopted by Notes and
+    Journal, plus a shared `ConflictBanner`.
+  - Journal module: month list with mood meter, day editor, mood picker, and
+    day and month navigation.
+- **Tests:** 4 core journal tests, web date tests, a smoke journal check, and
+  a browser e2e Journal step.
 
 ### 2026-10-21 — M1 slice: Notes
 - **Core:** `notes` module: summaries with derived titles and excerpts,

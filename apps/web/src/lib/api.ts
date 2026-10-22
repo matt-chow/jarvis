@@ -3,6 +3,7 @@
  * The browser authenticates with the HttpOnly session cookie (same origin);
  * native clients can pass a device token instead.
  */
+import type { JournalEntry, JournalSummary, PutJournal } from "./journal";
 import type { Note, NotePatch, NoteSummary } from "./notes";
 import type { NewProject, Project, ProjectPatch } from "./projects";
 import type { NewTask, Task, TaskFilter, TaskPatch } from "./tasks";
@@ -139,6 +140,21 @@ export class Api {
   tokens = async () => (await this.call<{ tokens: DeviceToken[] }>("GET", "/api/v1/auth/tokens")).tokens;
   createToken = (name: string) => this.call<{ token: DeviceToken; secret: string }>("POST", "/api/v1/auth/tokens", { name });
   deleteToken = (id: string) => this.call<void>("DELETE", `/api/v1/auth/tokens/${encodeURIComponent(id)}`);
+
+  // ---- Journal ----
+  journal = async (from: string, to: string) =>
+    (await this.call<{ entries: JournalSummary[] }>("GET", `/api/v1/journal?from=${from}&to=${to}`)).entries;
+  /** `null` when there is no entry for that date. */
+  journalEntry = async (date: string): Promise<JournalEntry | null> => {
+    try {
+      return await this.call<JournalEntry>("GET", `/api/v1/journal/${date}`);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return null;
+      throw e;
+    }
+  };
+  putJournal = (date: string, entry: PutJournal) => this.call<JournalEntry>("PUT", `/api/v1/journal/${date}`, entry);
+  deleteJournal = (date: string) => this.call<void>("DELETE", `/api/v1/journal/${date}`);
 
   // ---- Notes ----
   notes = async () => (await this.call<{ notes: NoteSummary[] }>("GET", "/api/v1/notes")).notes;

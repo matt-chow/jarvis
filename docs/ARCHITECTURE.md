@@ -83,6 +83,8 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | DELETE | `/api/v1/auth/passkeys/{id}` | session only | `409 last_passkey` for the final one |
 | GET / POST | `/api/v1/auth/tokens` | session only | List / create device token (secret returned once) |
 | DELETE | `/api/v1/auth/tokens/{id}` | session only | Revoke |
+| GET | `/api/v1/journal?from=&to=` | session or token | Summaries (`date, excerpt, mood`) for a range of at most 366 days, newest first |
+| GET / PUT / DELETE | `/api/v1/journal/{YYYY-MM-DD}` | session or token | PUT upserts `{ body?, mood? (1–5 or null), expected_updated_at? }`. A stale version or a same-day create race gets `409 { entry }`. |
 | GET | `/api/v1/notes` | session or token | Summaries `{ id, title, excerpt, pinned, … }`, without bodies. Pinned first, then newest. |
 | POST | `/api/v1/notes` | session or token | `{ title?, body?, pinned? }` → `201`. Body ≤ 100k chars (512 KiB request cap). |
 | GET / PATCH / DELETE | `/api/v1/notes/{id}` | session or token | PATCH `title, body, pinned, expected_updated_at?`. A stale version gets `409 { error: "conflict", note }`. |
@@ -104,7 +106,7 @@ JSON bodies are capped at 64 KiB.
 ## Data
 
 - **D1** migrations live in `migrations/NNNN_name.sql` and are append-only.
-  `system_meta.schema_version` must equal `EXPECTED_SCHEMA_VERSION` (now **6**).
+  `system_meta.schema_version` must equal `EXPECTED_SCHEMA_VERSION` (now **7**).
   - `0001`: `system_meta`
   - `0002`: `users`, `passkeys`, `auth_challenges`, `sessions`, `api_tokens`.
     Times are epoch milliseconds; secrets are stored only as SHA-256 hex.
@@ -114,11 +116,14 @@ JSON bodies are capped at 64 KiB.
   - `0005`: `projects`, plus `tasks.project_id` (top-level tasks only).
   - `0006`: `notes`. `updated_at` doubles as the optimistic-concurrency
     version; saves use `UPDATE … WHERE updated_at = expected`.
+  - `0007`: `journal_entries` (primary key `owner_id, date`; creates use
+    `ON CONFLICT DO NOTHING`).
 - **R2** bucket `directory-files` is private, with no r2.dev URL or custom domain.
   Object keys are `u/<user_id>/<key>`.
 - **IndexedDB** database `directory` (v1) has a `kv` store with cached
   copies for read-only offline viewing: health, the last verified session user,
-  task, project, and note lists, and each opened note (`note:<id>`). It also
+  task, project, and note lists, each opened note (`note:<id>`), and each
+  journal month and day (`journal:<YYYY-MM>`, `journal:<date>`). It also
   has a legacy `notes` store (Sprint 00 Scratchpad), which is migrated into the
   account once and then emptied.
 

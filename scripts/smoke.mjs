@@ -241,6 +241,28 @@ async function local() {
       expect((await api.req("GET", `/api/v1/notes/${n.json.id}`)).status === 404, "gone");
     });
 
+    await check("journal: upsert by date, mood, ranged list, conflicts, validation", async () => {
+      expect((await api.req("GET", "/api/v1/journal/2026-10-21")).status === 404, "no entry yet");
+      const created = await api.req("PUT", "/api/v1/journal/2026-10-21", { body: { body: "Shipped the journal.\nFelt good.", mood: 4 } });
+      expect(created.status === 200 && created.json.mood === 4 && created.json.date === "2026-10-21", `create → ${created.text}`);
+      // Second device creating the same day without a version: conflict carries the first entry.
+      const race = await api.req("PUT", "/api/v1/journal/2026-10-21", { body: { body: "other device", expected_updated_at: 1 } });
+      expect(race.status === 409 && race.json.entry.body.startsWith("Shipped"), `stale → ${race.status}`);
+      const edited = await api.req("PUT", "/api/v1/journal/2026-10-21", {
+        body: { body: "Shipped the journal. Long walk.", expected_updated_at: created.json.updated_at },
+      });
+      expect(edited.status === 200 && edited.json.mood === 4, `edit keeps mood → ${edited.text}`);
+      await api.req("PUT", "/api/v1/journal/2026-10-02", { body: { body: "Earlier" } });
+      await api.req("PUT", "/api/v1/journal/2026-11-01", { body: { body: "Next month" } });
+      const oct = await api.req("GET", "/api/v1/journal?from=2026-10-01&to=2026-10-31");
+      expect(oct.json.entries.map((e) => e.date).join() === "2026-10-21,2026-10-02", `range → ${oct.text}`);
+      expect(!("body" in oct.json.entries[0]) && oct.json.entries[0].excerpt.startsWith("Shipped"), "summaries only");
+      expect((await api.req("PUT", "/api/v1/journal/2026-02-30", { body: { body: "x" } })).status === 400, "bad date");
+      expect((await api.req("PUT", "/api/v1/journal/2026-10-21", { body: { mood: 9 } })).status === 400, "bad mood");
+      expect((await api.req("GET", "/api/v1/journal?from=2024-01-01&to=2026-01-01")).status === 400, "range too long");
+      expect((await api.req("DELETE", "/api/v1/journal/2026-11-01")).status === 204, "delete");
+    });
+
     await check("device API token: create (shown once), use as bearer, cannot manage credentials", async () => {
       const r = await api.req("POST", "/api/v1/auth/tokens", { body: { name: "Smoke device" } });
       expect(r.status === 201 && r.json.secret.startsWith("dir_"), `${r.status} ${r.text}`);

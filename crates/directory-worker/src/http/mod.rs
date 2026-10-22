@@ -3,6 +3,7 @@
 
 pub mod auth;
 pub mod health;
+pub mod journal;
 pub mod notes;
 pub mod projects;
 pub mod storage;

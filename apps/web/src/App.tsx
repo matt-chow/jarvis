@@ -9,6 +9,7 @@ import { MODULES, moduleFromHash, type ModuleId } from "./lib/modules";
 import { Files } from "./modules/Files";
 import { Home } from "./modules/Home";
 import { Jarvis } from "./modules/Jarvis";
+import { Journal } from "./modules/Journal";
 import { Notes } from "./modules/Notes";
 import { Projects } from "./modules/Projects";
 import { Settings } from "./modules/Settings";
@@ -27,6 +28,7 @@ const VIEWS: Record<ModuleId, ComponentType<ModuleProps>> = {
   tasks: Tasks,
   projects: Projects,
   notes: Notes,
+  journal: Journal,
   files: Files,
   jarvis: Jarvis,
   settings: Settings,

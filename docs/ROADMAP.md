@@ -22,9 +22,9 @@ part of every slice, not deferred to the end.
 | Security: auth rate limiting | ✅ done |
 | Tasks: CRUD, status, due date, priority, subtasks (one level) | ✅ done |
 | Projects (group tasks; progress) | ✅ done |
-| Universal inbox (quick capture → triage into task/note/journal) | after Notes and Journal |
+| Universal inbox (quick capture → triage into task/note/journal) | next |
 | Notes: server persistence, autosave, conflict detection, legacy migration | ✅ done |
-| Journal (dated entries) | next |
+| Journal (dated entries, mood) | ✅ done |
 | Entity linking (task ↔ note ↔ project ↔ journal) | planned |
 
 **Exit criteria:**

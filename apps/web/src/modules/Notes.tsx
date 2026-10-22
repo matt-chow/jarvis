@@ -1,19 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ModuleProps } from "../App";
+import { ConflictBanner } from "../components/ConflictBanner";
 import { Button, Panel, inputClass } from "../components/ui";
-import { describeError } from "../hooks/useCachedList";
+import { SAVE_STATUS_TEXT, useAutosaveDoc } from "../hooks/useAutosaveDoc";
 import { useNotes, type NotesState } from "../hooks/useNotes";
 import { reportIfUnauthorized } from "../hooks/useSession";
-import { api, ApiError, isNetworkError } from "../lib/api";
-import { localDb } from "../lib/db";
+import { api } from "../lib/api";
 import { formatDate, formatTime } from "../lib/format";
 import type { Note } from "../lib/notes";
 
 // Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
 
-const SAVE_DELAY_MS = 800;
 const small = "min-h-7 px-2 text-[10px]";
-const cacheKey = (id: string) => `note:${id}`;
 
 export function Notes({ online }: ModuleProps) {
   const state = useNotes(online);
@@ -102,117 +100,25 @@ export function Notes({ online }: ModuleProps) {
   );
 }
 
-type SaveStatus = "saved" | "dirty" | "saving" | "offline" | "error";
-
-const STATUS_TEXT: Record<SaveStatus, string> = {
-  saved: "saved",
-  dirty: "unsaved changes",
-  saving: "saving…",
-  offline: "offline · not saved",
-  error: "save failed",
-};
-
 function NoteEditor({ id, state, readOnly }: { id: string; state: NotesState; readOnly: boolean }) {
-  const [note, setNote] = useState<Note>();
-  const [loadError, setLoadError] = useState<string>();
-  const [fromCache, setFromCache] = useState(false);
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [status, setStatus] = useState<SaveStatus>("saved");
-  const [conflict, setConflict] = useState<Note>();
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  // The version we last read or wrote; sent as expected_updated_at.
-  const version = useRef(0);
-  const draft = useRef({ title: "", body: "" });
-  const timer = useRef<number | undefined>(undefined);
   const { saved } = state;
+  const editor = useAutosaveDoc<Note, { title: string; body: string }>({
+    cacheKey: `note:${id}`,
+    noun: "note",
+    load: () => api.note(id),
+    fieldsOf: (n) => ({ title: n?.title ?? "", body: n?.body ?? "" }),
+    save: (f, expected) => api.updateNote(id, { ...f, expected_updated_at: expected }),
+    conflictOf: (e) => (e.body as { note?: Note }).note,
+    onSaved: saved,
+  });
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const note = editor.doc;
 
-  const adopt = useCallback((n: Note) => {
-    version.current = n.updated_at;
-    draft.current = { title: n.title, body: n.body };
-    setNote(n);
-    setTitle(n.title);
-    setBody(n.body);
-    setStatus("saved");
-    void localDb()
-      .then((db) => db.setValue(cacheKey(n.id), n))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .note(id)
-      .then((n) => !cancelled && adopt(n))
-      .catch(async (e: unknown) => {
-        reportIfUnauthorized(e);
-        const cached = await localDb()
-          .then((db) => db.getValue<Note>(cacheKey(id)))
-          .catch(() => undefined);
-        if (cancelled) return;
-        if (cached) {
-          adopt(cached);
-          setFromCache(true);
-        } else setLoadError(describeError(e, "note"));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [id, adopt]);
-
-  const save = useCallback(
-    async (force = false) => {
-      window.clearTimeout(timer.current);
-      timer.current = undefined;
-      const { title: t, body: b } = draft.current;
-      setStatus("saving");
-      try {
-        const n = await api.updateNote(id, { title: t, body: b, expected_updated_at: force ? undefined : version.current });
-        version.current = n.updated_at;
-        setNote(n);
-        saved(n);
-        void localDb()
-          .then((db) => db.setValue(cacheKey(n.id), n))
-          .catch(() => {});
-        // Typing may have continued while the request was in flight.
-        setStatus(draft.current.title === t && draft.current.body === b ? "saved" : "dirty");
-        setConflict(undefined);
-      } catch (e) {
-        reportIfUnauthorized(e);
-        if (e instanceof ApiError && e.code === "conflict") {
-          setConflict((e.body as { note: Note }).note);
-          setStatus("dirty");
-        } else setStatus(isNetworkError(e) ? "offline" : "error");
-      }
-    },
-    [id, saved],
-  );
-
-  const edit = (next: { title?: string; body?: string }) => {
-    draft.current = { ...draft.current, ...next };
-    if (next.title !== undefined) setTitle(next.title);
-    if (next.body !== undefined) setBody(next.body);
-    setStatus("dirty");
-    window.clearTimeout(timer.current);
-    if (!conflict) timer.current = window.setTimeout(() => void save(), SAVE_DELAY_MS);
-  };
-
-  // Flush pending edits when switching notes or leaving the module.
-  useEffect(
-    () => () => {
-      if (timer.current !== undefined) {
-        window.clearTimeout(timer.current);
-        void save();
-      }
-    },
-    [save],
-  );
-
-  if (loadError) {
+  if (editor.loadError) {
     return (
       <Panel title="editor">
         <p role="alert" className="text-sm text-bad">
-          {loadError}
+          {editor.loadError}
         </p>
       </Panel>
     );
@@ -225,48 +131,36 @@ function NoteEditor({ id, state, readOnly }: { id: string; state: NotesState; re
     );
   }
 
-  const locked = readOnly || fromCache;
+  const locked = readOnly || editor.fromCache;
+  const togglePin = () =>
+    void api.updateNote(id, { pinned: !note.pinned }).then((n) => {
+      editor.adopt({ ...n, title: editor.fields.title, body: editor.fields.body });
+      saved(n);
+    }, reportIfUnauthorized);
+
   return (
     <Panel
       title="editor"
       actions={
         <span className="flex items-center gap-2">
-          <span role="status" className={`font-mono text-[11px] ${status === "error" || status === "offline" ? "text-bad" : "text-muted"}`}>
-            {locked ? "read-only" : STATUS_TEXT[status]}
-          </span>
-          <Button
-            className={small}
-            disabled={locked}
-            aria-pressed={note.pinned}
-            onClick={() =>
-              void api.updateNote(id, { pinned: !note.pinned }).then((n) => {
-                version.current = n.updated_at;
-                setNote(n);
-                saved(n);
-              }, reportIfUnauthorized)
-            }
+          <span
+            role="status"
+            className={`font-mono text-[11px] ${editor.status === "error" || editor.status === "offline" ? "text-bad" : "text-muted"}`}
           >
+            {locked ? "read-only" : SAVE_STATUS_TEXT[editor.status]}
+          </span>
+          <Button className={small} disabled={locked} aria-pressed={note.pinned} onClick={togglePin}>
             {note.pinned ? "unpin" : "pin"}
           </Button>
         </span>
       }
     >
-      {conflict && (
-        <div role="alert" className="mb-3 rounded-sm border border-warn bg-sunken/60 p-3 text-sm">
-          <p>This note was changed on another device ({formatTime(conflict.updated_at)}).</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Button className={small} onClick={() => (adopt(conflict), setConflict(undefined))}>
-              use theirs
-            </Button>
-            <Button className={small} variant="primary" onClick={() => void save(true)}>
-              keep mine
-            </Button>
-          </div>
-        </div>
+      {editor.conflict && (
+        <ConflictBanner at={editor.conflict.updated_at} onTheirs={editor.useTheirs} onMine={editor.keepMine} />
       )}
       <input
-        value={title}
-        onChange={(e) => edit({ title: e.target.value })}
+        value={editor.fields.title}
+        onChange={(e) => editor.edit({ title: e.target.value })}
         disabled={locked}
         maxLength={200}
         placeholder="Title (optional: first line is used)"
@@ -274,8 +168,8 @@ function NoteEditor({ id, state, readOnly }: { id: string; state: NotesState; re
         className={`${inputClass} mb-3 w-full font-medium`}
       />
       <textarea
-        value={body}
-        onChange={(e) => edit({ body: e.target.value })}
+        value={editor.fields.body}
+        onChange={(e) => editor.edit({ body: e.target.value })}
         disabled={locked}
         maxLength={100000}
         aria-label="Note body"
