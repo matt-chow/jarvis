@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentType } from "react";
+import { Suspense, lazy, useEffect, useRef, useState, type ComponentType } from "react";
 import { AuthScreen } from "./components/AuthScreen";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { installGlobalErrorReporting } from "./hooks/reportError";
@@ -10,20 +10,23 @@ import { useSession, type SessionApi } from "./hooks/useSession";
 import { useSync } from "./hooks/useSync";
 import { useServiceWorker, type SwState } from "./hooks/useServiceWorker";
 import { MODULES, moduleFromHash, type ModuleId } from "./lib/modules";
-import { Files } from "./modules/Files";
 import { Home } from "./modules/Home";
-import { Inbox } from "./modules/Inbox";
-import { Jarvis } from "./modules/Jarvis";
-import { Journal } from "./modules/Journal";
-import { Library } from "./modules/Library";
-import { Music } from "./modules/Music";
-import { Notes } from "./modules/Notes";
-import { Calendar } from "./modules/Calendar";
-import { Habits } from "./modules/Habits";
-import { Projects } from "./modules/Projects";
-import { Search } from "./modules/Search";
-import { Settings } from "./modules/Settings";
-import { Tasks } from "./modules/Tasks";
+
+// Modules load on first use (each is its own chunk; the service worker
+// precaches them all, so they still open offline). Home is the default route.
+const Files = lazy(() => import("./modules/Files").then((m) => ({ default: m.Files })));
+const Inbox = lazy(() => import("./modules/Inbox").then((m) => ({ default: m.Inbox })));
+const Jarvis = lazy(() => import("./modules/Jarvis").then((m) => ({ default: m.Jarvis })));
+const Journal = lazy(() => import("./modules/Journal").then((m) => ({ default: m.Journal })));
+const Library = lazy(() => import("./modules/Library").then((m) => ({ default: m.Library })));
+const Music = lazy(() => import("./modules/Music").then((m) => ({ default: m.Music })));
+const Notes = lazy(() => import("./modules/Notes").then((m) => ({ default: m.Notes })));
+const Calendar = lazy(() => import("./modules/Calendar").then((m) => ({ default: m.Calendar })));
+const Habits = lazy(() => import("./modules/Habits").then((m) => ({ default: m.Habits })));
+const Projects = lazy(() => import("./modules/Projects").then((m) => ({ default: m.Projects })));
+const Search = lazy(() => import("./modules/Search").then((m) => ({ default: m.Search })));
+const Settings = lazy(() => import("./modules/Settings").then((m) => ({ default: m.Settings })));
+const Tasks = lazy(() => import("./modules/Tasks").then((m) => ({ default: m.Tasks })));
 
 export interface ModuleProps {
   online: boolean;
@@ -227,7 +230,9 @@ export function App() {
           <div className="mx-auto max-w-5xl">
             {/* A crash stays inside the module; switching modules starts fresh. */}
             <ErrorBoundary key={active} module={active}>
-              <View online={online} health={health} sw={sw} session={session} navigate={navigate} />
+              <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>
+                <View online={online} health={health} sw={sw} session={session} navigate={navigate} />
+              </Suspense>
             </ErrorBoundary>
           </div>
         </main>

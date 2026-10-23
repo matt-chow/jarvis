@@ -106,16 +106,25 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. P5 performance: web bundle size (code-split modules), and measure
-   Worker CPU after the first deploy.
-2. P5: "forget this device" (clear IndexedDB on sign-out, optional).
+1. P5: "forget this device" (optional IndexedDB wipe on sign-out; see
+   docs/SECURITY.md open items).
 2. Search over events and habits.
+3. Measure Worker CPU after the first deploy (owner approval needed).
 3. Remaining owner decisions: deploy approval, voice, AI provider, reader
    dependency.
 
 ---
 
 ## Log
+
+### 2026-10-22 — M5 slice: Lazy-loaded modules
+- `App.tsx` loads every module except Home with `React.lazy` inside
+  `Suspense`. Initial JS went from 387 KB (111 KB gzip) to about 290 KB
+  (including shared chunks); modules are 3–11 KB each and all precached.
+- The e2e `setFile` helper waits for its input (modules mount after their
+  chunk loads).
+- **Tests:** browser e2e 27/27, including the offline relaunch with the
+  server stopped (lazy chunks come from the precache).
 
 ### 2026-10-22 — M5 slice: Security review
 - **docs/SECURITY.md:** the model (owner-only, passkeys, sessions, CSRF,

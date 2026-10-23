@@ -150,6 +150,8 @@ export async function launch() {
       );
     },
     async setFile(selector, path) {
+      // Modules load lazily: wait for the input before targeting it.
+      await waitFor(`file input ${selector}`, () => page.evaluate(`!!document.querySelector(${JSON.stringify(selector)})`));
       const { root } = await send("DOM.getDocument", {});
       const { nodeId } = await send("DOM.querySelector", { nodeId: root.nodeId, selector });
       await send("DOM.setFileInputFiles", { nodeId, files: [path] });

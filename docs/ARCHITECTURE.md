@@ -182,6 +182,10 @@ JSON bodies are capped at 64 KiB.
 
 ## Offline / PWA
 
+- Modules other than Home are `React.lazy` chunks. The service worker
+  precaches every build chunk, so each module still opens offline after
+  the first visit.
+
 - `vite.config.ts` emits `dist/sw.js` from `sw/service-worker.js`. It injects the
   hashed build files plus shell files as the precache manifest, and a content
   hash as the cache version.
