@@ -12,7 +12,7 @@ import { ApiError, isNetworkError } from "./api";
 import { addDays, dayNumber, type CalendarEvent, type EventPatch, type NewEvent } from "./calendar";
 import type { OutboxEntry } from "./db";
 import { withCheck, type Habit, type HabitPatch, type HabitView, type NewHabit } from "./habits";
-import type { InboxItem } from "./inbox";
+import type { InboxItem, Triaged, TriageTarget } from "./inbox";
 import type { JournalEntry, PutJournal } from "./journal";
 import { applyProgress, type LibraryItem, type Progress, type ProgressPatch } from "./library";
 import type { Note, NotePatch } from "./notes";
@@ -26,6 +26,8 @@ export type Op =
   | { kind: "task.delete"; id: string }
   | { kind: "inbox.capture"; item: { id: string; text: string } }
   | { kind: "inbox.delete"; id: string }
+  /** Filed into another module on replay; the journal date is fixed when queued (D-036). */
+  | { kind: "inbox.triage"; id: string; to: TriageTarget; date?: string }
   | { kind: "project.create"; project: NewProject & { id: string } }
   | { kind: "project.update"; id: string; patch: ProjectPatch }
   | { kind: "project.delete"; id: string }
@@ -86,6 +88,7 @@ export interface SyncApi {
   deleteTask(id: string): Promise<void>;
   capture(text: string, id?: string): Promise<InboxItem>;
   deleteInboxItem(id: string): Promise<void>;
+  triage(id: string, to: TriageTarget, date?: string): Promise<Triaged>;
   createProject(p: NewProject & { id: string }): Promise<Project>;
   updateProject(id: string, patch: ProjectPatch): Promise<Project>;
   deleteProject(id: string): Promise<void>;
@@ -143,6 +146,9 @@ async function apply(api: SyncApi, op: Op): Promise<number | void> {
       case "inbox.delete":
         await api.deleteInboxItem(op.id);
         return;
+      case "inbox.triage":
+        await api.triage(op.id, op.to, op.date);
+        return;
       case "project.create":
         await api.createProject(op.project);
         return;
@@ -198,7 +204,8 @@ async function apply(api: SyncApi, op: Op): Promise<number | void> {
     const isCreate = op.kind.endsWith(".create") || op.kind === "inbox.capture";
     // A check-in for a habit deleted meanwhile has nothing left to do.
     // A check-in or reading progress for something deleted meanwhile has nothing left to do.
-    const isDelete = op.kind.endsWith(".delete") || op.kind === "habit.check" || op.kind === "library.progress";
+    // A 404 means it is already done (deleted, or filed from another device).
+    const isDelete = op.kind.endsWith(".delete") || ["habit.check", "library.progress", "inbox.triage"].includes(op.kind);
     if (e instanceof ApiError && isCreate && e.code === "exists") return;
     if (e instanceof ApiError && isDelete && e.status === 404) return;
     throw e;
@@ -217,6 +224,8 @@ function describeOp(op: Op): string {
       return `capture “${op.item.text.slice(0, 40)}”`;
     case "inbox.delete":
       return "discard an inbox item";
+    case "inbox.triage":
+      return `file an inbox item as a ${op.to === "journal" ? "journal entry" : op.to}`;
     case "project.create":
       return `create project “${op.project.name}”`;
     case "project.update":
@@ -341,6 +350,7 @@ export function applyInboxLocally(items: InboxItem[], op: Op, now = Date.now()):
     case "inbox.capture":
       return [...items, { id: op.item.id, text: op.item.text.trim(), created_at: now }];
     case "inbox.delete":
+    case "inbox.triage":
       return items.filter((i) => i.id !== op.id);
     default:
       return items;

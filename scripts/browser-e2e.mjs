@@ -323,7 +323,7 @@ try {
     await page.waitForText("Written offline");
     await page.waitForText("1 pending");
     await page.hash("/inbox");
-    await page.waitForText("captures are saved on this device");
+    await page.waitForText("captures and sorting are saved on this device");
     await page.fill("Capture to inbox", "Idea from the train");
     await page.click("capture");
     await page.waitForText("Idea from the train");
@@ -405,6 +405,31 @@ try {
     const day = await serverDay();
     if (day?.body !== "Yesterday, rewritten") throw new Error(`after sync: ${JSON.stringify(day)}`);
     await page.evaluate(`fetch("/api/v1/journal/${yesterday}", { method: "DELETE", headers: { Origin: location.origin } })`);
+  });
+
+  await step("Inbox offline: capture and sort into a task without a connection, then it syncs in order (D-036)", async () => {
+    await page.hash("/inbox");
+    // Wait for the server's (empty) inbox: the cached copy can still list items deleted by API calls above.
+    await page.waitForText("Inbox zero");
+    await page.send("Network.enable", {});
+    const net = (offline) => page.send("Network.emulateNetworkConditions", { offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    await net(true);
+    await waitFor("browser offline", () => page.evaluate("!navigator.onLine"));
+    await page.waitForText("captures and sorting are saved on this device");
+    await page.fill("Capture to inbox", "Buy stamps offline");
+    await page.click("capture");
+    await page.waitForText("Buy stamps offline");
+    await page.click("→ task");
+    await page.waitForText("It becomes a task when you reconnect.");
+    await page.waitForText("2 pending");
+    await net(false);
+    await waitFor("synced", async () => !/pending|syncing…/i.test(await page.text()), 30_000);
+    const tasks = await page.evaluate(`fetch("/api/v1/tasks").then((r) => r.json())`);
+    const made = tasks.tasks.find((t) => t.title === "Buy stamps offline");
+    if (!made) throw new Error("triaged task not on server");
+    const inbox = await page.evaluate(`fetch("/api/v1/inbox").then((r) => r.json())`);
+    if (inbox.items.some((i) => i.text === "Buy stamps offline")) throw new Error("item still in the inbox");
+    await page.evaluate(`fetch("/api/v1/tasks/${made.id}", { method: "DELETE", headers: { Origin: location.origin } })`);
   });
 
   await step("Habits: add one, check off today, streak shows and reaches the server", async () => {

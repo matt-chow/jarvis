@@ -21,18 +21,25 @@ function describe(t: Triaged): { text: string; route: string } {
   }
 }
 
+const QUEUED: Record<"task" | "note" | "journal", { text: string; route: string }> = {
+  task: { text: "It becomes a task when you reconnect.", route: "/tasks" },
+  note: { text: "It becomes a note when you reconnect.", route: "/notes" },
+  journal: { text: "It is added to today's journal when you reconnect.", route: "/journal" },
+};
+
 export function Inbox({ online }: ModuleProps) {
   const inbox = useInbox(online);
   const [busy, setBusy] = useState<string>();
-  const [result, setResult] = useState<{ text: string; route: string }>();
-  // Capture and discard work offline (queued); triage needs the server.
+  const [result, setResult] = useState<{ text: string; route: string; queued?: boolean }>();
+  // Capture, discard, and sorting all work offline (queued, D-036).
   const offline = inbox.stale || !online;
 
   const triage = async (id: string, to: "task" | "note" | "journal") => {
     setBusy(id);
     const done = await inbox.triage(id, to);
     setBusy(undefined);
-    if (done) setResult(describe(done));
+    if (done === "queued") setResult({ ...QUEUED[to], queued: true });
+    else if (done) setResult(describe(done));
   };
 
   return (
@@ -42,9 +49,11 @@ export function Inbox({ online }: ModuleProps) {
         {result && (
           <p role="status" className="mt-3 text-sm text-muted">
             {result.text}{" "}
-            <a href={`#${result.route}`} className="text-accent underline underline-offset-4">
-              open
-            </a>
+            {!result.queued && (
+              <a href={`#${result.route}`} className="text-accent underline underline-offset-4">
+                open
+              </a>
+            )}
           </p>
         )}
         {inbox.error && !offline && (
@@ -53,7 +62,7 @@ export function Inbox({ online }: ModuleProps) {
           </p>
         )}
         {offline && inbox.items && (
-          <p className="mt-3 text-sm text-muted">Offline: captures are saved on this device and sync when you reconnect. Sorting needs a connection.</p>
+          <p className="mt-3 text-sm text-muted">Offline: captures and sorting are saved on this device and sync when you reconnect.</p>
         )}
 
         {inbox.loading && !inbox.items ? (
@@ -76,13 +85,13 @@ export function Inbox({ online }: ModuleProps) {
                   <span className="mr-auto font-mono text-[11px] text-muted">
                     {formatDate(item.created_at)} {formatTime(item.created_at)}
                   </span>
-                  <Button className={small} disabled={offline || busy === item.id} onClick={() => void triage(item.id, "task")}>
+                  <Button className={small} disabled={busy === item.id} onClick={() => void triage(item.id, "task")}>
                     → task
                   </Button>
-                  <Button className={small} disabled={offline || busy === item.id} onClick={() => void triage(item.id, "note")}>
+                  <Button className={small} disabled={busy === item.id} onClick={() => void triage(item.id, "note")}>
                     → note
                   </Button>
-                  <Button className={small} disabled={offline || busy === item.id} onClick={() => void triage(item.id, "journal")}>
+                  <Button className={small} disabled={busy === item.id} onClick={() => void triage(item.id, "journal")}>
                     → journal
                   </Button>
                   <Button

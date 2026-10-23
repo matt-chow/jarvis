@@ -15,8 +15,8 @@ export interface InboxState {
   reload: () => void;
   /** Works offline: queued and synced on reconnect. */
   capture: (text: string) => Promise<InboxItem | undefined>;
-  /** Needs a connection (it creates items in other modules). */
-  triage: (id: string, to: TriageTarget) => Promise<Triaged | undefined>;
+  /** Works offline: `"queued"` until it syncs (D-036). */
+  triage: (id: string, to: TriageTarget) => Promise<Triaged | "queued" | undefined>;
   /** Works offline. */
   remove: (id: string) => Promise<boolean>;
 }
@@ -25,7 +25,7 @@ const fetchAll = () => api.inbox();
 
 export function useInbox(online: boolean): InboxState {
   const list = useCachedList<InboxItem>("inbox:last", "item", fetchAll, online);
-  const { mutate, reload } = list;
+  const { reload } = list;
 
   useEffect(() => {
     window.addEventListener(SYNCED_EVENT, reload);
@@ -49,10 +49,20 @@ export function useInbox(online: boolean): InboxState {
   );
 
   const triage = useCallback(
-    (id: string, to: TriageTarget) =>
-      // Journal entries go to today's local date.
-      mutate(() => api.triage(id, to, to === "journal" ? localDate() : undefined), (cur) => cur.filter((i) => i.id !== id)),
-    [mutate],
+    (id: string, to: TriageTarget) => {
+      // Journal entries go to today's local date (fixed now, even if it syncs tomorrow).
+      const date = to === "journal" ? localDate() : undefined;
+      return runOrQueue<InboxItem, Triaged | "queued">({
+        list,
+        noun: "item",
+        op: { kind: "inbox.triage", id, to, date },
+        server: () => api.triage(id, to, date),
+        fromServer: (cur) => cur.filter((i) => i.id !== id),
+        applyLocal: applyInboxLocally,
+        local: () => "queued",
+      });
+    },
+    [list],
   );
 
   const remove = useCallback(

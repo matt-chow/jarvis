@@ -51,7 +51,16 @@ export async function startDevServer({ port = 8790, name = "smoke" } = {}) {
     ].join("\n"),
   );
 
-  const migrate = wrangler(["d1", "migrations", "apply", "DB", "--local", "--persist-to", stateDir]);
+  // On Windows a just-stopped run can still hold the state files for a moment
+  // (SQLITE_READONLY): wait, wipe, and try again.
+  let migrate;
+  for (let attempt = 1; ; attempt++) {
+    migrate = wrangler(["d1", "migrations", "apply", "DB", "--local", "--persist-to", stateDir]);
+    if (migrate.status === 0 || attempt === 3 || !/SQLITE_READONLY|SQLITE_BUSY|EBUSY/.test(`${migrate.stdout}${migrate.stderr}`)) break;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);
+    rmSync(join(ROOT, stateDir), { recursive: true, force: true });
+    mkdirSync(join(ROOT, stateDir), { recursive: true });
+  }
   if (migrate.status !== 0) throw new Error(`migrations failed:\n${migrate.stdout}\n${migrate.stderr}`);
 
   let output = "";

@@ -50,6 +50,7 @@ function fakeApi(fail: (op: string) => unknown = () => undefined) {
       return note(id, 50);
     },
     deleteNote: async (id) => void (await run(`note-delete:${id}`)),
+    triage: async (id, to, date) => ({ kind: "note", note: { ...(await run(`triage:${id}:${to}${date ? `:${date}` : ""}`)), id: "n", title: "", body: "", pinned: false } }),
     deleteJournal: async (date) => void (await run(`journal-delete:${date}`)),
     createHabit: async (h) => ({ ...(await run(`habit:${h.id}`)), name: h.name, days: [], archived: false }),
     updateHabit: async (id) => ({ ...(await run(`habit-update:${id}`)), name: "", days: [], archived: false }),
@@ -170,6 +171,25 @@ describe("project ops", () => {
     list = applyProjectLocally(list, { kind: "project.update", id: "p1", patch: { status: "archived" } }, 6);
     expect(list[0]).toMatchObject({ status: "archived", updated_at: 6 });
     expect(applyProjectLocally(list, { kind: "project.delete", id: "p1" })).toEqual([]);
+  });
+});
+
+describe("inbox triage offline (D-036)", () => {
+  it("files a capture made offline after the capture replays; a 404 means already filed", async () => {
+    const db = await outboxWith([
+      { kind: "inbox.capture", item: { id: "a1", text: "call the bank" } },
+      { kind: "inbox.triage", id: "a1", to: "task" },
+      { kind: "inbox.triage", id: "b2", to: "journal", date: "2026-10-22" },
+    ]);
+    const { api, calls } = fakeApi((op) => (op.startsWith("triage:b2") ? new ApiError(404, "not_found") : undefined));
+    const r = await replay(db, api);
+    expect(calls).toEqual(["capture:a1", "triage:a1:task", "triage:b2:journal:2026-10-22"]);
+    expect(r).toMatchObject({ applied: 3, rejected: [], pending: 0 });
+  });
+
+  it("removes the item from the local inbox", () => {
+    const items = [{ id: "a1", text: "x", created_at: 1 }, { id: "b2", text: "y", created_at: 2 }];
+    expect(applyInboxLocally(items, { kind: "inbox.triage", id: "a1", to: "note" }).map((i) => i.id)).toEqual(["b2"]);
   });
 });
 

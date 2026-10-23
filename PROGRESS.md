@@ -62,10 +62,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
 | `cargo test -p directory-core` | ✅ 115 passed |
-| Vitest | ✅ 87 passed |
+| Vitest | ✅ 89 passed |
 | `npm run test:handoff` | ✅ 50 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
-| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 29/29 |
+| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 30/30 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -79,8 +79,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Search uses SQLite `LIKE`, which is case-insensitive for ASCII only, and
   reads whole note and journal bodies for snippets. Move to FTS5 when data
   grows.
-- Offline: links and inbox triage need a
-  connection. A new edit queued in the instant between a replay finishing
+- Offline: links need a connection. An item triaged offline appears in
+  Tasks, Notes, or Journal only after it syncs (D-036). A new edit queued in the instant between a replay finishing
   and the open editor learning the new version can show a spurious
   conflict (resolved with "keep mine"). A project deleted offline leaves
   its tasks showing the old project until the next sync refresh.
@@ -120,6 +120,23 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-23 — Inbox: triage works offline (D-036); e2e harness fixes
+- **Web:** the `inbox.triage` outbox op, `useInbox.triage` through
+  `runOrQueue` (returns `"queued"`), and the Inbox says what will happen
+  on reconnect.
+- **Tests:** web 89 (a capture plus a triage replay in order; a 404 is
+  done); browser e2e 30/30, with a new step: capture and triage offline,
+  then the task is on the server and the inbox is empty.
+- **Found while testing:** the new step failed one run in three. The
+  Inbox shows its cached list before the server copy, and the test
+  triaged a stale item (deleted earlier by an API call), which the app
+  correctly treated as gone. The step now waits for the server copy. The
+  intermittent "Offline edits" failure may be the same stale-cache race in
+  the test.
+- **Harness:** `scripts/lib/devserver.mjs` retries migrations (up to 3
+  times, 3 s apart) on `SQLITE_READONLY`/`BUSY`. Back-to-back runs on
+  Windows hit it while the previous run released its state.
 
 ### 2026-10-23 — Journal: delete works offline (D-035)
 - **Web:** `journal.delete` outbox op, `LocalDb.dropMerged`, and the

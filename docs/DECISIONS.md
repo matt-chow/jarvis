@@ -136,6 +136,18 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-036 — Inbox triage queues offline as one server-side operation
+**Status:** accepted
+- Triage offline queues `inbox.triage { id, to, date? }` and removes the
+  item from the cached inbox. On replay the server does what it does
+  online: it creates the task or note, or appends to the journal, then
+  deletes the item. The journal date is today's date when queued.
+- A 404 on replay means the item is gone (deleted or filed from another
+  device), so the op is done. The new task or note appears after the sync,
+  with no local preview, so ids and titles come from the server rules.
+- Appending to a journal day bumps its version. An open editor with an
+  older version then gets the usual conflict choice, so nothing is lost.
+
 ## D-035 — Journal days can be deleted offline
 **Status:** accepted
 - Delete queues a `journal.delete` op (a 404 on replay counts as done)
