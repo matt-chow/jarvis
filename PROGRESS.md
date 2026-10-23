@@ -62,7 +62,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
 | `cargo test -p directory-core` | ✅ 115 passed |
-| Vitest | ✅ 85 passed |
+| Vitest | ✅ 86 passed |
 | `npm run test:handoff` | ✅ 50 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
 | `npm run test:browser` (headless Edge, virtual passkey) | ✅ 28/28 |
@@ -79,7 +79,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Search uses SQLite `LIKE`, which is case-insensitive for ASCII only, and
   reads whole note and journal bodies for snippets. Move to FTS5 when data
   grows.
-- Offline: links, pinning, journal delete, and inbox triage need a
+- Offline: links, journal delete, and inbox triage need a
   connection. A new edit queued in the instant between a replay finishing
   and the open editor learning the new version can show a spurious
   conflict (resolved with "keep mine"). A project deleted offline leaves
@@ -120,6 +120,12 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-23 — Notes: pinning works offline (D-034)
+- **Web:** `NoteFields.pinned`; the Notes editor saves the pin with the
+  text through `useAutosaveDoc` instead of a separate request.
+- **Tests:** web 86 (a queued pin replays with its base version);
+  browser e2e 28/28 (pinning with the server stopped).
 
 ### 2026-10-23 — M5 slice: Upload quota race and orphaned blobs (D-033)
 - **Core:** `FileService::commit_upload` re-checks usage and rolls back;

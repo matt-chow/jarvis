@@ -51,6 +51,8 @@ export type Op =
 export interface NoteFields {
   title: string;
   body: string;
+  /** Saved with the text so pinning works offline (D-034); absent in older queued saves. */
+  pinned?: boolean;
 }
 
 export interface JournalFields {

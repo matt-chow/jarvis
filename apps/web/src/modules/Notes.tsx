@@ -7,10 +7,10 @@ import { SAVE_STATUS_TEXT, useAutosaveDoc } from "../hooks/useAutosaveDoc";
 import { useCachedList } from "../hooks/useCachedList";
 import { useHashParam } from "../hooks/useHashParam";
 import { useNotes, type NotesState } from "../hooks/useNotes";
-import { reportIfUnauthorized } from "../hooks/useSession";
 import { api } from "../lib/api";
 import { formatDate, formatTime } from "../lib/format";
 import type { Note, NoteSummary } from "../lib/notes";
+import type { NoteFields } from "../lib/sync";
 import { resolveLinks } from "../lib/wiki";
 
 // Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
@@ -54,7 +54,7 @@ export function Notes({ online }: ModuleProps) {
           </p>
         ) : null}
         {offline && state.notes && (
-          <p className="mb-3 text-sm text-muted">Offline: changes are saved on this device and sync when you reconnect. Pinning and links need a connection.</p>
+          <p className="mb-3 text-sm text-muted">Offline: changes are saved on this device and sync when you reconnect. Links need a connection.</p>
         )}
         {state.error && !offline && (
           <p role="alert" className="mb-3 text-sm text-bad">
@@ -131,11 +131,11 @@ function NoteEditor(props: {
 }) {
   const { id, state, offline } = props;
   const { saved } = state;
-  const editor = useAutosaveDoc<Note, { title: string; body: string }>({
+  const editor = useAutosaveDoc<Note, Required<NoteFields>>({
     cacheKey: `note:${id}`,
     noun: "note",
     load: () => api.note(id),
-    fieldsOf: (n) => ({ title: n?.title ?? "", body: n?.body ?? "" }),
+    fieldsOf: (n) => ({ title: n?.title ?? "", body: n?.body ?? "", pinned: n?.pinned ?? false }),
     withFields: (n, f) => ({ ...(n ?? { id, pinned: false, created_at: Date.now(), updated_at: Date.now() }), ...f }),
     save: (f, expected) => api.updateNote(id, { ...f, expected_updated_at: expected }),
     toOp: (fields, base) => ({ kind: "note.save", id, fields, base }),
@@ -162,13 +162,9 @@ function NoteEditor(props: {
     );
   }
 
-  // Pinning and links are online-only.
+  // Links are online-only; pinning is saved with the text (D-034).
   const online = !offline && !editor.fromCache;
-  const togglePin = () =>
-    void api.updateNote(id, { pinned: !note.pinned }).then((n) => {
-      editor.adopt({ ...n, title: editor.fields.title, body: editor.fields.body });
-      saved(n);
-    }, reportIfUnauthorized);
+  const pinned = editor.fields.pinned ?? note.pinned;
 
   return (
     <Panel
@@ -181,8 +177,8 @@ function NoteEditor(props: {
           >
             {SAVE_STATUS_TEXT[editor.status]}
           </span>
-          <Button className={small} disabled={!online} aria-pressed={note.pinned} onClick={togglePin}>
-            {note.pinned ? "unpin" : "pin"}
+          <Button className={small} aria-pressed={pinned} onClick={() => editor.edit({ pinned: !pinned })}>
+            {pinned ? "unpin" : "pin"}
           </Button>
         </span>
       }

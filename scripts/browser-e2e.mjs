@@ -692,12 +692,16 @@ try {
     await page.reload();
     await page.waitForText("session saved on this device");
     await page.hash("/notes");
-    await page.waitForText("Pinning and links need a connection");
+    await page.waitForText("Links need a connection");
     await page.click("Meeting notes");
     await waitFor("cached note body", async () =>
       ((await page.evaluate(`document.querySelector('textarea[aria-label="Note body"]')?.value ?? ""`))).includes("Agenda: launch plan"),
     );
     await page.fill("Note title", "Edited with the server down");
+    await page.waitForText("saved on this device");
+    // Pinning is saved with the text, so it works offline too (D-034).
+    await page.click("pin");
+    await waitFor("pinned offline", () => page.evaluate(`[...document.querySelectorAll("button")].some((b) => b.innerText.toLowerCase() === "unpin" && b.getAttribute("aria-pressed") === "true")`));
     await page.waitForText("saved on this device");
     await page.hash("/tasks");
     await page.waitForText("Offline: changes are saved on this device");

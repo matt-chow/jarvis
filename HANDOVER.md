@@ -1,13 +1,14 @@
 # Handover
 
-Base commit: 716841d
+Base commit: 31c262d
 From: claude → To: (either; no handoff in progress)
 Updated: 2026-10-23
 
 ## Status
 Everything unblocked is committed, including the offline library (D-030)
 offline search (D-031), read-only offline Files (D-032), and
-the upload quota race / orphaned-blob retry (D-033, migration 0020). Gate: verify, smoke, and browser e2e 28/28.
+the upload quota race / orphaned-blob retry (D-033, migration 0020), and offline
+note pinning (D-034). Gate: verify, smoke, and browser e2e 28/28.
 
 ## In progress
 Nothing uncommitted.

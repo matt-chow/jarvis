@@ -136,6 +136,16 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-034 — Pinning a note is part of its versioned save
+**Status:** accepted
+- `pinned` joins the note's autosaved fields, so the pin button edits
+  the draft like typing does. Online it saves with `expected_updated_at`;
+  offline it joins the coalesced `note.save` op. Each version holds one
+  write, so a pin can't make a queued text save look like a conflict.
+- A pin made on two devices is a conflict like any other edit, with the
+  same "use theirs" or "keep mine" choice. Saves queued by older builds
+  have no `pinned` field and leave it unchanged.
+
 ## D-033 — Quota re-checked after upload; failed blob deletes are retried
 **Status:** accepted
 - `commit_upload` checks usage again after inserting the metadata. If

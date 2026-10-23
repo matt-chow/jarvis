@@ -46,7 +46,7 @@ function fakeApi(fail: (op: string) => unknown = () => undefined) {
     },
     // Saves answer with server version 50 (notes) or 60 (journal).
     updateNote: async (id, patch) => {
-      await run(`note-save:${id}@${patch.expected_updated_at}`);
+      await run(`note-save:${id}@${patch.expected_updated_at}${patch.pinned === undefined ? "" : ` pinned=${patch.pinned}`}`);
       return note(id, 50);
     },
     deleteNote: async (id) => void (await run(`note-delete:${id}`)),
@@ -199,6 +199,15 @@ describe("document saves (D-018)", () => {
     expect(r).toMatchObject({ applied: 2, rejected: [], pending: 0, versions: { "note:n1": 50, "journal:2026-10-22": 60 } });
     expect(r.conflicts).toEqual([{ doc: "note:n2", mine: { title: "", body: "stale edit" }, theirs }]);
     expect(await db.outbox()).toHaveLength(0);
+  });
+
+  it("replays a pin made offline with the text, as one versioned save (D-034)", async () => {
+    const db = await outboxWith([]);
+    await db.enqueueMerged("note:n1", () => save("n1", "draft", 7));
+    await db.enqueueMerged("note:n1", (q) => ({ kind: "note.save", id: "n1", fields: { title: "", body: "draft", pinned: true }, base: (q as { base?: number }).base }));
+    const { api, calls } = fakeApi(() => undefined);
+    await replay(db, api);
+    expect(calls).toEqual(["note-save:n1@7 pinned=true"]);
   });
 
   it("keeps an edit made while its save was in flight, rebased on the version just written", async () => {

@@ -65,7 +65,7 @@ part of every slice, not deferred to the end.
 | In-app ePub reader, dependency-free, with automatic progress (D-029) | ✅ done |
 | Offline library: cached list, downloaded documents, queued reading progress (D-030) | ✅ done |
 | In-app PDF reader | **needs owner approval**: either a pdf.js dependency or serving PDFs inline (a change to the user-content sandbox policy); PDFs open in the browser's viewer meanwhile |
-| Offline editing: tasks, projects, inbox capture (D-017); notes, journal with stored conflicts (D-018) | ✅ done; links and pinning stay online-only |
+| Offline editing: tasks, projects, inbox capture (D-017); notes, journal with stored conflicts (D-018) | ✅ done; pinning offline too (D-034); links stay online-only |
 | Wiki: `[[links]]` between notes, create-from-link, backlinks (D-019) | ✅ done |
 
 ## M4 Personal OS (P4)
