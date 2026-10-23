@@ -136,6 +136,18 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-033 — Quota re-checked after upload; failed blob deletes are retried
+**Status:** accepted
+- `commit_upload` checks usage again after inserting the metadata. If
+  concurrent uploads pushed the owner over the quota, that upload's row
+  and blob are removed and it gets `507 quota_exceeded`. Usage can never
+  stay over the quota, though a burst may reject an upload that would have
+  fitted on its own.
+- A failed R2 delete (after a file delete, or a rolled-back upload) is
+  recorded in `blob_orphans` (migration 0020). Each upload and delete then
+  retries up to 5 of that owner's orphans. Keys outside the owner's
+  `u/<id>/f/` prefix are dropped, never deleted. No cron is used.
+
 ## D-032 — Files are read-only offline
 **Status:** accepted
 - Each folder listing (and the storage usage) is cached at

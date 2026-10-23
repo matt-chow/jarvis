@@ -204,7 +204,20 @@ pub trait FileRepository {
     async fn update(&self, entry: &FileEntry) -> Result<bool, String>;
     async fn delete(&self, owner_id: &str, id: &str) -> Result<bool, String>;
     async fn usage(&self, owner_id: &str) -> Result<u64, String>;
+    /// Remember a blob whose delete failed, so it can be retried (D-033).
+    async fn record_orphan(&self, owner_id: &str, key: &str, at: i64) -> Result<(), String>;
+    /// Oldest orphaned blob keys first.
+    async fn orphans(&self, owner_id: &str, limit: u32) -> Result<Vec<String>, String>;
+    async fn forget_orphan(&self, owner_id: &str, key: &str) -> Result<(), String>;
 }
+
+/// Deletes stored content (R2 in the Worker).
+pub trait BlobDeleter {
+    async fn delete(&self, key: &str) -> Result<(), String>;
+}
+
+/// Orphaned blobs retried per request: bounded so a request stays cheap.
+pub const ORPHAN_SWEEP: u32 = 5;
 
 fn backend(e: String) -> FileError {
     FileError::Backend(e)
@@ -383,12 +396,53 @@ impl<'a, R: FileRepository, E: Entropy + ?Sized> FileService<'a, R, E> {
 
     /// Record metadata after the content was stored. On `Err`, the caller
     /// must delete the blob it wrote.
+    ///
+    /// Usage is checked again after the insert: concurrent uploads can each
+    /// pass `prepare_upload`, and whichever lands over the quota is undone.
     pub async fn commit_upload(&self, entry: &FileEntry) -> Result<(), FileError> {
-        if self.repo.insert(entry).await.map_err(backend)? {
-            Ok(())
-        } else {
-            Err(FileError::Exists)
+        if !self.repo.insert(entry).await.map_err(backend)? {
+            return Err(FileError::Exists);
         }
+        let used = self.repo.usage(&entry.owner_id).await.map_err(backend)?;
+        if used > self.quota {
+            self.repo
+                .delete(&entry.owner_id, &entry.id)
+                .await
+                .map_err(backend)?;
+            return Err(FileError::QuotaExceeded {
+                used: used.saturating_sub(entry.size),
+                quota: self.quota,
+            });
+        }
+        Ok(())
+    }
+
+    /// Delete a blob; if that fails, remember it for a later sweep.
+    pub async fn remove_blob<B: BlobDeleter>(&self, blobs: &B, owner_id: &str, key: &str) {
+        if blobs.delete(key).await.is_err() {
+            // Best effort: if even this fails, the blob only wastes space.
+            let _ = self.repo.record_orphan(owner_id, key, self.now).await;
+        }
+    }
+
+    /// Retry up to `ORPHAN_SWEEP` failed blob deletes. Returns how many
+    /// were cleared. Only this owner's keys are touched.
+    pub async fn sweep_orphans<B: BlobDeleter>(&self, blobs: &B, p: &Principal) -> u32 {
+        let Ok(keys) = self.repo.orphans(&p.user_id, ORPHAN_SWEEP).await else {
+            return 0;
+        };
+        let prefix = blob_key(&p.user_id, "");
+        let mut cleared = 0;
+        for key in keys {
+            if key.starts_with(&prefix) && blobs.delete(&key).await.is_err() {
+                continue;
+            }
+            // A key outside the owner's prefix is never deleted, only dropped.
+            if self.repo.forget_orphan(&p.user_id, &key).await.is_ok() {
+                cleared += 1;
+            }
+        }
+        cleared
     }
 
     /// Rename and/or move (metadata only).
@@ -437,7 +491,7 @@ mod tests {
     use std::cell::RefCell;
 
     #[derive(Default)]
-    struct Memory(RefCell<Vec<FileEntry>>);
+    struct Memory(RefCell<Vec<FileEntry>>, RefCell<Vec<(String, String)>>);
 
     impl FileRepository for Memory {
         async fn list(
@@ -516,6 +570,43 @@ mod tests {
                 .filter(|f| f.owner_id == owner_id)
                 .map(|f| f.size)
                 .sum())
+        }
+        async fn record_orphan(&self, owner_id: &str, key: &str, _at: i64) -> Result<(), String> {
+            self.1.borrow_mut().push((owner_id.into(), key.into()));
+            Ok(())
+        }
+        async fn orphans(&self, owner_id: &str, limit: u32) -> Result<Vec<String>, String> {
+            Ok(self
+                .1
+                .borrow()
+                .iter()
+                .filter(|(o, _)| o == owner_id)
+                .take(limit as usize)
+                .map(|(_, k)| k.clone())
+                .collect())
+        }
+        async fn forget_orphan(&self, owner_id: &str, key: &str) -> Result<(), String> {
+            self.1
+                .borrow_mut()
+                .retain(|(o, k)| !(o == owner_id && k == key));
+            Ok(())
+        }
+    }
+
+    /// Blob store whose deletes fail while `failing` is set.
+    #[derive(Default)]
+    struct Blobs {
+        failing: std::cell::Cell<bool>,
+        deleted: RefCell<Vec<String>>,
+    }
+
+    impl BlobDeleter for Blobs {
+        async fn delete(&self, key: &str) -> Result<(), String> {
+            if self.failing.get() {
+                return Err("unavailable".into());
+            }
+            self.deleted.borrow_mut().push(key.into());
+            Ok(())
         }
     }
 
@@ -766,6 +857,66 @@ X-Evil: 1"
         assert_eq!(
             block_on(svc.get(&me(), &a.id)).unwrap_err(),
             FileError::NotFound
+        );
+    }
+
+    #[test]
+    fn concurrent_uploads_cannot_exceed_the_quota() {
+        let repo = Memory::default();
+        let e = CountingEntropy::default();
+        let svc = FileService::new(&repo, &e, 1, 100);
+        // Both pass the pre-check before either is recorded.
+        let a = block_on(svc.prepare_upload(&me(), "", "a", 60, None)).unwrap();
+        let b = block_on(svc.prepare_upload(&me(), "", "b", 60, None)).unwrap();
+        block_on(svc.commit_upload(&a)).unwrap();
+        assert_eq!(
+            block_on(svc.commit_upload(&b)).unwrap_err(),
+            FileError::QuotaExceeded {
+                used: 60,
+                quota: 100
+            }
+        );
+        assert_eq!(block_on(svc.usage(&me())).unwrap().used, 60, "rolled back");
+        assert!(block_on(svc.get(&me(), &b.id)).is_err());
+    }
+
+    #[test]
+    fn failed_blob_deletes_are_retried_later_and_only_for_the_owner() {
+        let repo = Memory::default();
+        let e = CountingEntropy::default();
+        let svc = FileService::new(&repo, &e, 1, 100);
+        let blobs = Blobs::default();
+        let mine = blob_key("u1", "f1");
+
+        blobs.failing.set(true);
+        block_on(svc.remove_blob(&blobs, "u1", &mine));
+        assert_eq!(
+            block_on(svc.sweep_orphans(&blobs, &me())),
+            0,
+            "still failing"
+        );
+        assert_eq!(repo.1.borrow().len(), 1, "kept for the next sweep");
+
+        // A key outside the owner's prefix is dropped without being deleted.
+        block_on(repo.record_orphan("u1", &blob_key("u2", "f9"), 1)).unwrap();
+        let other = Principal {
+            user_id: "u2".into(),
+            method: AuthMethod::Session,
+        };
+        blobs.failing.set(false);
+        assert_eq!(
+            block_on(svc.sweep_orphans(&blobs, &other)),
+            0,
+            "other owners' entries untouched"
+        );
+        assert_eq!(block_on(svc.sweep_orphans(&blobs, &me())), 2);
+        assert_eq!(*blobs.deleted.borrow(), vec![mine.clone()]);
+        assert!(repo.1.borrow().is_empty());
+
+        block_on(svc.remove_blob(&blobs, "u1", &mine));
+        assert!(
+            repo.1.borrow().is_empty(),
+            "a successful delete records nothing"
         );
     }
 }

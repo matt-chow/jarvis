@@ -165,6 +165,7 @@ JSON bodies are capped at 64 KiB.
   - `0017`: `automations` (trigger JSON, command template, last-run status).
   - `0018`: `playlists` (ordered file ids as JSON).
   - `0019`: `client_errors` (bounded per owner).
+  - `0020`: `blob_orphans` (R2 deletes to retry, D-033).
 - IndexedDB v3 adds a `media` store: tracks the owner chose to save for
   offline playback (blobs, explicit download; the service worker still never
   caches `/api/*`).

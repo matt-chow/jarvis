@@ -61,7 +61,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | Command | Result (2026-10-23) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
-| `cargo test -p directory-core` | ✅ 113 passed |
+| `cargo test -p directory-core` | ✅ 115 passed |
 | Vitest | ✅ 85 passed |
 | `npm run test:handoff` | ✅ 50 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
@@ -73,8 +73,9 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   if needed, switch to `opt-level = 3` or Web Crypto verification.
 - `rsa` 0.9 has advisory RUSTSEC-2023-0071 (Marvin timing). It affects
   private-key operations only; we only verify public-key signatures.
-- Files: the quota is checked before upload, so concurrent uploads can briefly
-  exceed it. A failed blob delete leaves an orphan object (no sweep yet).
+- Files: concurrent uploads can exceed the quota for the moment between
+  insert and re-check; the one over is then rolled back (D-033). Orphaned
+  blobs are retried only when their owner uploads or deletes again.
 - Search uses SQLite `LIKE`, which is case-insensitive for ASCII only, and
   reads whole note and journal bodies for snippets. Move to FTS5 when data
   grows.
@@ -119,6 +120,16 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-23 — M5 slice: Upload quota race and orphaned blobs (D-033)
+- **Core:** `FileService::commit_upload` re-checks usage and rolls back;
+  `BlobDeleter`, `remove_blob`, and `sweep_orphans` (bounded, owner-scoped).
+- **Worker:** migration 0020 `blob_orphans`, D1 repository methods,
+  `R2Blobs` implements `BlobDeleter`, upload and delete routes record and
+  sweep. Schema version 20.
+- **Tests:** core 115 (concurrent uploads, retry and owner scoping);
+  smoke: five concurrent 300 KB uploads against a 1 MB quota never leave
+  usage over it; browser e2e 28/28.
 
 ### 2026-10-23 — M3 slice: Offline Files (D-032)
 - **Web:** `modules/Files.tsx` caches each folder listing and usage

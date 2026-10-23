@@ -203,4 +203,49 @@ impl FileRepository for D1FileRepository {
         .map_err(err)?;
         Ok(n.unwrap_or(0.0) as u64)
     }
+
+    async fn record_orphan(&self, owner_id: &str, key: &str, at: i64) -> Result<(), String> {
+        stmt(
+            &self.db,
+            "INSERT INTO blob_orphans (owner_id, key, at) VALUES (?1, ?2, ?3)
+             ON CONFLICT (owner_id, key) DO NOTHING",
+            &[text(owner_id), text(key), int(at)],
+        )?
+        .run()
+        .await
+        .map_err(err)?;
+        Ok(())
+    }
+
+    async fn orphans(&self, owner_id: &str, limit: u32) -> Result<Vec<String>, String> {
+        #[derive(Deserialize)]
+        struct KeyRow {
+            key: String,
+        }
+        Ok(stmt(
+            &self.db,
+            "SELECT key FROM blob_orphans WHERE owner_id = ?1 ORDER BY at LIMIT ?2",
+            &[text(owner_id), int(limit.into())],
+        )?
+        .all()
+        .await
+        .map_err(err)?
+        .results::<KeyRow>()
+        .map_err(err)?
+        .into_iter()
+        .map(|r| r.key)
+        .collect())
+    }
+
+    async fn forget_orphan(&self, owner_id: &str, key: &str) -> Result<(), String> {
+        stmt(
+            &self.db,
+            "DELETE FROM blob_orphans WHERE owner_id = ?1 AND key = ?2",
+            &[text(owner_id), text(key)],
+        )?
+        .run()
+        .await
+        .map_err(err)?;
+        Ok(())
+    }
 }

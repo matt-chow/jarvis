@@ -55,3 +55,9 @@ impl R2Blobs {
         self.bucket.delete(key).await.map_err(|e| e.to_string())
     }
 }
+
+impl directory_core::files::BlobDeleter for R2Blobs {
+    async fn delete(&self, key: &str) -> Result<(), String> {
+        R2Blobs::delete(self, key).await
+    }
+}

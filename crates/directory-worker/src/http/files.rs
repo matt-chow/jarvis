@@ -146,12 +146,11 @@ pub async fn upload(req: Request, rc: RouteContext<()>) -> Result<Response> {
         return error(502, "storage_unavailable");
     }
     if let Err(e) = svc.commit_upload(&entry).await {
-        // Don't leave an orphaned blob behind.
-        if let Err(del) = c.blobs.delete(&key).await {
-            worker::console_error!("files: cleanup of {key} failed: {del}");
-        }
+        // Don't leave an orphaned blob behind (a failed delete is retried later).
+        svc.remove_blob(&c.blobs, &c.principal.user_id, &key).await;
         return file_error(e);
     }
+    svc.sweep_orphans(&c.blobs, &c.principal).await;
     json(201, &entry)
 }
 
@@ -229,16 +228,14 @@ pub async fn update(mut req: Request, rc: RouteContext<()>) -> Result<Response> 
 
 pub async fn delete(req: Request, rc: RouteContext<()>) -> Result<Response> {
     let c = try_or_respond!(ctx(&req, &rc).await?);
-    match c.service().delete(&c.principal, &id_param(&rc)).await {
+    let svc = c.service();
+    match svc.delete(&c.principal, &id_param(&rc)).await {
         Ok(entry) => {
-            // Metadata is gone first, so a failed blob delete only wastes space.
-            if let Err(e) = c
-                .blobs
-                .delete(&blob_key(&c.principal.user_id, &entry.id))
-                .await
-            {
-                worker::console_error!("files: R2 delete failed for {}: {e}", entry.id);
-            }
+            // Metadata is gone first; a failed blob delete is recorded and
+            // retried on this owner's next upload or delete (D-033).
+            let key = blob_key(&c.principal.user_id, &entry.id);
+            svc.remove_blob(&c.blobs, &c.principal.user_id, &key).await;
+            svc.sweep_orphans(&c.blobs, &c.principal).await;
             super::no_content()
         }
         Err(e) => file_error(e),

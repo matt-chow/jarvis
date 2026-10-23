@@ -215,6 +215,16 @@ async function local() {
       expect((await api.req("DELETE", `/api/v1/files/${up.json.id}`)).status === 204, "delete");
       expect((await api.req("GET", `/api/v1/files/${up.json.id}/content`)).status === 404, "gone");
       expect((await api.req("GET", "/api/v1/files/usage")).json.used === 0, "usage released");
+
+      // Concurrent uploads that each fit but together don't: usage never ends up over the quota (D-033).
+      const burst = await Promise.all(
+        Array.from({ length: 5 }, (_, i) => upload("burst", `part-${i}.bin`, new Uint8Array(300_000), "application/octet-stream")),
+      );
+      const stored = burst.filter((r) => r.status === 201);
+      expect(stored.length <= 3 && burst.every((r) => r.status === 201 || r.json.error === "quota_exceeded"), `burst → ${burst.map((r) => r.status)}`);
+      const after = (await api.req("GET", "/api/v1/files/usage")).json.used;
+      expect(after === stored.length * 300_000 && after <= 1_000_000, `burst usage → ${after}`);
+      for (const r of stored) expect((await api.req("DELETE", `/api/v1/files/${r.json.id}`)).status === 204, "burst cleanup");
     });
 
     await check("tasks: create, validate, subtasks one level deep, filters, completion, clear due date, cascade delete", async () => {
