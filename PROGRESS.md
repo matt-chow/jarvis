@@ -10,7 +10,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   owner approval** (see the readiness checklist in docs/ARCHITECTURE.md ›
   Deployment). **M2 JARVIS Alpha:** command layer ✅, presets ✅, `find` ✅,
   project commands ✅.
-  Voice is blocked on owner approval. **M3:** search ✅ (offline too), files ✅, library ✅ (offline too),
+  Voice is blocked on owner approval. **M3:** search ✅ (offline too), files ✅ (read-only offline), library ✅ (offline too),
   offline editing ✅, wiki ✅. **M4:** habits ✅, calendar ✅, dashboard ✅, automations ✅, music ✅.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
@@ -119,6 +119,16 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-23 — M3 slice: Offline Files (D-032)
+- **Web:** `modules/Files.tsx` caches each folder listing and usage
+  (`files:<folder>`). Offline it shows them read-only with a notice,
+  disables changes, and downloads files saved on the device from the
+  `media` store. A folder never opened here says it needs a connection.
+- **Tests:** browser e2e 28/28. With the server stopped, a cached folder
+  lists its file as "not on this device", upload is disabled, and an
+  unopened folder explains why it is empty. (Files has no unit-testable
+  logic beyond the component.)
 
 ### 2026-10-23 — M3 slice: Offline search (D-031)
 - **Web:**

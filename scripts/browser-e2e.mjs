@@ -670,6 +670,8 @@ try {
     await waitFor("note body cached", async () => (await page.evaluate(`document.querySelector('textarea[aria-label="Note body"]')?.value ?? ""`)).includes("Agenda: launch plan"));
     await page.hash("/tasks");
     await waitFor("tasks loaded", () => page.evaluate(`!!document.querySelector('input[aria-label="New task"]:not([disabled])')`));
+    await page.hash("/files?folder=uploads");
+    await page.waitForText("hello e2e.txt");
     await page.hash("/settings"); // the offline step expects to reopen on Settings
   });
 
@@ -708,6 +710,15 @@ try {
     await page.waitForText("Write the quarterly report");
     await page.fill("Search", "launch plan"); // a note body, cached when the note was opened
     await page.waitForText("Agenda: launch plan");
+    // Files: the last listing seen on this device, read-only.
+    await page.hash("/files?folder=uploads");
+    await page.waitForText("last copy of this folder seen on this device");
+    await page.waitForText("hello e2e.txt");
+    await page.waitForText("not on this device");
+    if (!(await page.evaluate(`[...document.querySelectorAll("button")].find((b) => b.innerText.toLowerCase() === "upload")?.disabled`)))
+      throw new Error("upload should be disabled offline");
+    await page.hash("/files?folder=never-opened");
+    await page.waitForText("hasn't been opened on this device yet");
   });
 } catch {
   // reported by step()

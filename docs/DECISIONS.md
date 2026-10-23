@@ -136,6 +136,18 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-032 — Files are read-only offline
+**Status:** accepted
+- Each folder listing (and the storage usage) is cached at
+  `files:<folder>` when it loads. Offline, or with the server
+  unreachable, Files shows that copy with a notice. Upload, new folder,
+  rename, move, and delete are disabled; queueing them offline would mean
+  queueing file bytes, which isn't worth the risk.
+- A file whose bytes are already on the device (a downloaded book or a
+  saved track, in the `media` store) can be downloaded from that copy.
+  Others are marked "not on this device".
+- Listings are cached per folder only once opened; nothing is prefetched.
+
 ## D-031 — Offline search reads the device cache, labelled as partial
 **Status:** accepted
 - When the browser is offline, or the search request fails with a network

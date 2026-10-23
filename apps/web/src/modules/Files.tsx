@@ -4,12 +4,32 @@ import { Button, Panel, inputClass } from "../components/ui";
 import { useHashParam } from "../hooks/useHashParam";
 import { reportIfUnauthorized } from "../hooks/useSession";
 import { api, ApiError, isNetworkError } from "../lib/api";
+import { localDb } from "../lib/db";
 import { breadcrumbs, filesRoute, joinFolder, type FileEntry, type Listing, type Usage } from "../lib/files";
 import { formatBytes, formatDate } from "../lib/format";
 
 // Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
 
 const small = "min-h-7 px-2 text-[10px]";
+
+/** The last listing of a folder seen on this device (D-032). */
+interface CachedFolder {
+  listing: Listing;
+  usage: Usage;
+}
+const cacheKey = (folder: string) => `files:${folder}`;
+
+/** Save a copy kept on this device (a downloaded book or track) under its name. */
+async function downloadSaved(file: FileEntry) {
+  const saved = await (await localDb()).getMedia(file.id);
+  if (!saved) throw new Error(`“${file.name}” isn't saved on this device.`);
+  const url = URL.createObjectURL(saved.blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = file.name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
 
 function describe(e: unknown, name?: string): string {
   if (e instanceof ApiError) {
@@ -34,24 +54,59 @@ export function Files({ online }: ModuleProps) {
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [newFolder, setNewFolder] = useState<string>();
+  /** Showing the copy saved on this device. */
+  const [stale, setStale] = useState(false);
+  const [saved, setSaved] = useState<Map<string, number>>(new Map());
+  const [loading, setLoading] = useState(true);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  const fromDevice = useCallback(async () => {
+    const db = await localDb().catch(() => undefined);
+    const cached = await db?.getValue<CachedFolder>(cacheKey(folder)).catch(() => undefined);
+    setSaved((await db?.mediaSizes().catch(() => undefined)) ?? new Map());
+    if (cached) {
+      setListing(cached.listing);
+      setUsage(cached.usage);
+    }
+    setStale(true);
+    return !!cached;
+  }, [folder]);
 
   const reload = useCallback(async () => {
     try {
-      const [l, u] = await Promise.all([api.files(folder), api.fileUsage()]);
-      setListing(l);
-      setUsage(u);
-      setError(undefined);
-    } catch (e) {
-      reportIfUnauthorized(e);
-      setError(describe(e));
+      if (!online) {
+        setError(undefined);
+        await fromDevice();
+        return;
+      }
+      try {
+        const [l, u] = await Promise.all([api.files(folder), api.fileUsage()]);
+        setListing(l);
+        setUsage(u);
+        setStale(false);
+        setError(undefined);
+        void localDb()
+          .then((db) => db.setValue<CachedFolder>(cacheKey(folder), { listing: l, usage: u }))
+          .catch(() => {});
+      } catch (e) {
+        reportIfUnauthorized(e);
+        // Unreachable: the offline notice explains; other errors are shown.
+        if (isNetworkError(e)) await fromDevice();
+        else setError(describe(e));
+      }
+    } finally {
+      setLoading(false);
     }
-  }, [folder]);
+  }, [folder, online]);
 
   useEffect(() => {
     setListing(undefined);
-    if (online) void reload();
-  }, [online, reload]);
+    setUsage(undefined);
+    setLoading(true);
+    void reload();
+  }, [reload]);
+
+  const offline = !online || stale;
 
   const uploadAll = async (files: FileList | File[]) => {
     const list = Array.from(files);
@@ -78,7 +133,7 @@ export function Files({ online }: ModuleProps) {
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
     setDragging(false);
-    if (!busy && online) void uploadAll(e.dataTransfer.files);
+    if (!busy && !offline) void uploadAll(e.dataTransfer.files);
   };
 
   const createFolder = (e: FormEvent) => {
@@ -89,14 +144,6 @@ export function Files({ online }: ModuleProps) {
     location.hash = filesRoute(joinFolder(folder, name)).slice(1);
   };
 
-  if (!online) {
-    return (
-      <Panel title="files">
-        <p className="text-sm text-muted">Files live in private cloud storage and need a connection.</p>
-      </Panel>
-    );
-  }
-
   const pct = usage && usage.quota > 0 ? Math.min(100, Math.round((usage.used / usage.quota) * 100)) : 0;
   return (
     <div onDragOver={(e) => (e.preventDefault(), setDragging(true))} onDragLeave={() => setDragging(false)} onDrop={onDrop}>
@@ -104,10 +151,10 @@ export function Files({ online }: ModuleProps) {
         title="files"
         actions={
           <span className="flex gap-1.5">
-            <Button className={small} disabled={busy} onClick={() => setNewFolder("")}>
+            <Button className={small} disabled={busy || offline} onClick={() => setNewFolder("")}>
               new folder
             </Button>
-            <Button variant="primary" className={small} disabled={busy} onClick={() => fileInput.current?.click()}>
+            <Button variant="primary" className={small} disabled={busy || offline} onClick={() => fileInput.current?.click()}>
               upload
             </Button>
           </span>
@@ -170,9 +217,16 @@ export function Files({ online }: ModuleProps) {
           </form>
         )}
 
-        <div className={`rounded-sm border border-dashed px-3 py-2 text-center text-xs ${dragging ? "border-accent text-accent" : "border-line text-muted"}`}>
+        {offline && (
+          <p className="mb-3 rounded-sm border border-line bg-sunken/60 px-3 py-2 text-sm text-muted">
+            Offline: {listing ? "this is the last copy of this folder seen on this device. " : ""}Files saved on this device (books and
+            tracks) can be downloaded; uploads and changes need a connection.
+          </p>
+        )}
+
+        {!offline && <div className={`rounded-sm border border-dashed px-3 py-2 text-center text-xs ${dragging ? "border-accent text-accent" : "border-line text-muted"}`}>
           {busy ? status : "Drop files here to upload to this folder"}
-        </div>
+        </div>}
         {!busy && status && (
           <p role="status" className="mt-2 text-sm text-muted">
             {status}
@@ -185,7 +239,15 @@ export function Files({ online }: ModuleProps) {
         )}
 
         {!listing ? (
-          <p className="mt-4 text-sm text-muted">Loading…</p>
+          loading ? (
+            <p className="mt-4 text-sm text-muted">Loading…</p>
+          ) : offline ? (
+            <p className="mt-4 text-sm text-muted">This folder hasn't been opened on this device yet, so it needs a connection.</p>
+          ) : (
+            <Button className={`${small} mt-4`} onClick={() => void reload()}>
+              retry
+            </Button>
+          )
         ) : listing.folders.length === 0 && listing.files.length === 0 ? (
           <p className="mt-4 text-sm text-muted">
             {folder ? "This folder is empty. Upload a file to keep it." : "No files yet. Upload something to get started."}
@@ -203,7 +265,7 @@ export function Files({ online }: ModuleProps) {
               </li>
             ))}
             {listing.files.map((f) => (
-              <FileRow key={f.id} file={f} disabled={busy} onChanged={reload} onError={setError} />
+              <FileRow key={f.id} file={f} disabled={busy || offline} offline={offline} savedBytes={saved.get(f.id)} onChanged={reload} onError={setError} />
             ))}
           </ul>
         )}
@@ -212,7 +274,16 @@ export function Files({ online }: ModuleProps) {
   );
 }
 
-function FileRow({ file, disabled, onChanged, onError }: { file: FileEntry; disabled: boolean; onChanged: () => Promise<void>; onError: (m: string) => void }) {
+function FileRow(props: {
+  file: FileEntry;
+  disabled: boolean;
+  offline: boolean;
+  /** Bytes kept on this device (a saved book or track), if any. */
+  savedBytes?: number;
+  onChanged: () => Promise<void>;
+  onError: (m: string) => void;
+}) {
+  const { file, disabled, onChanged, onError } = props;
   const [mode, setMode] = useState<"view" | "rename" | "move" | "delete">("view");
   const [value, setValue] = useState("");
 
@@ -239,11 +310,25 @@ function FileRow({ file, disabled, onChanged, onError }: { file: FileEntry; disa
         <span aria-hidden className="w-4 text-center font-mono text-muted">
           ▤
         </span>
-        <a href={api.fileContentUrl(file.id)} download={file.name} className="min-w-0 flex-1 truncate text-sm hover:text-accent">
-          {file.name}
-        </a>
+        {!props.offline ? (
+          <a href={api.fileContentUrl(file.id)} download={file.name} className="min-w-0 flex-1 truncate text-sm hover:text-accent">
+            {file.name}
+          </a>
+        ) : props.savedBytes !== undefined ? (
+          <button
+            type="button"
+            onClick={() => void downloadSaved(file).catch((e: Error) => onError(e.message))}
+            aria-label={`Download “${file.name}” from this device`}
+            className="min-w-0 flex-1 truncate text-left text-sm hover:text-accent"
+          >
+            {file.name}
+          </button>
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-sm text-muted">{file.name}</span>
+        )}
         <span className="font-mono text-[11px] text-muted">
           {formatBytes(file.size)} · {formatDate(file.updated_at)}
+          {props.offline && (props.savedBytes !== undefined ? " · on this device" : " · not on this device")}
         </span>
         {mode === "view" && (
           <span className="flex gap-1">

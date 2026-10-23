@@ -1,12 +1,12 @@
 # Handover
 
-Base commit: 61715e9
+Base commit: 9587b11
 From: claude → To: (either; no handoff in progress)
 Updated: 2026-10-23
 
 ## Status
 Everything unblocked is committed, including the offline library (D-030)
-and offline search (D-031). Gate: verify, smoke, and browser e2e 28/28.
+offline search (D-031), and read-only offline Files (D-032). Gate: verify, smoke, and browser e2e 28/28.
 
 ## In progress
 Nothing uncommitted.

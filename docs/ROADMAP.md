@@ -60,6 +60,7 @@ part of every slice, not deferred to the end.
 | Private file management (folders, streamed content, quota) | ✅ done |
 | Universal search (substring across text modules) | ✅ done; full-text index later, behind `SearchSource` |
 | Offline search over the device cache (D-031) | ✅ done |
+| Offline Files: cached folder listings, saved copies downloadable (D-032) | ✅ done |
 | PDF/ePub library with reading progress | ✅ done |
 | In-app ePub reader, dependency-free, with automatic progress (D-029) | ✅ done |
 | Offline library: cached list, downloaded documents, queued reading progress (D-030) | ✅ done |
