@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import type { ModuleProps } from "../App";
 import { Button, Panel, inputClass } from "../components/ui";
-import { describeError } from "../hooks/useCachedList";
+import { documentBytes, useLibrary, type LibraryState } from "../hooks/useLibrary";
 import { reportIfUnauthorized } from "../hooks/useSession";
 import { api } from "../lib/api";
 import { filesRoute } from "../lib/files";
+import { formatBytes } from "../lib/format";
 import { STATUS_LABEL, documentTitle, isPdf, type LibraryItem, type ReadingStatus } from "../lib/library";
 import { EpubReader } from "./EpubReader";
 
@@ -18,65 +19,66 @@ const STATUS_TONE: Record<ReadingStatus | "unread", string> = {
   unread: "text-muted",
 };
 
-/** Open a PDF in a new tab via a blob URL (the API serves files as attachments). */
+/** Open a PDF in the browser's viewer in a new tab (from the saved copy when there is one). */
 async function openPdf(fileId: string) {
   const tab = window.open("", "_blank");
-  const res = await fetch(api.fileContentUrl(fileId), { credentials: "same-origin" });
-  if (!res.ok) {
+  try {
+    const blob = await documentBytes(fileId);
+    const url = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
+    if (tab) tab.location.href = url;
+    else window.location.href = url;
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (e) {
     tab?.close();
-    throw new Error("Couldn't open the document.");
+    throw e;
   }
-  const url = URL.createObjectURL(new Blob([await res.blob()], { type: "application/pdf" }));
-  if (tab) tab.location.href = url;
-  else window.location.href = url;
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 export function Library({ online }: ModuleProps) {
-  const [items, setItems] = useState<LibraryItem[]>();
-  const [error, setError] = useState<string>();
+  const library = useLibrary(online);
+  const { list } = library;
   const [editing, setEditing] = useState<string>();
   const [reading, setReading] = useState<string>();
-
-  const reload = useCallback(async () => {
-    try {
-      setItems(await api.library());
-      setError(undefined);
-    } catch (e) {
-      reportIfUnauthorized(e);
-      setError(describeError(e, "document"));
-    }
-  }, []);
-
-  useEffect(() => {
-    if (online) void reload();
-  }, [online, reload]);
-
-  if (!online) {
-    return (
-      <Panel title="library">
-        <p className="text-sm text-muted">The library needs a connection.</p>
-      </Panel>
-    );
-  }
-
+  const offline = list.stale || !online;
+  const items = list.items;
   const current = items?.filter((i) => i.progress?.status === "reading") ?? [];
   const open = items?.find((i) => i.file.id === reading);
+
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5">
-      {open && <EpubReader key={open.file.id} file={open.file} progress={open.progress} onClose={() => setReading(undefined)} onSaved={() => void reload()} />}
+      {open && (
+        <EpubReader
+          key={open.file.id}
+          file={open.file}
+          progress={open.progress}
+          onClose={() => setReading(undefined)}
+          onProgress={(patch) => library.setProgress(open.file.id, patch)}
+        />
+      )}
       <Panel title={`library${items ? ` · ${items.length}` : ""}`}>
         <p className="mb-3 text-sm text-muted">
           PDFs and ePubs from your <a href={filesRoute("")} className="text-accent underline-offset-4 hover:underline">Files</a>. Track
-          where you are in each one.
+          where you are in each one, and save books to this device to read offline.
         </p>
-        {error && (
-          <p role="alert" className="mb-3 text-sm text-bad">
-            {error}
+        {offline && items && (
+          <p className="mb-3 rounded-sm border border-line bg-sunken/60 px-3 py-2 text-sm text-muted">
+            Offline: books saved on this device can be read; progress is saved here and syncs when you reconnect.
           </p>
         )}
-        {!items ? (
+        {list.error && !offline && (
+          <p role="alert" className="mb-3 text-sm text-bad">
+            {list.error}
+          </p>
+        )}
+        {list.loading && !items ? (
           <p className="text-sm text-muted">Loading…</p>
+        ) : !items ? (
+          <div className="text-sm">
+            <p className="text-muted">The library couldn't be loaded.</p>
+            <Button className={`${small} mt-2`} onClick={list.reload}>
+              retry
+            </Button>
+          </div>
         ) : items.length === 0 ? (
           <p className="text-sm text-muted">No documents yet. Upload a PDF or ePub in Files and it appears here.</p>
         ) : (
@@ -87,11 +89,11 @@ export function Library({ online }: ModuleProps) {
                 <DocumentRow
                   key={item.file.id}
                   item={item}
+                  library={library}
+                  offline={offline}
                   editing={editing === item.file.id}
                   onEdit={(on) => setEditing(on ? item.file.id : undefined)}
-                  onChanged={reload}
                   onRead={() => setReading(item.file.id)}
-                  onError={setError}
                 />
               ))}
             </ul>
@@ -104,28 +106,28 @@ export function Library({ online }: ModuleProps) {
 
 function DocumentRow(props: {
   item: LibraryItem;
+  library: LibraryState;
+  offline: boolean;
   editing: boolean;
   onEdit: (on: boolean) => void;
-  onChanged: () => Promise<void>;
-  onError: (m: string) => void;
   /** Open an ePub in the reader. */
   onRead: () => void;
 }) {
   const { file, progress } = props.item;
+  const { library } = props;
   const status = progress?.status ?? "unread";
+  const savedBytes = library.saved.get(file.id);
+  const available = !props.offline || savedBytes !== undefined;
   const [page, setPage] = useState(String(progress?.current_page ?? ""));
   const [total, setTotal] = useState(String(progress?.total_pages ?? ""));
   const [busy, setBusy] = useState(false);
+  const fail = (m: string | undefined) => library.list.setError(m);
 
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     try {
       await fn();
-      await props.onChanged();
       props.onEdit(false);
-    } catch (e) {
-      reportIfUnauthorized(e);
-      props.onError(describeError(e, "document"));
     } finally {
       setBusy(false);
     }
@@ -136,7 +138,7 @@ function DocumentRow(props: {
     const patch: { current_page?: number; total_pages?: number } = {};
     if (total.trim()) patch.total_pages = Number(total);
     if (page.trim()) patch.current_page = Number(page);
-    void act(() => api.setProgress(file.id, patch));
+    void act(() => library.setProgress(file.id, patch));
   };
 
   return (
@@ -146,25 +148,34 @@ function DocumentRow(props: {
           <span className="block truncate text-sm">{documentTitle(file)}</span>
           <span className="font-mono text-[11px] text-muted">
             <span className={STATUS_TONE[status]}>{STATUS_LABEL[status]}</span>
-            {progress?.current_page != null && progress.total_pages != null && ` · p. ${progress.current_page} of ${progress.total_pages}`}
+            {progress?.current_page != null && progress.total_pages != null && ` · ${isPdf(file) ? "p." : "ch."} ${progress.current_page} of ${progress.total_pages}`}
             {` · ${isPdf(file) ? "PDF" : "ePub"}`}
+            {savedBytes !== undefined && ` · saved offline (${formatBytes(savedBytes)})`}
           </span>
         </span>
-        <span className="flex gap-1">
+        <span className="flex flex-wrap gap-1">
           {isPdf(file) ? (
-            <Button className={small} onClick={() => void openPdf(file.id).catch((e: Error) => props.onError(e.message))}>
+            <Button className={small} disabled={!available} onClick={() => void openPdf(file.id).catch((e: Error) => fail(e.message))}>
               open
             </Button>
           ) : (
-            <Button className={small} variant="primary" onClick={props.onRead}>
+            <Button className={small} variant="primary" disabled={!available} onClick={props.onRead}>
               read
             </Button>
           )}
-          {!isPdf(file) && (
-            <a href={api.fileContentUrl(file.id)} download={file.name} className="inline-flex min-h-7 items-center rounded-sm border border-line px-2 font-mono text-[10px] uppercase hover:bg-sunken">
-              download
-            </a>
-          )}
+          <Button
+            className={small}
+            disabled={busy || (props.offline && savedBytes === undefined)}
+            aria-label={savedBytes !== undefined ? `Remove “${documentTitle(file)}” from this device` : `Save “${documentTitle(file)}” for offline`}
+            onClick={() =>
+              void act(async () => {
+                if (savedBytes !== undefined) await library.unsave(file.id);
+                else fail(await library.save(file.id));
+              })
+            }
+          >
+            {savedBytes !== undefined ? "remove download" : "download"}
+          </Button>
           <Button className={small} onClick={() => props.onEdit(!props.editing)}>
             progress
           </Button>
@@ -188,12 +199,29 @@ function DocumentRow(props: {
           </form>
           <div className="flex flex-wrap gap-1.5">
             {(["want", "reading", "finished"] as const).map((s) => (
-              <Button key={s} className={small} disabled={busy || status === s} onClick={() => void act(() => api.setProgress(file.id, { status: s }))}>
+              <Button key={s} className={small} disabled={busy || status === s} onClick={() => void act(() => library.setProgress(file.id, { status: s }))}>
                 {STATUS_LABEL[s].toLowerCase()}
               </Button>
             ))}
             {progress && (
-              <Button variant="danger" className={small} disabled={busy} onClick={() => void act(() => api.clearProgress(file.id))}>
+              <Button
+                variant="danger"
+                className={small}
+                disabled={busy || props.offline}
+                onClick={() =>
+                  void act(() =>
+                    library.list
+                      .mutate(
+                        async () => {
+                          await api.clearProgress(file.id);
+                          return true;
+                        },
+                        (cur) => cur.map((i) => (i.file.id === file.id ? { ...i, progress: null } : i)),
+                      )
+                      .catch(reportIfUnauthorized),
+                  )
+                }
+              >
                 reset
               </Button>
             )}

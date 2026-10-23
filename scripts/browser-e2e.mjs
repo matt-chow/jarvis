@@ -242,6 +242,28 @@ try {
     });
     if (await page.evaluate(`window.pwned === true`)) throw new Error("ePub script ran");
     await page.click("Close the reader");
+
+    // Offline: a saved book opens from the device; progress queues and syncs.
+    await page.click("Save “Tiny” for offline");
+    await page.waitForText("saved offline");
+    await page.send("Network.enable", {});
+    const net = (offline) => page.send("Network.emulateNetworkConditions", { offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    await net(true);
+    await waitFor("browser offline", () => page.evaluate("!navigator.onLine"));
+    await page.waitForText("books saved on this device can be read");
+    await page.click("read");
+    await page.waitForText("Chapter 2 of 2"); // resumes where it was left
+    await page.click("Previous chapter");
+    await page.waitForText("Chapter 1 of 2");
+    await page.waitForText("1 pending");
+    await net(false);
+    await waitFor("offline progress synced", async () => {
+      const lib = await page.evaluate(`fetch("/api/v1/library").then((r) => r.json())`);
+      // Finished books stay on their last page server-side; the position moves.
+      return lib.items.find((i) => i.file.id === id)?.progress?.position === "epub:a.xhtml";
+    }, 30_000);
+    await page.click("Close the reader");
+    await page.click("Remove “Tiny” from this device");
     await page.evaluate(`fetch("/api/v1/files/${id}", { method: "DELETE", headers: { Origin: location.origin } })`);
   });
 

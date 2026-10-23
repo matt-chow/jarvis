@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Panel } from "../components/ui";
 import { reportIfUnauthorized } from "../hooks/useSession";
-import { api } from "../lib/api";
 import { chapterDocument, parseBook, unzip, type Book } from "../lib/epub";
 import type { FileEntry } from "../lib/files";
-import type { Progress } from "../lib/library";
+import type { Progress, ProgressPatch } from "../lib/library";
+import { documentBytes } from "../hooks/useLibrary";
 
 // Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
 
@@ -16,7 +16,17 @@ const SAVE_DELAY_MS = 600;
  * scripts, opaque origin); moving between chapters saves reading progress
  * (chapter n of N).
  */
-export function EpubReader({ file, progress, onClose, onSaved }: { file: FileEntry; progress: Progress | null; onClose: () => void; onSaved: () => void }) {
+export function EpubReader(props: {
+  file: FileEntry;
+  progress: Progress | null;
+  onClose: () => void;
+  /** Save progress (queued while offline). */
+  onProgress: (patch: ProgressPatch) => Promise<unknown>;
+}) {
+  const { file, progress, onClose } = props;
+  // Latest callback without re-running the save effect when the parent re-renders.
+  const onProgress = useRef(props.onProgress);
+  onProgress.current = props.onProgress;
   const [book, setBook] = useState<Book>();
   const [error, setError] = useState<string>();
   const [index, setIndex] = useState(0);
@@ -27,9 +37,8 @@ export function EpubReader({ file, progress, onClose, onSaved }: { file: FileEnt
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch(api.fileContentUrl(file.id), { credentials: "same-origin" });
-        if (!res.ok) throw new Error(`Couldn't load the book (${res.status}).`);
-        const b = parseBook(await unzip(await res.arrayBuffer()));
+        // The copy saved on this device when there is one (reads offline).
+        const b = parseBook(await unzip(await (await documentBytes(file.id)).arrayBuffer()));
         if (cancelled) return;
         setBook(b);
         // Resume where the saved progress says, if it was saved for this book.
@@ -70,15 +79,12 @@ export function EpubReader({ file, progress, onClose, onSaved }: { file: FileEnt
       return;
     }
     const t = setTimeout(() => {
-      api
-        .setProgress(file.id, { current_page: index + 1, total_pages: book.chapters.length, position: `epub:${book.chapters[index].path}`.slice(0, 200) })
-        .then(onSaved, (e: unknown) => {
-          reportIfUnauthorized(e);
-          setError("Couldn't save your place.");
-        });
+      onProgress.current({ current_page: index + 1, total_pages: book.chapters.length, position: `epub:${book.chapters[index].path}`.slice(0, 200) }).catch(() =>
+        setError("Couldn't save your place."),
+      );
     }, SAVE_DELAY_MS);
     return () => clearTimeout(t);
-  }, [book, index, file.id, onSaved]);
+  }, [book, index]);
 
   const go = (by: number) => book && setIndex((i) => Math.min(Math.max(i + by, 0), book.chapters.length - 1));
 

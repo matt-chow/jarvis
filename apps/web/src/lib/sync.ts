@@ -14,6 +14,7 @@ import type { OutboxEntry } from "./db";
 import { withCheck, type Habit, type HabitPatch, type HabitView, type NewHabit } from "./habits";
 import type { InboxItem } from "./inbox";
 import type { JournalEntry, PutJournal } from "./journal";
+import { applyProgress, type LibraryItem, type Progress, type ProgressPatch } from "./library";
 import type { Note, NotePatch } from "./notes";
 import type { Preferences, PreferencesPatch } from "./preferences";
 import type { NewProject, Project, ProjectPatch } from "./projects";
@@ -43,7 +44,9 @@ export type Op =
   | { kind: "event.update"; id: string; patch: EventPatch }
   | { kind: "event.delete"; id: string }
   /** Last write wins, so replays are safe. */
-  | { kind: "prefs.update"; patch: PreferencesPatch };
+  | { kind: "prefs.update"; patch: PreferencesPatch }
+  /** Reading progress (a PUT, so replays are safe). */
+  | { kind: "library.progress"; file_id: string; patch: ProgressPatch };
 
 export interface NoteFields {
   title: string;
@@ -95,6 +98,7 @@ export interface SyncApi {
   updateEvent(id: string, patch: EventPatch): Promise<CalendarEvent>;
   deleteEvent(id: string): Promise<void>;
   updatePreferences(patch: PreferencesPatch): Promise<Preferences>;
+  setProgress(fileId: string, patch: ProgressPatch): Promise<Progress>;
 }
 
 export interface SyncResult {
@@ -178,12 +182,16 @@ async function apply(api: SyncApi, op: Op): Promise<number | void> {
       case "prefs.update":
         await api.updatePreferences(op.patch);
         return;
+      case "library.progress":
+        await api.setProgress(op.file_id, op.patch);
+        return;
     }
   } catch (e) {
     // Already applied by an earlier, interrupted replay.
     const isCreate = op.kind.endsWith(".create") || op.kind === "inbox.capture";
     // A check-in for a habit deleted meanwhile has nothing left to do.
-    const isDelete = op.kind.endsWith(".delete") || op.kind === "habit.check";
+    // A check-in or reading progress for something deleted meanwhile has nothing left to do.
+    const isDelete = op.kind.endsWith(".delete") || op.kind === "habit.check" || op.kind === "library.progress";
     if (e instanceof ApiError && isCreate && e.code === "exists") return;
     if (e instanceof ApiError && isDelete && e.status === 404) return;
     throw e;
@@ -232,6 +240,8 @@ function describeOp(op: Op): string {
       return "delete an event";
     case "prefs.update":
       return "save your dashboard layout";
+    case "library.progress":
+      return "save your reading progress";
   }
 }
 
@@ -402,4 +412,10 @@ export function applyEventLocally(events: CalendarEvent[], op: Op, now = Date.no
     default:
       return events;
   }
+}
+
+/** Apply a reading-progress op to a local library list. */
+export function applyLibraryLocally(items: LibraryItem[], op: Op, now = Date.now()): LibraryItem[] {
+  if (op.kind !== "library.progress") return items;
+  return items.map((i) => (i.file.id === op.file_id ? { ...i, progress: applyProgress(op.file_id, i.progress, op.patch, now) } : i));
 }

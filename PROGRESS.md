@@ -10,7 +10,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   owner approval** (see the readiness checklist in docs/ARCHITECTURE.md ›
   Deployment). **M2 JARVIS Alpha:** command layer ✅, presets ✅, `find` ✅,
   project commands ✅.
-  Voice is blocked on owner approval. **M3:** search ✅, files ✅, library ✅,
+  Voice is blocked on owner approval. **M3:** search ✅, files ✅, library ✅ (offline too),
   offline editing ✅, wiki ✅. **M4:** habits ✅, calendar ✅, dashboard ✅, automations ✅, music ✅.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
@@ -58,7 +58,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ### Verification commands and latest results
 
-| Command | Result (2026-10-22) |
+| Command | Result (2026-10-23) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
 | `cargo test -p directory-core` | ✅ 113 passed |
@@ -119,6 +119,24 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-23 — M3 slice: Offline library (D-030)
+- **Web:**
+  - `hooks/useLibrary.ts`: cached library list, documents saved to the
+    IndexedDB media store ("download" / "remove download"), and
+    `documentBytes`, which prefers the saved copy.
+  - `lib/library.ts` `applyProgress` mirrors the server rules; `lib/sync.ts`
+    adds the `library.progress` outbox op (a 404 on replay drops it).
+  - Library and the ePub reader use the saved copy and queue progress
+    offline; reset stays online-only.
+- **Tests:**
+  - web: `applyProgress` parity cases and the outbox op.
+  - browser e2e: download "Tiny", go offline, the book opens from the
+    device at the saved chapter, a chapter change queues (1 pending),
+    and it syncs on reconnect.
+- **Gotcha:** e2e `click` matches text by substring, so the download
+  button is labelled "download" rather than "save offline" (it clashed
+  with "save").
 
 ### 2026-10-22 — M3 slice: In-app ePub reader (D-029)
 - **Web:**

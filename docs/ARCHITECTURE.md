@@ -172,7 +172,7 @@ JSON bodies are capped at 64 KiB.
   File content lives at `u/<user_id>/f/<file_id>`; names and folders live in D1.
 - **IndexedDB** database `directory` (v2, adds `outbox`) has a `kv` store with cached
   copies for offline use: health, the last verified session user,
-  task, project, habit, event, and note lists, each opened note (`note:<id>`), and each
+  task, project, habit, event, note, and library lists, each opened note (`note:<id>`), and each
   journal month and day (`journal:<YYYY-MM>`, `journal:<date>`). Unresolved
   sync conflicts live at `conflict:<doc>` (D-018). Outbox entries carry an
   optional `doc` key, a `merge` key for coalesced document saves, and a `rev`
@@ -198,6 +198,8 @@ JSON bodies are capped at 64 KiB.
   header shows `sync: N pending`; rejected changes appear as a dismissible
   alert. Task creates accept a client `id` (32 hex; a repeat gives
   `409 exists`).
+- **Library offline (D-030):** downloaded documents live in the `media`
+  store; reading progress queues as a `library.progress` outbox op.
 - **Offline sessions:** if the session check can't reach the server, the app
   uses the last verified user cached in IndexedDB and says so in Settings.
   Device-local modules keep working. A `401` from any call re-checks the session

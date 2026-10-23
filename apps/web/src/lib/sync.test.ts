@@ -63,6 +63,10 @@ function fakeApi(fail: (op: string) => unknown = () => undefined) {
       return applyEventLocally([], { kind: "event.create", event: { id, title: "", start_date: "2026-01-01" } })[0];
     },
     deleteEvent: async (id) => void (await run(`event-delete:${id}`)),
+    setProgress: async (fileId) => {
+      await run(`progress:${fileId}`);
+      return { file_id: fileId, status: "reading", current_page: 1, total_pages: 2, position: null, percent: 50, started_at: 0, finished_at: null, updated_at: 0 };
+    },
     updatePreferences: async (patch) => {
       await run(`prefs:${JSON.stringify(patch)}`);
       return {};

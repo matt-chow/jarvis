@@ -1,16 +1,16 @@
 # Handover
 
-Base commit: 69a2461
+Base commit: 080c106
 From: claude → To: (either; no handoff in progress)
-Updated: 2026-10-22 23:30
+Updated: 2026-10-23
 
 ## Status
-Everything unblocked on the roadmap is done and committed. `npm run ci` is
-green: core 113, web 75, handoff 50, smoke (including a route-wide security
-sweep), browser e2e 27/27.
+Everything unblocked is committed, including the offline library (D-030).
 
 ## In progress
-Nothing uncommitted.
+Nothing uncommitted. The D-030 offline library slice is committed; its
+gate ran as verify + smoke + browser e2e separately (the combined
+`npm run ci` was stopped once for low memory).
 
 ## Next steps
 1. Owner decisions block the remaining work (see PROGRESS.md › Unresolved

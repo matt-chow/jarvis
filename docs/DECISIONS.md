@@ -136,6 +136,20 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-030 — The library works offline: saved documents and queued progress
+**Status:** accepted
+- The library list is cached like other lists (`library:last`).
+- "Download" saves a document's bytes in the IndexedDB `media` store,
+  the same store music uses (D-028's "forget this device" clears it).
+  The reader and the PDF opener use the saved copy first, then the
+  server. Offline, only saved documents can be opened.
+- Reading progress is an outbox op (`library.progress`). It applies
+  locally with `applyProgress`, which mirrors the server's rules (percent
+  from pages, status changes, finished pins the last page), and replays
+  on reconnect. A 404 on replay means the file was deleted, so the op is
+  dropped. The last write wins: progress has no version.
+- Resetting progress stays online-only.
+
 ## D-029 — ePubs are read in-app without a dependency; PDFs wait for approval
 **Status:** accepted
 - An ePub is a zip of XHTML chapters. `lib/epub.ts` reads the zip with the
