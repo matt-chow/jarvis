@@ -9,6 +9,7 @@
 #![allow(async_fn_in_trait)]
 
 pub mod automations;
+pub mod backup;
 pub mod calendar;
 pub mod encoding;
 pub mod entropy;

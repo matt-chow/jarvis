@@ -265,7 +265,8 @@ try {
     });
     if (!elsewhere.ok) throw new Error(`edit from elsewhere → ${elsewhere.status}`);
     await net(false);
-    await waitFor("synced", async () => !(await page.text()).includes("pending"), 30_000);
+    // The sync chip reads "N pending" while queued and "syncing…" while replaying.
+    await waitFor("synced", async () => !/pending|syncing…/i.test(await page.text()), 30_000);
     const tasks = await page.evaluate(`fetch("/api/v1/tasks").then((r) => r.json())`);
     if (!tasks.tasks.some((t) => t.title === "Written offline")) throw new Error("offline task not on server");
     const inbox = await page.evaluate(`fetch("/api/v1/inbox").then((r) => r.json())`);
@@ -400,6 +401,23 @@ try {
     if (!focus || focus.tracks.length !== 1 || lib.tracks[0].name !== "Tone.wav") throw new Error(`music: ${JSON.stringify(lib)}`);
     await shot("music");
     await page.click("Close player");
+  });
+
+  await step("Restore: an export file adds missing records and reports what it did", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "directory-restore-"));
+    const file = join(dir, "export.json");
+    const note = { id: "5e".repeat(16), title: "", body: "Restored from a file", pinned: false, created_at: 1_700_000_000_000, updated_at: 1_700_000_000_000 };
+    writeFileSync(file, JSON.stringify({ format: "directory-export", format_version: 1, notes: [note], files: [{}] }));
+    await page.hash("/settings");
+    await page.setFile('input[aria-label="Export file to restore"]', file);
+    await page.waitForText("This file has 1 notes.");
+    await page.waitForText("upload those again in Files");
+    await page.click("restore");
+    await page.waitForText("Restore finished.");
+    await page.waitForText("Notes: 1 added, 0 already here");
+    const n = await page.evaluate(`fetch("/api/v1/notes/${note.id}").then((r) => r.json())`);
+    if (n.body !== note.body || n.created_at !== note.created_at) throw new Error(`restored note: ${JSON.stringify(n)}`);
+    await page.evaluate(`fetch("/api/v1/notes/${note.id}", { method: "DELETE", headers: { Origin: location.origin } })`);
   });
 
   await step("Projects: create, add a task from the project, progress updates", async () => {

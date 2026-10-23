@@ -20,7 +20,7 @@ pub fn is_audio(f: &FileEntry) -> bool {
     f.content_type.starts_with("audio/") || AUDIO_EXTENSIONS.iter().any(|e| name.ends_with(e))
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Playlist {
     pub id: String,
     #[serde(skip)]
@@ -198,6 +198,11 @@ impl<'a, R: MusicRepository, E: Entropy + ?Sized> MusicService<'a, R, E> {
 }
 
 #[cfg(test)]
+pub(crate) mod testing {
+    pub use super::tests::Memory as MemoryMusic;
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::entropy::testing::CountingEntropy;
@@ -206,7 +211,7 @@ mod tests {
     use std::cell::RefCell;
 
     #[derive(Default)]
-    struct Memory(RefCell<Vec<FileEntry>>, RefCell<Vec<Playlist>>);
+    pub struct Memory(pub RefCell<Vec<FileEntry>>, pub RefCell<Vec<Playlist>>);
 
     impl MusicRepository for Memory {
         async fn files(&self, owner_id: &str) -> Result<Vec<FileEntry>, String> {

@@ -110,6 +110,11 @@ impl<'a, R: PreferencesRepository> PreferencesService<'a, R> {
 }
 
 #[cfg(test)]
+pub(crate) mod testing {
+    pub use super::tests::Memory as MemoryPreferences;
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::identity::AuthMethod;
@@ -118,7 +123,7 @@ mod tests {
     use std::collections::HashMap;
 
     #[derive(Default)]
-    struct Memory(RefCell<HashMap<String, String>>);
+    pub struct Memory(pub RefCell<HashMap<String, String>>);
 
     impl PreferencesRepository for Memory {
         async fn get(&self, owner_id: &str) -> Result<Option<String>, String> {

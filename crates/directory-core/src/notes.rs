@@ -15,7 +15,7 @@ pub const MAX_LIST: u32 = 2_000;
 pub const HEAD_CHARS: usize = 400;
 const EXCERPT_CHARS: usize = 160;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Note {
     pub id: String,
     #[serde(skip)]

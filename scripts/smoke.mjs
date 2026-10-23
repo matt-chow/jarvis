@@ -448,6 +448,62 @@ async function local() {
       expect((await fetch(`${baseUrl}/api/v1/music`)).status === 401, "anonymous → 401");
     });
 
+    await check("restore: export → delete → import brings records back with ids and timestamps; a second import only skips", async () => {
+      const post = async (path, body) => (await api.req("POST", path, { body })).json;
+      const project = await post("/api/v1/projects", { name: "Restore me" });
+      const top = await post("/api/v1/tasks", { title: "Parent", project_id: project.id });
+      const sub = await post("/api/v1/tasks", { title: "Child", parent_id: top.id });
+      const note = await post("/api/v1/notes", { body: "# Restored note\nbody" });
+      await api.req("PUT", "/api/v1/journal/2026-10-20", { body: { body: "Restored day", mood: 3 } });
+      const habit = await post("/api/v1/habits", { name: "Restore habit" });
+      await api.req("PUT", `/api/v1/habits/${habit.id}/checkins/2026-10-20`);
+      const event = await post("/api/v1/events", { title: "Restored event", start_date: "2026-10-25" });
+      await post("/api/v1/links", { from: { kind: "task", id: top.id }, to: { kind: "note", id: note.id } });
+      const doc = (await api.req("GET", "/api/v1/export")).json;
+
+      await api.req("DELETE", `/api/v1/tasks/${top.id}`); // takes the subtask and the link with it
+      await api.req("DELETE", `/api/v1/projects/${project.id}`);
+      await api.req("DELETE", `/api/v1/notes/${note.id}`);
+      await api.req("DELETE", "/api/v1/journal/2026-10-20");
+      await api.req("DELETE", `/api/v1/habits/${habit.id}`);
+      await api.req("DELETE", `/api/v1/events/${event.id}`);
+
+      const kinds = { projects: doc.projects, tasks: [...doc.tasks].sort((a, b) => Boolean(a.parent_id) - Boolean(b.parent_id)), notes: doc.notes, journal: doc.journal, habits: doc.habits, events: doc.events, links: doc.links };
+      const restore = async () => {
+        const out = {};
+        for (const [kind, records] of Object.entries(kinds)) {
+          const r = await api.req("POST", `/api/v1/import/${kind}`, { body: { records } });
+          expect(r.status === 200, `${kind} → ${r.status} ${r.text}`);
+          out[kind] = r.json;
+        }
+        return out;
+      };
+      const first = await restore();
+      for (const [kind, r] of Object.entries(first)) expect(r.rejected.length === 0, `${kind} rejected: ${JSON.stringify(r.rejected)}`);
+
+      const tasks = (await api.req("GET", "/api/v1/tasks")).json.tasks;
+      const child = tasks.find((t) => t.id === sub.id);
+      expect(child && child.parent_id === top.id && child.created_at === sub.created_at, "subtask restored under its parent, same timestamps");
+      expect(tasks.find((t) => t.id === top.id)?.project_id === project.id, "project assignment restored");
+      expect((await api.req("GET", `/api/v1/notes/${note.id}`)).json.body === "# Restored note\nbody", "note body");
+      expect((await api.req("GET", "/api/v1/journal/2026-10-20")).json.mood === 3, "journal day");
+      const h = (await api.req("GET", "/api/v1/habits?today=2026-10-20")).json.habits.find((x) => x.id === habit.id);
+      expect(h && h.checkins.includes("2026-10-20"), "habit check-ins");
+      expect((await api.req("GET", `/api/v1/links?kind=task&id=${top.id}`)).json.links.length === 1, "link restored");
+
+      const second = await restore();
+      expect(Object.values(second).every((r) => r.inserted === 0 && r.rejected.length === 0), `second run inserted: ${JSON.stringify(second)}`);
+      expect((await api.req("POST", "/api/v1/import/files", { body: { records: [] } })).status === 400, "files can't be imported");
+      expect((await fetch(`${baseUrl}/api/v1/import/notes`, { method: "POST" })).status === 401, "anonymous → 401");
+
+      await api.req("DELETE", `/api/v1/tasks/${top.id}`);
+      await api.req("DELETE", `/api/v1/projects/${project.id}`);
+      await api.req("DELETE", `/api/v1/notes/${note.id}`);
+      await api.req("DELETE", "/api/v1/journal/2026-10-20");
+      await api.req("DELETE", `/api/v1/habits/${habit.id}`);
+      await api.req("DELETE", `/api/v1/events/${event.id}`);
+    });
+
     await check("export: one JSON download with every record, no credential material", async () => {
       const task = (await api.req("POST", "/api/v1/tasks", { body: { title: "Export me" } })).json;
       const note = (await api.req("POST", "/api/v1/notes", { body: { body: "Exported note body" } })).json;

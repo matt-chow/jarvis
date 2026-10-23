@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 pub const MAX_TEXT: usize = 2_000;
 pub const MAX_LIST: u32 = 500;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InboxItem {
     pub id: String,
     #[serde(skip)]

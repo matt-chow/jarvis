@@ -37,7 +37,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
     note, or today's journal.
   - Links between tasks, notes, projects, and journal days, with a
     cross-module picker and deep links.
-  - Full JSON data export from Settings.
+  - Full JSON data export from Settings, and restore from an export
+    (merge-only).
   - Library of PDFs/ePubs with reading progress.
   - JARVIS text commands (tasks, projects, agenda, habit check-ins, notes,
     journal, capture, list, find) with preview,
@@ -60,10 +61,11 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | Command | Result (2026-10-22) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
-| `cargo test -p directory-core` | ✅ 106 passed |
-| Vitest | ✅ 53 passed |
+| `cargo test -p directory-core` | ✅ 109 passed |
+| Vitest | ✅ 56 passed |
+| `npm run test:handoff` | ✅ 50 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
-| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 24/24 |
+| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 25/25 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -104,8 +106,9 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. P5 hardening: backup restore (import from the export), error
-   monitoring, accessibility pass, iOS check.
+1. P5: accessibility pass (keyboard focus, labels, contrast) over the
+   provisional screens; then error recovery and monitoring options within
+   the free tier.
 2. Search over events and habits.
 3. Remaining owner decisions: deploy approval, voice, AI provider, reader
    dependency.
@@ -113,6 +116,31 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-22 — M5 slice: Backup restore (D-025)
+- **Core:**
+  - `backup` module: `ImportTargets` (the module repositories),
+    per-kind import with the same validation as creates, ids and
+    timestamps kept, skip-if-present, caps, and an export header check.
+  - Exported structs derive `Deserialize`.
+  - Test fakes for links, preferences, and music are reachable from other
+    modules' tests.
+- **Worker:** `POST /api/v1/import/{kind}`, a 4 MiB body limit, and D1
+  targets.
+- **Web:** `lib/backup.ts` plans the batches (dependency order, subtasks
+  after parents, ≤ 100 records and ≤ 1 MB each). Settings › your data ›
+  restore shows file contents, progress, and a per-kind summary; it says
+  files need re-uploading and that it's safe to run again.
+- **Fix:** the offline browser step waited only for "pending" to clear;
+  it now also waits for "syncing…" (it was a flaky pass).
+- **Tests:**
+  - core 109: dependency order, no overwrite, malformed and invalid
+    records, owner reassignment, links, preferences, batch and header
+    checks.
+  - web 56: batch planning.
+  - smoke: export, delete, import round trip on D1 (ids, timestamps,
+    subtasks, check-ins, links); a second run only skips; 401.
+  - browser e2e 25/25: restore a file from Settings.
 
 ### 2026-10-22 — Tooling: Claude Code ↔ Codex handoff safeguards
 - **Scripts (bash, read-only unless noted):**

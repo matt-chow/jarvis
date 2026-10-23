@@ -4,6 +4,7 @@ import { deviceLabel } from "../components/AuthScreen";
 import { Button, Panel } from "../components/ui";
 import { reportIfUnauthorized } from "../hooks/useSession";
 import { api, ApiError, isNetworkError, type DeviceToken, type PasskeyInfo } from "../lib/api";
+import { KINDS, KIND_LABELS, planImport, type ExportPlan, type ImportKind, type ImportReport } from "../lib/backup";
 import { formatDate } from "../lib/format";
 import { localDate } from "../lib/tasks";
 import { creationRequest, describePasskeyError, encodeRegistration } from "../lib/webauthn";
@@ -208,13 +209,127 @@ export function Settings({ online, session }: ModuleProps) {
 
       <Panel title="your data" className="lg:col-span-2">
         <p className="text-sm text-muted">
-          Download everything as one JSON file: tasks, projects, notes, journal, inbox, links, and the file list. File
+          Download everything as one JSON file: tasks, projects, notes, journal, inbox, habits, events, playlists, links, and the file list. File
           contents stay in Files. Sign-in credentials are never included.
         </p>
         <Button className="mt-3" disabled={busy || !online} onClick={() => void run(downloadExport)}>
           export my data
         </Button>
+        <Restore online={online} />
       </Panel>
+    </div>
+  );
+}
+
+type Totals = Record<ImportKind, ImportReport>;
+
+/** Restore from an export file: adds what's missing, never overwrites (D-025). */
+function Restore({ online }: { online: boolean }) {
+  const [plan, setPlan] = useState<ExportPlan>();
+  const [problem, setProblem] = useState<string>();
+  const [progress, setProgress] = useState<string>();
+  const [totals, setTotals] = useState<Partial<Totals>>();
+  const [running, setRunning] = useState(false);
+
+  const choose = async (file: File | undefined) => {
+    setPlan(undefined);
+    setTotals(undefined);
+    setProblem(undefined);
+    if (!file) return;
+    try {
+      setPlan(planImport(JSON.parse(await file.text())));
+    } catch (e) {
+      setProblem(e instanceof SyntaxError ? "That file isn't valid JSON." : String(e instanceof Error ? e.message : e));
+    }
+  };
+
+  const restore = async (p: ExportPlan) => {
+    setRunning(true);
+    setProblem(undefined);
+    const sum: Partial<Totals> = {};
+    try {
+      for (const [i, b] of p.batches.entries()) {
+        setProgress(`Restoring ${KIND_LABELS[b.kind].toLowerCase()}… (batch ${i + 1} of ${p.batches.length})`);
+        const r = await api.importBatch(b.kind, b.records);
+        const t = (sum[b.kind] ??= { inserted: 0, skipped: 0, rejected: [] });
+        t.inserted += r.inserted;
+        t.skipped += r.skipped;
+        t.rejected.push(...r.rejected);
+        setTotals({ ...sum });
+      }
+      setProgress("Restore finished.");
+    } catch (e) {
+      reportIfUnauthorized(e);
+      // Batches already sent are kept; running the restore again skips them.
+      setProblem(`Restore stopped: ${describe(e)} Run it again to continue; restored records are skipped.`);
+      setProgress(undefined);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="mt-5 border-t border-line pt-4">
+      <p className="label mb-1">restore</p>
+      <p className="text-sm text-muted">
+        Add records from an export file to this account. Anything already here (same id, or a journal day that has an entry) is kept as
+        is, so it's safe to run more than once.
+      </p>
+      <input
+        type="file"
+        accept="application/json,.json"
+        aria-label="Export file to restore"
+        disabled={!online || running}
+        onChange={(e) => void choose(e.target.files?.[0])}
+        className="mt-3 text-xs"
+      />
+      {problem && (
+        <p role="alert" className="mt-2 text-sm text-bad">
+          {problem}
+        </p>
+      )}
+      {plan && (
+        <div className="mt-3 text-sm">
+          <p>
+            This file has{" "}
+            {KINDS.filter((k) => plan.counts[k] > 0)
+              .map((k) => `${plan.counts[k]} ${KIND_LABELS[k].toLowerCase()}`)
+              .join(", ") || "nothing to restore"}
+            .
+          </p>
+          {plan.files > 0 && (
+            <p className="mt-1 text-muted">
+              It lists {plan.files} file{plan.files === 1 ? "" : "s"}, but file contents aren't in exports: upload those again in Files.
+            </p>
+          )}
+          <Button className="mt-2" variant="primary" disabled={running || !online || plan.batches.length === 0} onClick={() => void restore(plan)}>
+            {running ? "restoring…" : "restore"}
+          </Button>
+        </div>
+      )}
+      {progress && (
+        <p role="status" className="mt-2 text-sm text-muted">
+          {progress}
+        </p>
+      )}
+      {totals && (
+        <ul className="mt-2 font-mono text-[11px]">
+          {KINDS.filter((k) => totals[k]).map((k) => {
+            const t = totals[k]!;
+            return (
+              <li key={k}>
+                {KIND_LABELS[k]}: {t.inserted} added, {t.skipped} already here
+                {t.rejected.length > 0 && (
+                  <span className="text-bad">
+                    , {t.rejected.length} not restored ({t.rejected.slice(0, 3).map((r) => r.reason).join("; ")}
+                    {t.rejected.length > 3 ? "; …" : ""})
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

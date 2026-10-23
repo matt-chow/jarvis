@@ -49,7 +49,7 @@ impl Repeat {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Event {
     pub id: String,
     #[serde(skip)]
@@ -168,7 +168,7 @@ fn date(raw: &str, field: &'static str) -> Result<String, CalendarError> {
 }
 
 /// Normalize and check an event's fields (shared by create and update).
-fn check(mut e: Event) -> Result<Event, CalendarError> {
+pub(crate) fn check(mut e: Event) -> Result<Event, CalendarError> {
     e.title =
         validate::line(&e.title, MAX_TITLE).map_err(|w| CalendarError::Invalid("title", w))?;
     e.start_date = date(&e.start_date, "start_date")?;

@@ -16,7 +16,7 @@ pub const MAX_WINDOW_DAYS: i64 = 366;
 pub const DEFAULT_WINDOW_DAYS: i64 = 28;
 const MS_PER_DAY: i64 = 86_400_000;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Habit {
     pub id: String,
     #[serde(skip)]
@@ -109,7 +109,7 @@ pub fn mask_to_days(mask: u8) -> Vec<u8> {
     (0..7).filter(|d| mask & (1 << d) != 0).collect()
 }
 
-fn valid_days(days: Option<Vec<u8>>) -> Result<Vec<u8>, HabitError> {
+pub(crate) fn valid_days(days: Option<Vec<u8>>) -> Result<Vec<u8>, HabitError> {
     let Some(days) = days else {
         return Ok((0..7).collect());
     };

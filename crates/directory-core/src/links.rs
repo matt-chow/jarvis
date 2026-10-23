@@ -247,6 +247,11 @@ impl<'a, R: LinkRepository, E: Entropy + ?Sized> LinkService<'a, R, E> {
 }
 
 #[cfg(test)]
+pub(crate) mod testing {
+    pub use super::tests::Memory as MemoryLinks;
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::entropy::testing::CountingEntropy;
@@ -256,9 +261,10 @@ mod tests {
     use std::collections::HashMap;
 
     #[derive(Default)]
-    struct Memory {
-        entities: RefCell<HashMap<(String, EntityRef), String>>,
-        links: RefCell<Vec<Link>>,
+    pub struct Memory {
+        /// (owner, entity) → title: what exists.
+        pub entities: RefCell<HashMap<(String, EntityRef), String>>,
+        pub links: RefCell<Vec<Link>>,
     }
 
     impl LinkRepository for Memory {

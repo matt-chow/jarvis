@@ -136,6 +136,24 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-025 — Restore is a merge-only import of the export, in small batches
+**Status:** accepted
+- `POST /api/v1/import/{kind}` takes at most 100 records of one kind. The
+  client splits an export into batches (≤ 1 MB each) in dependency order:
+  projects, tasks (parents first), notes, journal, inbox, habits, events,
+  playlists, links, preferences. Small batches keep each request within
+  the Workers Free CPU budget.
+- Records keep their ids and timestamps and become the importing owner's.
+  A record that already exists (same id, or a journal day with an entry,
+  or a link between the same two items) is skipped, never overwritten. So
+  restore is safe to repeat and to resume after a failure.
+- Every record is validated like an ordinary create. Caps (D-022) apply.
+  Subtasks need their parent; links need both ends in the account. Tasks
+  whose project is missing are kept, unassigned. Preferences apply only if
+  the account has none.
+- File contents aren't in exports, so files and reading progress aren't
+  restored; the importer says how many files to upload again.
+
 ## D-024 — Automations: event-driven rules that run pre-approved JARVIS commands
 **Status:** accepted (extends D-016)
 - A rule is a trigger and a JARVIS command template. Triggers in v1: a task

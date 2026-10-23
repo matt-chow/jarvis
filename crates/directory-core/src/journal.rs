@@ -11,7 +11,7 @@ pub const MAX_RANGE_DAYS: i64 = 366;
 pub const HEAD_CHARS: usize = 400;
 const EXCERPT_CHARS: usize = 160;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Entry {
     #[serde(skip)]
     pub owner_id: String,

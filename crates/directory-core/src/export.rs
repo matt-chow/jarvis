@@ -14,13 +14,13 @@ use crate::notes::Note;
 use crate::preferences::Preferences;
 use crate::projects::Project;
 use crate::tasks::Task;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub const FORMAT: &str = "directory-export";
 /// Bump when the document shape changes incompatibly.
 pub const FORMAT_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinkRecord {
     pub id: String,
     pub a: EntityRef,
@@ -40,7 +40,7 @@ impl From<Link> for LinkRecord {
 }
 
 /// A habit with every check-in date, oldest first.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HabitRecord {
     #[serde(flatten)]
     pub habit: Habit,

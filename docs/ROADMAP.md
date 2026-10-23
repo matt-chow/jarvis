@@ -74,5 +74,12 @@ part of every slice, not deferred to the end.
 | Customizable dashboard (widgets, layout saved to the account) | ✅ done |
 
 ## M5 1.0 (P5)
-Security review, performance, accessibility audit, backup/restore, error
-recovery, monitoring, mobile (iOS) verification, storage quotas, full E2E suite.
+
+| Slice | Status |
+| --- | --- |
+| List caps enforced at create, no silent truncation (D-022) | ✅ done |
+| Backup restore: merge-only import of the export (D-025) | ✅ done (file contents need re-upload) |
+| HTTP Range for file content | ✅ done |
+| Security review, performance, accessibility audit | planned |
+| Error recovery and monitoring | planned (free-tier options only) |
+| Mobile (iOS) verification | needs a device |
