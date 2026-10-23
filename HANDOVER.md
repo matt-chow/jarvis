@@ -1,25 +1,30 @@
 # Handover
 
-Base commit: deeb702
+Base commit: 69a2461
 From: claude → To: (either; no handoff in progress)
-Updated: 2026-10-22 20:35
+Updated: 2026-10-22 23:30
 
 ## Status
-All slices through M4 and the first M5 slices (caps, Range, restore) are
-committed. `npm run ci` is green: core 109, web 56, handoff 50, smoke,
-browser e2e 25/25.
+Everything unblocked on the roadmap is done and committed. `npm run ci` is
+green: core 113, web 75, handoff 50, smoke (including a route-wide security
+sweep), browser e2e 27/27.
 
 ## In progress
-Nothing uncommitted. Next: an accessibility pass.
+Nothing uncommitted.
 
 ## Next steps
-1. P5 accessibility pass over the provisional screens: visible keyboard
-   focus, labelled controls, status/alert roles, contrast of muted text.
-   Add a browser e2e check (for example, every button has an accessible name).
-2. Error recovery and monitoring within the free tier (no paid services).
-3. Search over events and habits.
-4. Owner decisions pending: first deploy, voice input, AI provider, and the
-   in-app PDF/ePub reader dependency (see PROGRESS.md).
+1. Owner decisions block the remaining work (see PROGRESS.md › Unresolved
+   decisions):
+   - First Cloudflare deploy (`wrangler login`, R2 activation, hostname
+     vars). Afterwards: remote smoke (`BASE_URL=… npm run smoke`), Worker CPU
+     measurement, and optionally `[observability]` logs (D-027).
+   - Voice input via the browser's speech service (sends audio to the
+     vendor).
+   - An AI intent provider and its budget.
+   - An in-app PDF/ePub reader dependency (pdf.js/epub.js).
+   - iOS verification on a device.
+2. Watch item: one intermittent "Offline edits" browser failure, not seen
+   in the last five full runs.
 
 ## Working tree
 Clean except this file. No stashes.
@@ -28,6 +33,6 @@ Clean except this file. No stashes.
 - Windows: prefix PATH with `~/.cargo/bin` for Rust.
 - Scripted shell edits (sed, heredocs, `node -e`) drop backslashes in this
   environment. Edit text containing backslashes with an editor tool.
-- Full gate: `npm run ci` (about 9 minutes).
+- Full gate: `npm run ci` (about 10 minutes).
 
 ## Handoff log
