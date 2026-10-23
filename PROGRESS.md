@@ -62,7 +62,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
 | `cargo test -p directory-core` | ✅ 110 passed |
-| Vitest | ✅ 72 passed |
+| Vitest | ✅ 74 passed |
 | `npm run test:handoff` | ✅ 50 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
 | `npm run test:browser` (headless Edge, virtual passkey) | ✅ 27/27 |
@@ -106,9 +106,9 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. P5: "forget this device" (optional IndexedDB wipe on sign-out; see
-   docs/SECURITY.md open items).
-2. Search over events and habits.
+1. Search over events and habits.
+2. Investigate an intermittent browser e2e failure seen once: "Offline
+   edits" showed the queued task as pending but not yet in the list.
 3. Measure Worker CPU after the first deploy (owner approval needed).
 4. Remaining owner decisions: deploy approval, voice, AI provider, reader
    dependency.
@@ -116,6 +116,23 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-22 — M5 slice: Forget this device (D-028)
+- **Web:**
+  - `deleteLocalData()` removes the `directory` database.
+  - Settings › account has "sign out and forget this device". The
+    confirmation warns how many changes would be lost unsynced.
+- **Fixes found while testing:**
+  - The shared IndexedDB connection is dropped once it's closed, so
+    writes no longer fail silently on a stale handle.
+  - Upgrades complete a database that was created empty.
+  - The e2e legacy-notes step left a connection open, which blocked
+    deletes.
+- **Tests:**
+  - web 74: forget, and completing an empty database (fails on the old
+    upgrade).
+  - browser e2e 27/27: forget wipes cached data; signing in saves the
+    session again; the offline relaunch still works.
 
 ### 2026-10-22 — M5 slice: Lazy-loaded modules
 - `App.tsx` loads every module except Home with `React.lazy` inside

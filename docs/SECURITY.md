@@ -45,8 +45,8 @@ approval (AGENTS.md).
     Permissions-Policy that denies camera, microphone, and geolocation.
   - API responses: `no-store`.
 - **Offline data** (IndexedDB) stays in the owner's browser profile. The
-  service worker never caches `/api/*`. Signing out doesn't wipe the
-  device copy (see open items).
+  service worker never caches `/api/*`. Plain sign-out keeps the copy for
+  offline use; "sign out and forget this device" deletes it (D-028).
 - **Secrets:** only in Wrangler secrets or `.dev.vars` (gitignored). Exports
   never contain credential material.
 
@@ -73,9 +73,8 @@ approval (AGENTS.md).
 
 - `rsa` 0.9 advisory RUSTSEC-2023-0071 (timing, private-key operations
   only; Directory only verifies). Revisit when `rsa` 0.10 is stable.
-- Sign-out doesn't clear the IndexedDB copy on that device. A shared
-  computer should use a separate browser profile. Consider an explicit
-  "forget this device" action.
+- On a shared computer, use "sign out and forget this device" (D-028);
+  plain sign-out leaves the offline copy in that browser.
 - No rate limit on authenticated routes (single owner; D-022 caps bound
   storage). Revisit if device tokens are given to third-party scripts.
 - Signature-verification CPU time hasn't been measured against the Workers
