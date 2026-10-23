@@ -58,6 +58,27 @@ pub const MAX_HITS: usize = 50;
 /// Rows fetched per kind before ranking.
 pub const PER_KIND: u32 = 50;
 const SNIPPET_RADIUS: usize = 60;
+/// Recent rows per kind matched here when a non-ASCII query has no ASCII
+/// part to narrow the SQL by (D-038). Bounded for the Worker CPU budget.
+pub const SCAN_PER_KIND: u32 = 100;
+
+/// The LIKE pattern and row limit for a query. SQLite's LIKE folds case for
+/// ASCII only, so a query with other letters is narrowed by its longest
+/// ASCII run (or not at all) and the rows are matched here instead.
+fn plan(q: &str) -> (String, u32) {
+    if q.is_ascii() {
+        return (like_pattern(q), PER_KIND);
+    }
+    let run = q
+        .split(|c: char| !c.is_ascii())
+        .max_by_key(|s| s.trim().len())
+        .unwrap_or("");
+    if run.trim().len() >= MIN_QUERY {
+        (like_pattern(run), SCAN_PER_KIND)
+    } else {
+        ("%".into(), SCAN_PER_KIND)
+    }
+}
 
 /// A candidate row from a source: `body` is the text a snippet is cut from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -171,17 +192,27 @@ pub async fn search<S: SearchSource>(
     if q.chars().any(char::is_control) {
         return Err(SearchError::Invalid("invalid characters"));
     }
-    let pattern = like_pattern(q);
+    let (pattern, limit) = plan(q);
     let q_chars: Vec<char> = q.chars().collect();
     let mut hits = Vec::new();
     for kind in SearchKind::ALL {
         let rows = source
-            .candidates(&p.user_id, kind, &pattern, PER_KIND)
+            .candidates(&p.user_id, kind, &pattern, limit)
             .await
             .map_err(SearchError::Backend)?;
+        let mut kept = 0;
         for c in rows {
             let title_chars: Vec<char> = c.title.chars().collect();
             let title_match = find_ci(&title_chars, &q_chars).is_some();
+            // Unicode-aware match on the same fields as the SQL (journal: body only).
+            let title_counts = title_match && kind != SearchKind::Journal;
+            if !title_counts && find_ci(&c.body.chars().collect::<Vec<_>>(), &q_chars).is_none() {
+                continue;
+            }
+            kept += 1;
+            if kept > PER_KIND {
+                break;
+            }
             hits.push(SearchHit {
                 snippet: snippet(&c.body, q),
                 kind: c.kind,
@@ -286,6 +317,39 @@ mod tests {
         assert_eq!(hits[0].date.as_deref(), Some("2026-10-23"));
         assert_eq!(SearchKind::Event.entity(), None);
         assert_eq!(SearchKind::Note.entity(), Some(EntityKind::Note));
+    }
+
+    #[test]
+    fn non_ascii_letters_match_regardless_of_case() {
+        let src = Fake(vec![
+            c(SearchKind::Note, "n1", "Über alles", "", 2),
+            c(SearchKind::Task, "t1", "Café opening", "", 3),
+            c(SearchKind::Project, "p1", "Ελληνικά", "μάθημα", 1),
+            c(SearchKind::Task, "t2", "Unrelated", "", 4),
+        ]);
+        // "über" vs "Über": SQLite LIKE alone misses this.
+        assert_eq!(block_on(search(&src, &me(), "über")).unwrap()[0].id, "n1");
+        assert_eq!(block_on(search(&src, &me(), "CAFÉ")).unwrap()[0].id, "t1");
+        let greek = block_on(search(&src, &me(), "ΜΆΘΗΜΑ")).unwrap();
+        assert_eq!(
+            greek.iter().map(|h| h.id.as_str()).collect::<Vec<_>>(),
+            ["p1"]
+        );
+        assert_eq!(plan("über"), (like_pattern("ber"), SCAN_PER_KIND));
+        assert_eq!(plan("日本"), ("%".to_string(), SCAN_PER_KIND));
+        assert_eq!(plan("plain"), (like_pattern("plain"), PER_KIND));
+    }
+
+    #[test]
+    fn journal_days_match_on_their_body_only() {
+        let src = Fake(vec![c(
+            SearchKind::Journal,
+            "2026-10-21",
+            "2026-10-21",
+            "quiet",
+            1,
+        )]);
+        assert!(block_on(search(&src, &me(), "2026-10")).unwrap().is_empty());
     }
 
     #[test]

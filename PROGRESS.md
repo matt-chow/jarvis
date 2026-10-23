@@ -61,7 +61,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | Command | Result (2026-10-23) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
-| `cargo test -p directory-core` | ✅ 115 passed |
+| `cargo test -p directory-core` | ✅ 117 passed |
 | Vitest | ✅ 91 passed |
 | `npm run test:handoff` | ✅ 50 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
@@ -76,9 +76,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Files: concurrent uploads can exceed the quota for the moment between
   insert and re-check; the one over is then rolled back (D-033). Orphaned
   blobs are retried only when their owner uploads or deletes again.
-- Search uses SQLite `LIKE`, which is case-insensitive for ASCII only, and
-  reads whole note and journal bodies for snippets. Move to FTS5 when data
-  grows.
+- Search: queries with non-ASCII letters are narrowed by their ASCII part
+  and matched in Rust (D-038). Queries with no ASCII part scan the 100
+  most recent rows per kind. Snippets read whole bodies. Move to FTS5
+  when data grows.
 - Offline: a link made offline shows only on the item it was made from
   until it syncs (D-037). An item triaged offline appears in
   Tasks, Notes, or Journal only after it syncs (D-036). A new edit queued in the instant between a replay finishing
@@ -121,6 +122,13 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-23 — Search: Unicode case-insensitive (D-038)
+- **Core:** `search::plan` picks the LIKE pattern and row limit; rows are
+  matched again with `find_ci`.
+- **Tests:** core 117 (über and Über, CAFÉ, Greek with no ASCII part,
+  journal body only); smoke has a new D1 check (über, Greek, and no
+  false match on "überall"); browser e2e 31/31.
 
 ### 2026-10-23 — Links work offline (D-037)
 - **Web:** `LinkedSection` uses a cached list, queued `link.create` and

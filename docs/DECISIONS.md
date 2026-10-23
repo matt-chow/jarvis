@@ -136,6 +136,19 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-038 — Search ignores case for all letters, not just ASCII
+**Status:** accepted
+- SQLite `LIKE` folds case only for ASCII, so "über" missed "Über".
+  Core now plans each query. An ASCII query uses `LIKE` as before. A
+  query with other letters narrows `LIKE` by its longest ASCII run
+  ("ber"), or by nothing when it has none (Greek, CJK), and fetches up to
+  100 recent rows per kind.
+- Every row is then matched in core, per character, with Unicode lower
+  case, on the same fields as the SQL (journal: body only). The ranking
+  and the 50 per kind and 50 overall caps are unchanged.
+- No migration and no new dependency. FTS5 (`unicode61`) stays the
+  option for larger data, behind `SearchSource`.
+
 ## D-037 — Links work offline
 **Status:** accepted
 - Each item's link list is cached (`links:<kind>:<id>`). The picker

@@ -743,6 +743,15 @@ async function local() {
       await api.req("DELETE", `/api/v1/habits/${habit.id}`);
     });
 
+    await check("search: case-insensitive beyond ASCII (D-038)", async () => {
+      const note = (await api.req("POST", "/api/v1/notes", { body: { body: "Über den Fluss\nΜάθημα ελληνικών" } })).json;
+      const find = async (q) => (await api.req("GET", `/api/v1/search?q=${encodeURIComponent(q)}`)).json.hits.some((h) => h.id === note.id);
+      expect(await find("über"), "über finds Über");
+      expect(await find("ΜΆΘΗΜΑ"), "Greek, no ASCII to narrow by");
+      expect(!(await find("überall")), "still a substring match");
+      await api.req("DELETE", `/api/v1/notes/${note.id}`);
+    });
+
     await check("search: across kinds, title matches first, LIKE wildcards escaped, jarvis find", async () => {
       const task = (await api.req("POST", "/api/v1/tasks", { body: { title: "Renew passport", notes: "form 100% done" } })).json;
       const note = (await api.req("POST", "/api/v1/notes", { body: { body: "Travel docs\nPassport is in the top drawer" } })).json;
