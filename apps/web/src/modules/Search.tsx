@@ -4,12 +4,19 @@ import { Panel, inputClass } from "../components/ui";
 import { describeError } from "../hooks/useCachedList";
 import { useHashParam } from "../hooks/useHashParam";
 import { reportIfUnauthorized } from "../hooks/useSession";
-import { api } from "../lib/api";
-import { SEARCH_GLYPH, hitRoute, type SearchHit } from "../lib/search";
+import { api, isNetworkError } from "../lib/api";
+import { localDb } from "../lib/db";
+import { MIN_QUERY, SEARCH_GLYPH, hitRoute, searchLocal, type SearchHit } from "../lib/search";
+import { loadCachedData, toLocalDocs } from "../lib/searchCache";
 
 // Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
 
 const DEBOUNCE_MS = 250;
+
+/** Offline: match what this device has cached (D-031). */
+async function searchDevice(q: string): Promise<SearchHit[]> {
+  return searchLocal(toLocalDocs(await loadCachedData(await localDb())), q);
+}
 
 /** Wrap case-insensitive occurrences of `query` in <mark>. */
 export function highlight(text: string, query: string): ReactNode[] {
@@ -38,10 +45,12 @@ export function Search({ online }: ModuleProps) {
   const [hits, setHits] = useState<SearchHit[]>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
+  /** Results came from this device, not the server. */
+  const [local, setLocal] = useState(false);
 
   useEffect(() => {
     const q = query.trim();
-    if (q.length < 2 || !online) {
+    if (q.length < MIN_QUERY) {
       setHits(undefined);
       setError(undefined);
       return;
@@ -49,13 +58,19 @@ export function Search({ online }: ModuleProps) {
     let cancelled = false;
     const timer = window.setTimeout(() => {
       setLoading(true);
-      api
-        .search(q)
-        .then((h) => !cancelled && (setHits(h), setError(undefined)))
-        .catch((e: unknown) => {
-          reportIfUnauthorized(e);
-          if (!cancelled) setError(describeError(e, "result"));
-        })
+      const device = () => searchDevice(q).then((h) => !cancelled && (setHits(h), setLocal(true), setError(undefined)));
+      (online
+        ? api.search(q).then(
+            (h) => !cancelled && (setHits(h), setLocal(false), setError(undefined)),
+            (e: unknown) => {
+              reportIfUnauthorized(e);
+              if (isNetworkError(e)) return device();
+              if (!cancelled) setError(describeError(e, "result"));
+            },
+          )
+        : device()
+      )
+        .catch((e: unknown) => !cancelled && setError(`Couldn't search this device: ${String(e)}`))
         .finally(() => !cancelled && setLoading(false));
       // Keep the query in the URL so results can be linked and survive reloads.
       history.replaceState(null, "", `#/search?q=${encodeURIComponent(q)}`);
@@ -79,7 +94,11 @@ export function Search({ online }: ModuleProps) {
           placeholder="Search tasks, notes, projects, and journal…"
           className={`${inputClass} w-full`}
         />
-        {!online && <p className="mt-3 text-sm text-muted">Search needs a connection.</p>}
+        {hits && local && (
+          <p className="mt-3 rounded-sm border border-line bg-sunken/60 px-3 py-2 text-sm text-muted">
+            Offline: showing matches from what this device has saved. Results may be incomplete.
+          </p>
+        )}
         {error && (
           <p role="alert" className="mt-3 text-sm text-bad">
             {error}

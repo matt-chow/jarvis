@@ -10,7 +10,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   owner approval** (see the readiness checklist in docs/ARCHITECTURE.md ›
   Deployment). **M2 JARVIS Alpha:** command layer ✅, presets ✅, `find` ✅,
   project commands ✅.
-  Voice is blocked on owner approval. **M3:** search ✅, files ✅, library ✅ (offline too),
+  Voice is blocked on owner approval. **M3:** search ✅ (offline too), files ✅, library ✅ (offline too),
   offline editing ✅, wiki ✅. **M4:** habits ✅, calendar ✅, dashboard ✅, automations ✅, music ✅.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
@@ -62,7 +62,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
 | `cargo test -p directory-core` | ✅ 113 passed |
-| Vitest | ✅ 79 passed |
+| Vitest | ✅ 85 passed |
 | `npm run test:handoff` | ✅ 50 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
 | `npm run test:browser` (headless Edge, virtual passkey) | ✅ 28/28 |
@@ -113,12 +113,26 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 2. Deploy readiness: everything blocking M1 is the owner's call (see
    below).
 3. Measure Worker CPU after the first deploy (owner approval needed).
-4. Remaining owner decisions: deploy approval, voice, AI provider, reader
-   dependency.
+4. Remaining owner decisions: deploy approval, voice, AI provider, PDF
+   reader (pdf.js or a CSP change).
 
 ---
 
 ## Log
+
+### 2026-10-23 — M3 slice: Offline search (D-031)
+- **Web:**
+  - `lib/search.ts`: `searchLocal` and `snippet`, mirroring core ranking
+    and limits.
+  - `lib/searchCache.ts`: reads cached lists and opened documents from
+    IndexedDB (`LocalDb.entriesWithPrefix`), keeping the fullest copy.
+  - `modules/Search.tsx`: falls back to the device when offline or on a
+    network error, with a "results may be incomplete" notice.
+- **Tests:**
+  - web 85: snippet parity with core, ranking, journal body-only
+    matching, the 50-hit cap, and the cache reader on fake-indexeddb.
+  - browser e2e 28/28: with the server stopped, search finds a cached
+    task and a cached note body.
 
 ### 2026-10-23 — M3 slice: Offline library (D-030)
 - **Web:**

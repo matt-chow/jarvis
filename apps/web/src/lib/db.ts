@@ -111,6 +111,18 @@ export class LocalDb {
     await promisify(this.store("kv", "readwrite").put(value, key));
   }
 
+  /** Every kv entry whose key starts with `prefix`. */
+  async entriesWithPrefix<T>(prefix: string): Promise<[string, T][]> {
+    // Filtered here rather than with IDBKeyRange, which needs the global factory.
+    const store = this.store("kv", "readonly");
+    const [keys, values] = await Promise.all([promisify(store.getAllKeys()), promisify(store.getAll())]);
+    const out: [string, T][] = [];
+    keys.forEach((k, i) => {
+      if (typeof k === "string" && k.startsWith(prefix)) out.push([k, values[i] as T]);
+    });
+    return out;
+  }
+
   async deleteValue(key: string): Promise<void> {
     await promisify(this.store("kv", "readwrite").delete(key));
   }

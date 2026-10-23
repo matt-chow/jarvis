@@ -136,6 +136,19 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-031 — Offline search reads the device cache, labelled as partial
+**Status:** accepted
+- When the browser is offline, or the search request fails with a network
+  error, Search matches the copies already in IndexedDB: the task,
+  project, note, event, and habit lists, opened notes (`note:<id>`), and
+  journal days and months. Nothing extra is downloaded for it.
+- `lib/search.ts` `searchLocal` and `snippet` mirror directory-core: the
+  same fields per kind (journal: body only), case-insensitive matching
+  per character, title matches first then newest, at most 50 hits.
+- Results are marked "from what this device has saved", because the
+  cache holds only what this device has loaded (for example, note
+  excerpts rather than bodies for notes never opened here).
+
 ## D-030 — The library works offline: saved documents and queued progress
 **Status:** accepted
 - The library list is cached like other lists (`library:last`).

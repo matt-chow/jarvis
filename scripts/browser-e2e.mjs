@@ -701,6 +701,13 @@ try {
     await page.waitForText("Offline: changes are saved on this device");
     await page.click("All");
     await page.waitForText("Write the quarterly report");
+    // Search falls back to what this device has cached.
+    await page.hash("/search");
+    await page.fill("Search", "quarterly");
+    await page.waitForText("showing matches from what this device has saved");
+    await page.waitForText("Write the quarterly report");
+    await page.fill("Search", "launch plan"); // a note body, cached when the note was opened
+    await page.waitForText("Agenda: launch plan");
   });
 } catch {
   // reported by step()

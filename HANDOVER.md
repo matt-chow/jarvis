@@ -1,16 +1,15 @@
 # Handover
 
-Base commit: 080c106
+Base commit: 61715e9
 From: claude → To: (either; no handoff in progress)
 Updated: 2026-10-23
 
 ## Status
-Everything unblocked is committed, including the offline library (D-030).
+Everything unblocked is committed, including the offline library (D-030)
+and offline search (D-031). Gate: verify, smoke, and browser e2e 28/28.
 
 ## In progress
-Nothing uncommitted. The D-030 offline library slice is committed; its
-gate ran as verify + smoke + browser e2e separately (the combined
-`npm run ci` was stopped once for low memory).
+Nothing uncommitted.
 
 ## Next steps
 1. Owner decisions block the remaining work (see PROGRESS.md › Unresolved
@@ -21,7 +20,8 @@ gate ran as verify + smoke + browser e2e separately (the combined
    - Voice input via the browser's speech service (sends audio to the
      vendor).
    - An AI intent provider and its budget.
-   - An in-app PDF/ePub reader dependency (pdf.js/epub.js).
+   - An in-app PDF reader: pdf.js, or serving PDFs inline (CSP change).
+     ePubs already read in-app (D-029).
    - iOS verification on a device.
 2. Watch item: one intermittent "Offline edits" browser failure, not seen
    in the last five full runs.
