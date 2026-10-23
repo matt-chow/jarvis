@@ -7,6 +7,7 @@ use crate::habits::{HabitService, NewHabit};
 use crate::identity::AuthMethod;
 use crate::inbox::memory::MemoryInbox;
 use crate::journal::testing::MemoryJournal;
+use crate::links::testing::MemoryLinks;
 use crate::notes::testing::MemoryNotes;
 use crate::projects::memory::MemoryProjects;
 use crate::search::{Candidate, SearchKind, SearchSource};
@@ -139,6 +140,7 @@ struct F {
     projects: MemoryProjects,
     events: MemoryEvents,
     habits: MemoryHabits,
+    links: MemoryLinks,
     e: CountingEntropy,
 }
 
@@ -151,6 +153,10 @@ impl CommandTargets for F {
     type Projects = MemoryProjects;
     type Events = MemoryEvents;
     type Habits = MemoryHabits;
+    type Links = MemoryLinks;
+    fn links(&self) -> &MemoryLinks {
+        &self.links
+    }
     fn events(&self) -> &MemoryEvents {
         &self.events
     }
@@ -598,4 +604,43 @@ fn automations_run_approved_commands_when_events_happen() {
     );
     assert_eq!(stored(&broken.id).last_ok, Some(false));
     assert_eq!(stored(&off.id).last_run_at, None);
+}
+
+#[test]
+fn link_commands_resolve_names_and_link_through_the_links_module() {
+    let f = F::default();
+    let made = f.plan("add task book flights; note trip ideas").unwrap();
+    f.execute(&made.id, 1_100).unwrap();
+    let task = f.tasks.0.borrow()[0].clone();
+    let note = f.notes.0.borrow()[0].clone();
+    // The links fake knows which entities exist through its own map.
+    for (kind, id, title) in [
+        (EntityKind::Task, &task.id, "book flights"),
+        (EntityKind::Note, &note.id, "trip ideas"),
+    ] {
+        f.links.entities.borrow_mut().insert(
+            (
+                "u1".into(),
+                EntityRef {
+                    kind,
+                    id: id.clone(),
+                },
+            ),
+            title.into(),
+        );
+    }
+
+    let plan = f.plan("link note trip to task book flights").unwrap();
+    assert_eq!(
+        plan.actions[0].summary,
+        "Link note “trip ideas” with task “book flights”"
+    );
+    let done = f.execute(&plan.id, 1_200).unwrap();
+    assert!(done.results[0].ok, "{:?}", done.results);
+    assert_eq!(f.links.links.borrow().len(), 1);
+
+    assert!(matches!(
+        f.plan("link note nothing like it to task book flights"),
+        Err(JarvisError::Unresolved(m)) if m.starts_with("No note matches")
+    ));
 }

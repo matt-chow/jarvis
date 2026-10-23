@@ -40,8 +40,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   - Full JSON data export from Settings, and restore from an export
     (merge-only).
   - Library of PDFs/ePubs with reading progress.
-  - JARVIS text commands (tasks, projects, agenda, habit check-ins, notes,
-    journal, capture, list, find) with preview,
+  - JARVIS text commands (tasks, projects, agenda, habit check-ins, links,
+    notes, journal, capture, list, find) with preview,
     approve, results, history, and saved presets.
   - Universal search (`/` from anywhere), plus JARVIS `find`.
   - Automations: when a task is completed or a habit is checked in, run a
@@ -61,7 +61,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | Command | Result (2026-10-22) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
-| `cargo test -p directory-core` | ✅ 111 passed |
+| `cargo test -p directory-core` | ✅ 113 passed |
 | Vitest | ✅ 75 passed |
 | `npm run test:handoff` | ✅ 50 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
@@ -119,6 +119,16 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-22 — M2 slice: JARVIS link command
+- **Parser:** `link <kind> <name> to|with <kind> <name>`. Kinds are task,
+  note, project, and journal/day (a date). `to` inside a name is fine.
+- **Core:** `Command::LinkItems` with `LinkTarget`. Both sides resolve at
+  plan time (exact, then a unique partial match). It executes through
+  `LinkService`, which re-checks ownership and existence.
+  `CommandTargets` gains `links`.
+- **Tests:** core 113 (parser cases, resolve and link, unresolved), smoke
+  (the link on D1, 422 when a name doesn't match).
 
 ### 2026-10-22 — Search over events and habits
 - **Core:** `search::SearchKind` adds `event` and `habit` (`entity()` maps

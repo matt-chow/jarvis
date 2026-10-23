@@ -695,6 +695,21 @@ async function local() {
       expect((await fetch(`${baseUrl}/api/v1/automations`)).status === 401, "anonymous → 401");
     });
 
+    await check("jarvis link: names resolve on D1, the link is made through the links module", async () => {
+      const plan = (input) => api.req("POST", "/api/v1/jarvis/plan", { body: { input, today: "2026-10-21" } });
+      const task = (await api.req("POST", "/api/v1/tasks", { body: { title: "Book ferry" } })).json;
+      const note = (await api.req("POST", "/api/v1/notes", { body: { body: "Island trip\nferry times" } })).json;
+      const p = await plan("link note island trip to task book ferry");
+      expect(p.status === 200 && p.json.actions[0].summary === "Link note “Island trip” with task “Book ferry”", p.text);
+      const ran = await api.req("POST", `/api/v1/jarvis/plans/${p.json.id}/execute`);
+      expect(ran.json.results[0].ok, ran.text);
+      const links = (await api.req("GET", `/api/v1/links?kind=task&id=${task.id}`)).json.links;
+      expect(links.length === 1 && links[0].id === note.id, `links → ${JSON.stringify(links)}`);
+      expect((await plan("link note island trip to project nowhere")).status === 422, "unresolved");
+      await api.req("DELETE", `/api/v1/tasks/${task.id}`);
+      await api.req("DELETE", `/api/v1/notes/${note.id}`);
+    });
+
     await check("jarvis presets: save (validated by parsing), list, delete", async () => {
       const bad = await api.req("POST", "/api/v1/jarvis/presets", { body: { name: "Bad", input: "dance" } });
       expect(bad.status === 400 && bad.json.error === "not_understood", `unparseable → ${bad.status}`);

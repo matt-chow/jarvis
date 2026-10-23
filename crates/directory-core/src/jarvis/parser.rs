@@ -13,10 +13,12 @@
 //!   capture <text>                     · also: inbox, remember
 //!   list tasks                         · also: tasks, open tasks, what's open
 //!   find <text>                        · also: search, search for, look up
+//!   link <kind> <name> to|with <kind> <name>   · kinds: task, note, project, journal (a date)
 //! Steps are separated by `;` or ` then `. Dates: today, tomorrow, a weekday
 //! (next occurrence), or YYYY-MM-DD.
 
-use super::Command;
+use super::{Command, LinkTarget};
+use crate::links::EntityKind;
 use crate::validate;
 
 pub const MAX_STEPS: usize = 5;
@@ -28,6 +30,7 @@ pub const EXAMPLES: &[&str] = &[
     "list projects",
     "what's on tomorrow",
     "check in stretch",
+    "link note trip ideas to task book flights",
     "complete dentist",
     "note gate code is 4512",
     "journal long walk by the river",
@@ -154,6 +157,55 @@ fn split_project(rest: &str) -> (String, Option<String>) {
     }
 }
 
+fn link_kind(word: &str) -> Option<EntityKind> {
+    Some(match word.to_ascii_lowercase().as_str() {
+        "task" => EntityKind::Task,
+        "note" => EntityKind::Note,
+        "project" => EntityKind::Project,
+        "journal" | "day" => EntityKind::Journal,
+        _ => return None,
+    })
+}
+
+/// `<kind> <name> to|with <kind> <name>`; a journal "name" is a date.
+fn parse_link(rest: &str, today: &str) -> Result<Command, ParseError> {
+    let words: Vec<&str> = rest.split_whitespace().collect();
+    let usage =
+        ParseError::MissingText("two items, like: link note trip ideas to task book flights");
+    let a_kind = words
+        .first()
+        .and_then(|w| link_kind(w))
+        .ok_or(usage.clone())?;
+    let split = (2..words.len().saturating_sub(1)).find(|&i| {
+        ["to", "with"]
+            .iter()
+            .any(|k| words[i].eq_ignore_ascii_case(k))
+            && link_kind(words[i + 1]).is_some()
+    });
+    let Some(i) = split.filter(|&i| i + 2 < words.len()) else {
+        return Err(usage);
+    };
+    let side = |kind: EntityKind, name: String| -> Result<LinkTarget, ParseError> {
+        if kind != EntityKind::Journal {
+            return Ok(LinkTarget::new(kind, name));
+        }
+        let date = if name.eq_ignore_ascii_case("yesterday") {
+            Some(validate::add_days(today, -1))
+        } else {
+            parse_date(&name, today)
+        };
+        date.map(|d| LinkTarget::new(kind, d))
+            .ok_or(ParseError::BadDate(name))
+    };
+    Ok(Command::LinkItems {
+        a: side(a_kind, words[1..i].join(" "))?,
+        b: side(
+            link_kind(words[i + 1]).unwrap_or(EntityKind::Note),
+            words[i + 2..].join(" "),
+        )?,
+    })
+}
+
 fn parse_step(step: &str, today: &str) -> Result<Command, ParseError> {
     let step = strip(step, &["please", "jarvis,", "jarvis"]).unwrap_or(step);
     let lower = step.to_lowercase();
@@ -191,6 +243,9 @@ fn parse_step(step: &str, today: &str) -> Result<Command, ParseError> {
             parse_date(rest, today).ok_or_else(|| ParseError::BadDate(rest.to_owned()))?
         };
         return Ok(Command::Agenda { date });
+    }
+    if let Some(rest) = strip(step, &["link"]) {
+        return parse_link(require(rest, "what to link")?, today);
     }
     if let Some(rest) = strip(step, &["check in", "check off", "checkin"]) {
         let rest = require(rest, "which habit")?;
@@ -546,5 +601,46 @@ mod tests {
             parse("check in", TODAY),
             Err(ParseError::MissingText("which habit"))
         );
+    }
+}
+
+#[cfg(test)]
+mod link_tests {
+    use super::*;
+    const TODAY: &str = "2026-10-21";
+
+    #[test]
+    fn link_commands_parse_both_sides() {
+        let one = |s: &str| parse(s, TODAY).unwrap().remove(0);
+        assert_eq!(
+            one("link note trip ideas to task book flights"),
+            Command::LinkItems {
+                a: LinkTarget::new(EntityKind::Note, "trip ideas"),
+                b: LinkTarget::new(EntityKind::Task, "book flights"),
+            }
+        );
+        // "to" inside a name is fine when it isn't followed by a kind.
+        assert_eq!(
+            one("link task talk to Sam with day yesterday"),
+            Command::LinkItems {
+                a: LinkTarget::new(EntityKind::Task, "talk to Sam"),
+                b: LinkTarget::new(EntityKind::Journal, "2026-10-20"),
+            }
+        );
+        assert!(matches!(
+            parse("link journal someday to note x", TODAY),
+            Err(ParseError::BadDate(_))
+        ));
+        for bad in [
+            "link",
+            "link trip ideas to flights",
+            "link note x to task",
+            "link note to task y",
+        ] {
+            assert!(
+                matches!(parse(bad, TODAY), Err(ParseError::MissingText(_))),
+                "{bad}"
+            );
+        }
     }
 }

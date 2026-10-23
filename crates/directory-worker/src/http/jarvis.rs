@@ -4,8 +4,8 @@ use super::auth::principal;
 use super::{error, error_with, json, no_content, read_json};
 use crate::d1::{
     D1EventRepository, D1HabitRepository, D1InboxRepository, D1JarvisRepository,
-    D1JournalRepository, D1NoteRepository, D1PresetRepository, D1ProjectRepository, D1SearchSource,
-    D1TaskRepository,
+    D1JournalRepository, D1LinkRepository, D1NoteRepository, D1PresetRepository,
+    D1ProjectRepository, D1SearchSource, D1TaskRepository,
 };
 use crate::{bindings, entropy::WebCryptoEntropy, try_or_respond};
 use directory_core::habits::HabitRepository;
@@ -57,6 +57,7 @@ pub(crate) struct Targets {
     projects: D1ProjectRepository,
     events: D1EventRepository,
     habits: D1HabitRepository,
+    links: D1LinkRepository,
 }
 
 impl Targets {
@@ -71,6 +72,7 @@ impl Targets {
             projects: D1ProjectRepository::new(db()?),
             events: D1EventRepository::new(db()?),
             habits: D1HabitRepository::new(db()?),
+            links: D1LinkRepository::new(db()?),
         })
     }
 }
@@ -84,6 +86,10 @@ impl CommandTargets for Targets {
     type Projects = D1ProjectRepository;
     type Events = D1EventRepository;
     type Habits = D1HabitRepository;
+    type Links = D1LinkRepository;
+    fn links(&self) -> &D1LinkRepository {
+        &self.links
+    }
     fn events(&self) -> &D1EventRepository {
         &self.events
     }

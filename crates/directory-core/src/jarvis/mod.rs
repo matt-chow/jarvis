@@ -15,7 +15,7 @@ use crate::habits::{HabitError, HabitRepository, HabitService, HabitView};
 use crate::identity::Principal;
 use crate::inbox::{Capture, InboxError, InboxRepository, InboxService};
 use crate::journal::{JournalError, JournalRepository, JournalService};
-use crate::links::{EntityKind, EntityRef};
+use crate::links::{EntityKind, EntityRef, LinkError, LinkRepository, LinkService, NewLink};
 use crate::notes::{NewNote, NoteError, NoteRepository, NoteService};
 use crate::projects::{NewProject, ProjectError, ProjectRepository, ProjectService};
 use crate::search::{self, SearchError, SearchSource};
@@ -52,6 +52,11 @@ pub enum Command {
     Agenda {
         date: String,
     },
+    /// Link two items; each side is resolved by name when the plan is made.
+    LinkItems {
+        a: LinkTarget,
+        b: LinkTarget,
+    },
     /// `habit_id`/`name` are filled in when the plan is resolved.
     CheckHabit {
         query: String,
@@ -79,6 +84,37 @@ pub enum Command {
     Find {
         query: String,
     },
+}
+
+/// One side of a `link` command: what the user typed, and what it resolved to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkTarget {
+    pub kind: EntityKind,
+    /// A title to match, or a date for journal days.
+    pub query: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+}
+
+impl LinkTarget {
+    pub fn new(kind: EntityKind, query: impl Into<String>) -> Self {
+        Self {
+            kind,
+            query: query.into(),
+            id: None,
+            title: None,
+        }
+    }
+
+    fn label(&self) -> String {
+        format!(
+            "{} {}",
+            self.kind.as_str(),
+            quote(self.title.as_deref().unwrap_or(&self.query), 60)
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -130,6 +166,7 @@ impl Command {
             Self::CreateProject { name } => format!("Create project {}", quote(name, 80)),
             Self::ListProjects => "List active projects".into(),
             Self::Agenda { date } => format!("Show the agenda for {date}"),
+            Self::LinkItems { a, b } => format!("Link {} with {}", a.label(), b.label()),
             Self::CheckHabit {
                 name: Some(n),
                 date,
@@ -301,6 +338,7 @@ pub trait CommandTargets {
     type Projects: ProjectRepository;
     type Events: EventRepository;
     type Habits: HabitRepository;
+    type Links: LinkRepository;
     fn tasks(&self) -> &Self::Tasks;
     fn notes(&self) -> &Self::Notes;
     fn journal(&self) -> &Self::Journal;
@@ -309,6 +347,7 @@ pub trait CommandTargets {
     fn projects(&self) -> &Self::Projects;
     fn events(&self) -> &Self::Events;
     fn habits(&self) -> &Self::Habits;
+    fn links(&self) -> &Self::Links;
 }
 
 fn backend(e: String) -> JarvisError {
@@ -548,6 +587,51 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         Ok(plan)
     }
 
+    /// Resolve one side of a link by title (journal days by date).
+    async fn resolve_target<C: CommandTargets>(
+        &self,
+        p: &Principal,
+        mut target: LinkTarget,
+        t: &C,
+    ) -> Result<LinkTarget, JarvisError> {
+        let unavailable =
+            |what: &str| JarvisError::Unresolved(format!("Couldn't read your {what}."));
+        let query = target.query.clone();
+        let (id, title) = match target.kind {
+            EntityKind::Journal => (query.clone(), query.clone()),
+            EntityKind::Task => {
+                let all = TaskService::new(t.tasks(), self.entropy, self.now)
+                    .list(p, Filter::All)
+                    .await
+                    .map_err(|_| unavailable("tasks"))?;
+                let x = pick(&all, |x| &x.title, &query)
+                    .map_err(|m| ambiguity(&query, "task", &m, |x| &x.title))?;
+                (x.id.clone(), x.title.clone())
+            }
+            EntityKind::Note => {
+                let all = NoteService::new(t.notes(), self.entropy, self.now)
+                    .list(p)
+                    .await
+                    .map_err(|_| unavailable("notes"))?;
+                let x = pick(&all, |x| &x.title, &query)
+                    .map_err(|m| ambiguity(&query, "note", &m, |x| &x.title))?;
+                (x.id.clone(), x.title.clone())
+            }
+            EntityKind::Project => {
+                let all = ProjectService::new(t.projects(), self.entropy, self.now)
+                    .list(p, true)
+                    .await
+                    .map_err(|_| unavailable("projects"))?;
+                let x = pick(&all, |x| &x.name, &query)
+                    .map_err(|m| ambiguity(&query, "project", &m, |x| &x.name))?;
+                (x.id.clone(), x.name.clone())
+            }
+        };
+        target.id = Some(id);
+        target.title = Some(title);
+        Ok(target)
+    }
+
     /// Fill in references the user described by name.
     async fn resolve<C: CommandTargets>(
         &self,
@@ -557,6 +641,10 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         t: &C,
     ) -> Result<Command, JarvisError> {
         match command {
+            Command::LinkItems { a, b } => Ok(Command::LinkItems {
+                a: self.resolve_target(p, a, t).await?,
+                b: self.resolve_target(p, b, t).await?,
+            }),
             Command::CheckHabit { query, date, .. } => {
                 let habits = HabitService::new(t.habits(), self.entropy, self.now)
                     .list(p, &date, 1)
@@ -1016,6 +1104,37 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     },
                     entity: None,
                     changed: true,
+                }
+            }
+            Command::LinkItems { a, b } => {
+                let (Some(a_id), Some(b_id)) = (&a.id, &b.id) else {
+                    return failure("The items to link weren't resolved.".into());
+                };
+                let input = NewLink {
+                    from: EntityRef {
+                        kind: a.kind,
+                        id: a_id.clone(),
+                    },
+                    to: EntityRef {
+                        kind: b.kind,
+                        id: b_id.clone(),
+                    },
+                };
+                match LinkService::new(t.links(), self.entropy, self.now)
+                    .link(p, input)
+                    .await
+                {
+                    Ok(_) => ActionResult {
+                        ok: true,
+                        message: format!("Linked {} with {}.", a.label(), b.label()),
+                        entity: entity(a.kind, a_id),
+                        changed: false,
+                    },
+                    Err(LinkError::Invalid(f, w)) => failure(format!("Can't link those: {f} {w}.")),
+                    Err(LinkError::NotFound) => {
+                        failure("One of those items no longer exists.".into())
+                    }
+                    Err(LinkError::Backend(_)) => failure("Links are unavailable.".into()),
                 }
             }
             Command::Agenda { date } => {
