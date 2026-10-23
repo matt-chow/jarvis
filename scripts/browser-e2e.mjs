@@ -21,6 +21,39 @@ const localToday = () => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
 
+/** A zip with stored (uncompressed) entries, e.g. a test ePub. CRCs are 0; readers here don't check them. */
+function storedZip(files) {
+  const parts = [];
+  const central = [];
+  let offset = 0;
+  for (const [name, content] of Object.entries(files)) {
+    const n = Buffer.from(name);
+    const data = Buffer.from(content);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(n.length, 26);
+    parts.push(local, n, data);
+    const c = Buffer.alloc(46);
+    c.writeUInt32LE(0x02014b50, 0);
+    c.writeUInt32LE(data.length, 20);
+    c.writeUInt32LE(data.length, 24);
+    c.writeUInt16LE(n.length, 28);
+    c.writeUInt32LE(offset, 42);
+    central.push(c, n);
+    offset += 30 + n.length + data.length;
+  }
+  const dir = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(Object.keys(files).length, 8);
+  end.writeUInt16LE(Object.keys(files).length, 10);
+  end.writeUInt32LE(dir.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...parts, dir, end]);
+}
+
 /** A quiet 8 kHz mono 16-bit WAV of `seconds`, enough for the browser to play. */
 function wav(seconds) {
   const rate = 8000;
@@ -178,6 +211,38 @@ try {
     const item = lib.items.find((i) => i.file.name === "Dune.pdf");
     if (item?.progress?.percent !== 25 || item.progress.status !== "reading") throw new Error(`progress: ${JSON.stringify(item)}`);
     await shot("library");
+  });
+
+  await step("Library: an ePub opens in the reader, chapters turn, and progress is saved", async () => {
+    const epub = storedZip({
+      mimetype: "application/epub+zip",
+      "META-INF/container.xml": `<container><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>`,
+      "book.opf": `<package><metadata><dc:title>Tiny Tale</dc:title></metadata><manifest><item id="a" href="a.xhtml" media-type="application/xhtml+xml"/><item id="b" href="b.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="a"/><itemref idref="b"/></spine></package>`,
+      "a.xhtml": `<html><body><h1>Chapter one text</h1><script>window.parent.pwned = true</script></body></html>`,
+      "b.xhtml": `<html><body><p>Chapter two text</p></body></html>`,
+    });
+    const id = await page.evaluate(`fetch("/api/v1/files?folder=books&name=Tiny.epub", { method: "POST", headers: { "Content-Type": "application/epub+zip", Origin: location.origin }, body: Uint8Array.from(atob("${epub.toString("base64")}"), (c) => c.charCodeAt(0)) }).then((r) => r.json()).then((f) => f.id)`);
+    if (!id) throw new Error("ePub upload failed");
+    await page.hash("/home"); // remount Library so it loads the new file
+    await page.hash("/library");
+    await page.waitForText("Tiny");
+    await page.click("read");
+    await page.waitForText("Chapter 1 of 2");
+    const srcdoc = () => page.evaluate(`document.querySelector("iframe")?.getAttribute("srcdoc") ?? ""`);
+    const first = await srcdoc();
+    if (!first.includes("Chapter one text") || /<script/i.test(first)) throw new Error(`chapter 1: ${first.slice(0, 200)}`);
+    if (await page.evaluate(`document.querySelector("iframe").getAttribute("sandbox")`) !== "") throw new Error("reader iframe must be fully sandboxed");
+    await page.click("Next chapter");
+    await page.waitForText("Chapter 2 of 2");
+    if (!(await srcdoc()).includes("Chapter two text")) throw new Error("chapter 2 not shown");
+    await waitFor("progress saved", async () => {
+      const lib = await page.evaluate(`fetch("/api/v1/library").then((r) => r.json())`);
+      const p = lib.items.find((i) => i.file.id === id)?.progress;
+      return p && p.current_page === 2 && p.total_pages === 2 && p.percent === 100;
+    });
+    if (await page.evaluate(`window.pwned === true`)) throw new Error("ePub script ran");
+    await page.click("Close the reader");
+    await page.evaluate(`fetch("/api/v1/files/${id}", { method: "DELETE", headers: { Origin: location.origin } })`);
   });
 
   await step("Tasks: quick add, subtask, complete, filters", async () => {

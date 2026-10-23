@@ -136,6 +136,21 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-029 — ePubs are read in-app without a dependency; PDFs wait for approval
+**Status:** accepted
+- An ePub is a zip of XHTML chapters. `lib/epub.ts` reads the zip with the
+  browser's `DecompressionStream`, follows container → OPF → spine, and
+  renders a chapter in `<iframe sandbox="">` (no scripts, opaque origin).
+  It also strips scripts and inline handlers, inlines the book's styles,
+  and maps images to `blob:` URLs. Links between chapters are made inert.
+  Zip limits: 5,000 entries, 200 MB uncompressed.
+- Progress is chapter n of N, so the server derives the percentage and
+  the status as before.
+- PDFs need either pdf.js (a large dependency) or serving PDF content
+  inline. The latter loosens the user-content sandbox CSP, which is a
+  security-policy change. Both need the owner. Until then, PDFs open in
+  the browser's own viewer from a blob URL.
+
 ## D-028 — "Forget this device" deletes the browser's copy, after a warning
 **Status:** accepted
 - Settings › account offers "sign out and forget this device". It signs

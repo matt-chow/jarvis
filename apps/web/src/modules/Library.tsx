@@ -6,6 +6,7 @@ import { reportIfUnauthorized } from "../hooks/useSession";
 import { api } from "../lib/api";
 import { filesRoute } from "../lib/files";
 import { STATUS_LABEL, documentTitle, isPdf, type LibraryItem, type ReadingStatus } from "../lib/library";
+import { EpubReader } from "./EpubReader";
 
 // Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
 
@@ -35,6 +36,7 @@ export function Library({ online }: ModuleProps) {
   const [items, setItems] = useState<LibraryItem[]>();
   const [error, setError] = useState<string>();
   const [editing, setEditing] = useState<string>();
+  const [reading, setReading] = useState<string>();
 
   const reload = useCallback(async () => {
     try {
@@ -58,9 +60,11 @@ export function Library({ online }: ModuleProps) {
     );
   }
 
-  const reading = items?.filter((i) => i.progress?.status === "reading") ?? [];
+  const current = items?.filter((i) => i.progress?.status === "reading") ?? [];
+  const open = items?.find((i) => i.file.id === reading);
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5">
+      {open && <EpubReader key={open.file.id} file={open.file} progress={open.progress} onClose={() => setReading(undefined)} onSaved={() => void reload()} />}
       <Panel title={`library${items ? ` · ${items.length}` : ""}`}>
         <p className="mb-3 text-sm text-muted">
           PDFs and ePubs from your <a href={filesRoute("")} className="text-accent underline-offset-4 hover:underline">Files</a>. Track
@@ -77,7 +81,7 @@ export function Library({ online }: ModuleProps) {
           <p className="text-sm text-muted">No documents yet. Upload a PDF or ePub in Files and it appears here.</p>
         ) : (
           <>
-            {reading.length > 0 && <p className="label mb-2">currently reading · {reading.length}</p>}
+            {current.length > 0 && <p className="label mb-2">currently reading · {current.length}</p>}
             <ul className="divide-y divide-line">
               {items.map((item) => (
                 <DocumentRow
@@ -86,6 +90,7 @@ export function Library({ online }: ModuleProps) {
                   editing={editing === item.file.id}
                   onEdit={(on) => setEditing(on ? item.file.id : undefined)}
                   onChanged={reload}
+                  onRead={() => setReading(item.file.id)}
                   onError={setError}
                 />
               ))}
@@ -103,6 +108,8 @@ function DocumentRow(props: {
   onEdit: (on: boolean) => void;
   onChanged: () => Promise<void>;
   onError: (m: string) => void;
+  /** Open an ePub in the reader. */
+  onRead: () => void;
 }) {
   const { file, progress } = props.item;
   const status = progress?.status ?? "unread";
@@ -149,6 +156,11 @@ function DocumentRow(props: {
               open
             </Button>
           ) : (
+            <Button className={small} variant="primary" onClick={props.onRead}>
+              read
+            </Button>
+          )}
+          {!isPdf(file) && (
             <a href={api.fileContentUrl(file.id)} download={file.name} className="inline-flex min-h-7 items-center rounded-sm border border-line px-2 font-mono text-[10px] uppercase hover:bg-sunken">
               download
             </a>

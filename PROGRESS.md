@@ -39,7 +39,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
     cross-module picker and deep links.
   - Full JSON data export from Settings, and restore from an export
     (merge-only).
-  - Library of PDFs/ePubs with reading progress.
+  - Library of PDFs/ePubs with reading progress, and an in-app ePub reader.
   - JARVIS text commands (tasks, projects, agenda, habit check-ins, links,
     notes, journal, capture, list, find) with preview,
     approve, results, history, and saved presets.
@@ -62,10 +62,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
 | `cargo test -p directory-core` | ✅ 113 passed |
-| Vitest | ✅ 75 passed |
+| Vitest | ✅ 79 passed |
 | `npm run test:handoff` | ✅ 50 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
-| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 27/27 |
+| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 28/28 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -119,6 +119,21 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-22 — M3 slice: In-app ePub reader (D-029)
+- **Web:**
+  - `lib/epub.ts`: zip reader (stored and deflate, size guards), OPF and
+    spine parsing, and chapter documents (scripts and handlers stripped,
+    CSS inlined, images as blob URLs).
+  - `modules/EpubReader.tsx`: a sandboxed iframe, previous/next and arrow
+    keys, resume at the saved chapter, debounced progress saves.
+  - Library: a "read" button for ePubs.
+- **Tests:**
+  - web 79: real zips in tests (stored and deflated), container → OPF →
+    spine, sanitizing, no spine.
+  - browser e2e 28/28: a generated two-chapter ePub opens, the next
+    chapter shows, progress is saved as 2 of 2 (100%), and the book's
+    script never runs.
 
 ### 2026-10-22 — M2 slice: JARVIS link command
 - **Parser:** `link <kind> <name> to|with <kind> <name>`. Kinds are task,

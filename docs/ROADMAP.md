@@ -59,7 +59,9 @@ part of every slice, not deferred to the end.
 | --- | --- |
 | Private file management (folders, streamed content, quota) | ✅ done |
 | Universal search (substring across text modules) | ✅ done; full-text index later, behind `SearchSource` |
-| PDF/ePub library with manual reading progress | ✅ done; in-app reader (pdf.js/epub.js) **needs a dependency decision** |
+| PDF/ePub library with reading progress | ✅ done |
+| In-app ePub reader, dependency-free, with automatic progress (D-029) | ✅ done |
+| In-app PDF reader | **needs owner approval**: either a pdf.js dependency or serving PDFs inline (a change to the user-content sandbox policy); PDFs open in the browser's viewer meanwhile |
 | Offline editing: tasks, projects, inbox capture (D-017); notes, journal with stored conflicts (D-018) | ✅ done; links and pinning stay online-only |
 | Wiki: `[[links]]` between notes, create-from-link, backlinks (D-019) | ✅ done |
 
