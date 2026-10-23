@@ -1,6 +1,6 @@
 # Handover
 
-Base commit: e417432
+Base commit: fe898bb
 From: claude → To: (either; no handoff in progress)
 Updated: 2026-10-23
 
@@ -27,6 +27,9 @@ Nothing uncommitted.
    - An in-app PDF reader: pdf.js, or serving PDFs inline (CSP change).
      ePubs already read in-app (D-029).
    - iOS verification on a device.
+   - Time-based automations (Cron runs commands with no signed-in request:
+     a security-policy change).
+   - Whether to add a hosted CI pipeline (a third-party service).
 2. Watch item: the intermittent "Offline edits" failure. Its likely cause
    (a stale list reload overwriting an offline edit) is fixed in D-039;
    not yet proven.
@@ -35,6 +38,10 @@ Nothing uncommitted.
 Clean except this file. No stashes.
 
 ## Notes
+- A `wrangler dev --port 8799 --persist-to .wrangler/hdr` server (and its
+  workerd) has been running since 2026-10-22 21:29, probably left over
+  from the security-header review. It uses its own state directory and
+  doesn't affect the tests. Stop it if nobody needs it.
 - Windows: prefix PATH with `~/.cargo/bin` for Rust.
 - Scripted shell edits (sed, heredocs, `node -e`) drop backslashes in this
   environment. Edit text containing backslashes with an editor tool.

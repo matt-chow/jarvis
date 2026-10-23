@@ -106,6 +106,11 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - **M2 voice:** may JARVIS use the browser's speech recognition? In
   Chrome/Edge it sends audio to the vendor's cloud. It would be off by
   default, opt-in per device, and need `Permissions-Policy: microphone=(self)`.
+- **M4 time-based automations:** these need a Workers Cron Trigger (free
+  tier) that runs saved commands with no signed-in request behind them.
+  That is a new way of acting as the owner, so it is a security-policy
+  change (AGENTS.md). Also needed: per-owner time zones (the client can
+  report its IANA zone, converted with `Intl` in the Worker).
 - Whether to move the repo out of OneDrive.
 
 ### Next task
