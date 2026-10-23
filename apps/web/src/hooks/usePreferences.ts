@@ -13,7 +13,7 @@ export interface PreferencesState {
   prefs?: Preferences;
   error?: string;
   /** Applies at once; saved to the account, or queued while offline. */
-  update: (patch: PreferencesPatch) => Promise<void>;
+  update: (change: PreferencesPatch | ((current: Preferences) => PreferencesPatch)) => Promise<void>;
 }
 
 /** Preferences that follow the owner across devices, cached for offline use. */
@@ -52,15 +52,20 @@ export function usePreferences(online: boolean): PreferencesState {
     return () => window.removeEventListener(SYNCED_EVENT, onSynced);
   }, [load]);
 
-  const update = useCallback(
-    async (patch: PreferencesPatch) => {
-      setError(undefined);
-      commit(applyPreferencesPatch(latest.current, patch));
+  // Changes go to the server one at a time, in order, so quick edits can't
+  // overtake each other (last write wins on the server).
+  const chain = useRef<Promise<void>>(Promise.resolve());
+  const sent = useRef(0);
+
+  const send = useCallback(
+    async (patch: PreferencesPatch, n: number) => {
       const db = await localDb().catch(() => undefined);
       const queued = db ? (await db.outbox().catch(() => [])).length > 0 : false;
       if (navigator.onLine && !queued) {
         try {
-          commit(await api.updatePreferences(patch));
+          const saved = await api.updatePreferences(patch);
+          // A later change is already showing; its own response will settle the state.
+          if (n === sent.current) commit(saved);
           return;
         } catch (e) {
           if (!isNetworkError(e)) {
@@ -76,6 +81,19 @@ export function usePreferences(online: boolean): PreferencesState {
       window.dispatchEvent(new Event(OUTBOX_EVENT));
     },
     [commit, load],
+  );
+
+  const update = useCallback(
+    (change: PreferencesPatch | ((current: Preferences) => PreferencesPatch)) => {
+      setError(undefined);
+      // Resolve against the latest state, not a possibly stale render.
+      const patch = typeof change === "function" ? change(latest.current) : change;
+      commit(applyPreferencesPatch(latest.current, patch));
+      const n = ++sent.current;
+      chain.current = chain.current.then(() => send(patch, n));
+      return chain.current;
+    },
+    [commit, send],
   );
 
   return { prefs, error, update };

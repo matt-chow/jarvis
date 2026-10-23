@@ -136,6 +136,22 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-026 — Accessibility is checked automatically
+**Status:** accepted
+- The browser e2e audits every module through the browser's computed
+  accessibility tree. Interactive controls must have an accessible name,
+  images alt text, and each page a heading. A planted unnamed button
+  proves the audit works.
+- A unit test checks every text colour token against both surfaces
+  (panel, sunken) in both themes at WCAG AA (4.5:1), plus button text on
+  the accent. To meet it, the light theme's accent, ok, and warn colours
+  were darkened slightly (same hues). This is a provisional-token
+  adjustment, not a new aesthetic.
+- Inputs no longer suppress the global `:focus-visible` outline. A
+  "Skip to content" button (first in tab order) moves focus to `<main>`;
+  a link would change the hash route.
+- Not automated: screen-reader announcements and real-device checks.
+
 ## D-025 — Restore is a merge-only import of the export, in small batches
 **Status:** accepted
 - `POST /api/v1/import/{kind}` takes at most 100 records of one kind. The

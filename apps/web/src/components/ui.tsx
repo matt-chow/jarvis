@@ -82,4 +82,4 @@ export function StageTag({ stage }: { stage: "ready" | "preview" | "planned" }) 
 
 /** Shared text input / select / textarea styling. */
 export const inputClass =
-  "min-h-9 rounded-sm border border-line bg-sunken/40 px-3 text-sm text-ink outline-none focus:border-accent disabled:opacity-60";
+  "min-h-9 rounded-sm border border-line bg-sunken/40 px-3 text-sm text-ink focus:border-accent disabled:opacity-60";

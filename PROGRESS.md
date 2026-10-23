@@ -62,10 +62,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
 | `cargo test -p directory-core` | ✅ 109 passed |
-| Vitest | ✅ 56 passed |
+| Vitest | ✅ 70 passed |
 | `npm run test:handoff` | ✅ 50 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
-| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 25/25 |
+| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 26/26 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -106,9 +106,9 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. P5: accessibility pass (keyboard focus, labels, contrast) over the
-   provisional screens; then error recovery and monitoring options within
-   the free tier.
+1. P5: error recovery and monitoring within the free tier (no paid
+   services): a global error boundary with recovery, structured Worker
+   error logs, and a client error report endpoint.
 2. Search over events and habits.
 3. Remaining owner decisions: deploy approval, voice, AI provider, reader
    dependency.
@@ -116,6 +116,20 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-22 — M5 slice: Accessibility (D-026)
+- **Audit:** `scripts/lib/a11y.mjs` (CDP accessibility tree). The browser
+  e2e audits all 14 modules: no unnamed controls were found. The audit is
+  validated against a planted unnamed button.
+- **Contrast:** `lib/theme.test.ts` checks all text tokens in both themes.
+  The light accent (4.10:1, below AA) is now `#9a560b`; ok and warn were
+  darkened too. Primary-button text went from 4.18:1 to 5.44:1.
+- **Keyboard:** inputs keep the focus ring; a "Skip to content" button
+  moves focus to `<main>` (tested with real Tab/Enter key events).
+- **Fix:** quick dashboard edits could overtake each other (stale render
+  plus concurrent PATCHes). Preference changes are now computed from the
+  latest state and sent in order.
+- **Tests:** web 70, browser e2e 26/26.
 
 ### 2026-10-22 — M5 slice: Backup restore (D-025)
 - **Core:**

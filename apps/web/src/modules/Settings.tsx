@@ -164,7 +164,7 @@ export function Settings({ online, session }: ModuleProps) {
             placeholder="Token name (e.g. iPhone)"
             aria-label="Token name"
             maxLength={64}
-            className="min-h-9 min-w-0 flex-1 rounded-sm border border-line bg-sunken/40 px-3 text-sm outline-none focus:border-accent"
+            className="min-h-9 min-w-0 flex-1 rounded-sm border border-line bg-sunken/40 px-3 text-sm focus:border-accent"
           />
           <Button type="submit" disabled={busy || !online}>
             create

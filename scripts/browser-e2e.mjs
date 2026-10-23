@@ -7,6 +7,7 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { audit } from "./lib/a11y.mjs";
 import { launch, waitFor } from "./lib/cdp.mjs";
 import { startDevServer } from "./lib/devserver.mjs";
 
@@ -336,8 +337,8 @@ try {
     await page.click("Move Habits up");
     await page.click("done");
     await waitFor("notes widget hidden", async () => !(await page.text()).includes("RECENT NOTES"));
-    const prefs = await page.evaluate(`fetch("/api/v1/preferences").then((r) => r.json())`);
-    if (prefs.dashboard?.widgets.join() !== "capture,habits,today,status,modules") throw new Error(`server layout: ${JSON.stringify(prefs)}`);
+    // Both edits reach the server, in order (they are sent one at a time).
+    await waitFor("server layout", async () => (await page.evaluate(`fetch("/api/v1/preferences").then((r) => r.json())`)).dashboard?.widgets.join() === "capture,habits,today,status,modules");
     await page.reload();
     await page.waitForText("Stretch");
     if ((await page.text()).includes("RECENT NOTES")) throw new Error("layout not kept after reload");
@@ -418,6 +419,32 @@ try {
     const n = await page.evaluate(`fetch("/api/v1/notes/${note.id}").then((r) => r.json())`);
     if (n.body !== note.body || n.created_at !== note.created_at) throw new Error(`restored note: ${JSON.stringify(n)}`);
     await page.evaluate(`fetch("/api/v1/notes/${note.id}", { method: "DELETE", headers: { Origin: location.origin } })`);
+  });
+
+  await step("Accessibility: on every module, controls have accessible names and the page has a heading", async () => {
+    const problems = [];
+    for (const m of ["home", "search", "inbox", "tasks", "projects", "calendar", "habits", "notes", "journal", "library", "music", "files", "jarvis", "settings"]) {
+      await page.hash(`/${m}`);
+      await waitFor(`${m} loaded`, async () => !/Loading/.test(await page.text()), 10_000).catch(() => {});
+      for (const p of await audit(page)) problems.push(`${m}: ${p}`);
+    }
+    if (problems.length) throw new Error(`\n${[...new Set(problems)].join("\n")}`);
+    // The audit itself must catch an unnamed control and a missing heading.
+    await page.evaluate(`(() => { const b = document.createElement("button"); b.id = "a11y-probe"; document.body.append(b); })()`);
+    const caught = await audit(page);
+    await page.evaluate(`document.getElementById("a11y-probe").remove()`);
+    if (!caught.some((p) => p.includes("a11y-probe"))) throw new Error(`audit missed an unnamed button: ${JSON.stringify(caught)}`);
+    // Keyboard: the first Tab reaches "Skip to content", which moves focus to the main region.
+    // (Reload so focus navigation starts at the top of the document.)
+    await page.reload();
+    await page.waitForText("Skip to content");
+    for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
+    const first = await page.evaluate(`document.activeElement?.textContent ?? ""`);
+    if (first.trim() !== "Skip to content") throw new Error(`first Tab focused: ${first}`);
+    // `text` makes it a real key press, which activates the focused button.
+    await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
+    await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    await waitFor("main focused", () => page.evaluate(`document.activeElement?.tagName === "MAIN"`));
   });
 
   await step("Projects: create, add a task from the project, progress updates", async () => {

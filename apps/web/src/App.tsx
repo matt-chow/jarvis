@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentType } from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 import { AuthScreen } from "./components/AuthScreen";
 import { PlayerProvider } from "./components/Player";
 import { StatusChip, StageTag, type Tone } from "./components/ui";
@@ -89,6 +89,7 @@ export function App() {
   const sw = useServiceWorker();
   const session = useSession(online);
   const sync = useSync(online);
+  const main = useRef<HTMLElement>(null);
   const current = MODULES.find((m) => m.id === active)!;
   const View = VIEWS[active];
   const swState = swChip(sw);
@@ -133,6 +134,14 @@ export function App() {
 
   return (
     <PlayerProvider>
+    {/* Keyboard users can jump past the navigation (a link would change the hash route). */}
+    <button
+      type="button"
+      onClick={() => main.current?.focus()}
+      className="sr-only z-50 rounded-sm bg-accent px-3 py-2 text-sm text-accent-ink focus:not-sr-only focus:fixed focus:top-2 focus:left-2"
+    >
+      Skip to content
+    </button>
     <div className="flex h-full">
       {/* Sidebar (tablet / desktop) */}
       <aside className="hidden w-60 shrink-0 flex-col border-r border-line bg-panel/80 backdrop-blur md:flex">
@@ -209,7 +218,7 @@ export function App() {
           )}
         </header>
 
-        <main className="flex-1 overflow-y-auto px-4 py-6 pb-44 md:px-8 md:pb-24">
+        <main ref={main} tabIndex={-1} className="flex-1 overflow-y-auto px-4 py-6 pb-44 focus:outline-none md:px-8 md:pb-24">
           <div className="mx-auto max-w-5xl">
             <View online={online} health={health} sw={sw} session={session} navigate={navigate} />
           </div>

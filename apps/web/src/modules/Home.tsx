@@ -30,7 +30,8 @@ export function Home(props: ModuleProps) {
   const [customizing, setCustomizing] = useState(false);
   const widgets = widgetsOf(prefs);
   const hidden = WIDGETS.filter((w) => !widgets.includes(w.id));
-  const save = (next: WidgetId[]) => void update({ dashboard: { widgets: next } });
+  /** Apply `f` to the latest layout (not this render's), so quick edits all count. */
+  const save = (f: (current: WidgetId[]) => WidgetId[]) => void update((p) => ({ dashboard: { widgets: f(widgetsOf(p)) } }));
 
   return (
     <div className="flex flex-col gap-5">
@@ -58,7 +59,7 @@ export function Home(props: ModuleProps) {
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
               <span className="label mr-1">add</span>
               {hidden.map((w) => (
-                <Button key={w.id} className={small} title={w.summary} onClick={() => save([...widgets, w.id])}>
+                <Button key={w.id} className={small} title={w.summary} onClick={() => save((cur) => [...cur, w.id])}>
                   + {w.label.toLowerCase()}
                 </Button>
               ))}
@@ -83,13 +84,13 @@ export function Home(props: ModuleProps) {
               <div key={id} className={`flex flex-col gap-1.5 ${className ?? ""}`}>
                 <div className="flex items-center gap-1.5">
                   <span className="label mr-auto">{label}</span>
-                  <Button className={small} aria-label={`Move ${label} up`} disabled={i === 0} onClick={() => save(moveWidget(widgets, id, -1))}>
+                  <Button className={small} aria-label={`Move ${label} up`} disabled={i === 0} onClick={() => save((cur) => moveWidget(cur, id, -1))}>
                     ↑
                   </Button>
-                  <Button className={small} aria-label={`Move ${label} down`} disabled={i === widgets.length - 1} onClick={() => save(moveWidget(widgets, id, 1))}>
+                  <Button className={small} aria-label={`Move ${label} down`} disabled={i === widgets.length - 1} onClick={() => save((cur) => moveWidget(cur, id, 1))}>
                     ↓
                   </Button>
-                  <Button className={small} aria-label={`Hide ${label}`} onClick={() => save(widgets.filter((w) => w !== id))}>
+                  <Button className={small} aria-label={`Hide ${label}`} onClick={() => save((cur) => cur.filter((w) => w !== id))}>
                     hide
                   </Button>
                 </div>

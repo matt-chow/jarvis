@@ -96,7 +96,7 @@ export function AuthScreen({ setupRequired, unavailable, onSignedIn, onRetry }: 
                   onChange={(e) => setDisplayName(e.target.value)}
                   maxLength={64}
                   autoComplete="name"
-                  className="min-h-10 rounded-sm border border-line bg-sunken/40 px-3 text-sm outline-none focus:border-accent"
+                  className="min-h-10 rounded-sm border border-line bg-sunken/40 px-3 text-sm focus:border-accent"
                 />
               </label>
               <label className="flex flex-col gap-1">
@@ -106,7 +106,7 @@ export function AuthScreen({ setupRequired, unavailable, onSignedIn, onRetry }: 
                   value={setupToken}
                   onChange={(e) => setSetupToken(e.target.value)}
                   autoComplete="off"
-                  className="min-h-10 rounded-sm border border-line bg-sunken/40 px-3 font-mono text-sm outline-none focus:border-accent"
+                  className="min-h-10 rounded-sm border border-line bg-sunken/40 px-3 font-mono text-sm focus:border-accent"
                 />
               </label>
               <Button type="submit" variant="primary" disabled={busy || !supported || !setupToken.trim()}>

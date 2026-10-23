@@ -80,6 +80,7 @@ part of every slice, not deferred to the end.
 | List caps enforced at create, no silent truncation (D-022) | ✅ done |
 | Backup restore: merge-only import of the export (D-025) | ✅ done (file contents need re-upload) |
 | HTTP Range for file content | ✅ done |
-| Security review, performance, accessibility audit | planned |
+| Accessibility: names on every control (audited per module), AA contrast tokens (tested), visible input focus, skip link | ✅ done (automated checks; a screen-reader pass on real devices is still owed) |
+| Security review, performance | planned |
 | Error recovery and monitoring | planned (free-tier options only) |
 | Mobile (iOS) verification | needs a device |

@@ -26,10 +26,10 @@
   --line: #d9d1bf;
   --ink: #1d1b16;
   --muted: #6b6457;
-  --accent: #b5650d;
+  --accent: #9a560b; /* ≥ 4.5:1 on panel and sunken (WCAG AA) */
   --accent-ink: #fffaf0;
-  --ok: #2f7d4a;
-  --warn: #a86a00;
+  --ok: #2c7445;
+  --warn: #905b00;
   --bad: #b23a32;
   color-scheme: light;
 }
