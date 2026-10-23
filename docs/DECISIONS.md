@@ -136,6 +136,18 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-039 — A cached list ignores responses that newer changes overtook
+**Status:** accepted
+- `useCachedList` gives each load a token from `lib/gate.ts`. A local edit
+  (`replace`, `mutate`) or a newer load makes older tokens stale, and a
+  stale response (or its offline fallback) is dropped.
+- Before this, a reload that started just before an offline edit could
+  resolve after it and overwrite the list and its cached copy. The edit
+  stayed queued and synced, but disappeared from view until then. Two
+  overlapping reloads could also land out of order.
+- A dropped response isn't retried. The list keeps the newer state, and
+  the next reload (on sync or reconnect) brings it up to date.
+
 ## D-038 — Search ignores case for all letters, not just ASCII
 **Status:** accepted
 - SQLite `LIKE` folds case only for ASCII, so "über" missed "Über".

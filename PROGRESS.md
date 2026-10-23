@@ -62,7 +62,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
 | `cargo test -p directory-core` | ✅ 117 passed |
-| Vitest | ✅ 91 passed |
+| Vitest | ✅ 94 passed |
 | `npm run test:handoff` | ✅ 50 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
 | `npm run test:browser` (headless Edge, virtual passkey) | ✅ 31/31 |
@@ -109,10 +109,11 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. Watch item: an intermittent "Offline edits" browser failure seen once
-   (task queued but not listed). It hasn't recurred in five full runs since
-   the stale-connection fix (D-028), but that fix isn't proven to be the
-   cause.
+1. Watch item: the intermittent "Offline edits" failure (task queued but
+   not listed). Its likely cause is fixed (D-039): a list reload in flight
+   could overwrite an offline edit. It isn't proven, because the failure
+   was never caught with diagnostics. No failures in the 3 back-to-back
+   runs since.
 2. Deploy readiness: everything blocking M1 is the owner's call (see
    below).
 3. Measure Worker CPU after the first deploy (owner approval needed).
@@ -122,6 +123,14 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-23 — Reliability: stale list loads can't overwrite edits (D-039)
+- **Web:** `lib/gate.ts` (load tokens), used by `useCachedList` for loads,
+  commits, and local replaces.
+- **Why:** the inbox e2e flake showed out-of-order list responses, and
+  the same race explains the long-standing "Offline edits" watch item.
+- **Tests:** web 94 (gate ordering); browser e2e 31/31 three runs in a
+  row.
 
 ### 2026-10-23 — Search: Unicode case-insensitive (D-038)
 - **Core:** `search::plan` picks the LIKE pattern and row limit; rows are

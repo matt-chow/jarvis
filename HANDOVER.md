@@ -1,6 +1,6 @@
 # Handover
 
-Base commit: bac29ed
+Base commit: e417432
 From: claude → To: (either; no handoff in progress)
 Updated: 2026-10-23
 
@@ -10,7 +10,7 @@ offline search (D-031), read-only offline Files (D-032), and
 the upload quota race / orphaned-blob retry (D-033, migration 0020), and offline
 note pinning (D-034) journal delete (D-035), inbox
 triage (D-036), links (D-037), and Unicode
-case-insensitive search (D-038). Gate: verify, smoke, and browser e2e 28/28.
+case-insensitive search (D-038), and the stale list-load race (D-039). Gate: verify, smoke, and browser e2e 28/28.
 
 ## In progress
 Nothing uncommitted.
@@ -27,8 +27,9 @@ Nothing uncommitted.
    - An in-app PDF reader: pdf.js, or serving PDFs inline (CSP change).
      ePubs already read in-app (D-029).
    - iOS verification on a device.
-2. Watch item: one intermittent "Offline edits" browser failure, not seen
-   in the last five full runs.
+2. Watch item: the intermittent "Offline edits" failure. Its likely cause
+   (a stale list reload overwriting an offline edit) is fixed in D-039;
+   not yet proven.
 
 ## Working tree
 Clean except this file. No stashes.

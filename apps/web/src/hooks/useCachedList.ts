@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, isNetworkError } from "../lib/api";
 import { localDb } from "../lib/db";
+import { createGate } from "../lib/gate";
 import { reportIfUnauthorized } from "./useSession";
 
 export interface CachedList<T> {
@@ -41,9 +42,12 @@ export function useCachedList<T>(cacheKey: string, noun: string, fetchAll: () =>
   const latest = useRef<T[] | undefined>(undefined);
   const fetchRef = useRef(fetchAll);
   fetchRef.current = fetchAll;
+  // A slow load must not overwrite a newer load or a local edit (D-039).
+  const gate = useRef(createGate()).current;
 
   const commit = useCallback(
     (next: T[]) => {
+      gate.bump();
       latest.current = next;
       setItems(next);
       setStale(false);
@@ -51,19 +55,23 @@ export function useCachedList<T>(cacheKey: string, noun: string, fetchAll: () =>
         .then((db) => db.setValue(cacheKey, next))
         .catch(() => {});
     },
-    [cacheKey],
+    [cacheKey, gate],
   );
 
   const reload = useCallback(async () => {
     setLoading(true);
+    const token = gate.begin();
     try {
-      commit(await fetchRef.current());
+      const fresh = await fetchRef.current();
+      if (!gate.current(token)) return;
+      commit(fresh);
       setError(undefined);
     } catch (e) {
       reportIfUnauthorized(e);
       const cached = await localDb()
         .then((db) => db.getValue<T[]>(cacheKey))
         .catch(() => undefined);
+      if (!gate.current(token)) return;
       if (cached) {
         latest.current = cached;
         setItems(cached);
@@ -73,7 +81,7 @@ export function useCachedList<T>(cacheKey: string, noun: string, fetchAll: () =>
     } finally {
       setLoading(false);
     }
-  }, [cacheKey, commit, noun]);
+  }, [cacheKey, commit, gate, noun]);
 
   useEffect(() => {
     void reload();
@@ -99,13 +107,14 @@ export function useCachedList<T>(cacheKey: string, noun: string, fetchAll: () =>
   const latestItems = useCallback(() => latest.current ?? [], []);
   const replace = useCallback(
     (next: T[]) => {
+      gate.bump();
       latest.current = next;
       setItems(next);
       void localDb()
         .then((db) => db.setValue(cacheKey, next))
         .catch(() => {});
     },
-    [cacheKey],
+    [cacheKey, gate],
   );
   return { items, loading, stale, error, reload: reloadNow, mutate, latest: latestItems, replace, setError };
 }
