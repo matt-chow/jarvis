@@ -220,7 +220,7 @@ function ProjectDetail(props: {
           <p className="mt-1 font-mono text-[11px] text-muted">{progress.open} open</p>
         </div>
         <Button onClick={props.onViewTasks}>view tasks →</Button>
-        <LinkedSection entity={{ kind: "project", id: project.id }} disabled={props.offline} />
+        <LinkedSection entity={{ kind: "project", id: project.id }} />
 
         <div className="flex items-center justify-between gap-2 border-t border-line pt-3">
           <Button

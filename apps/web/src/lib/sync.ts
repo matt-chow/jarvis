@@ -13,6 +13,7 @@ import { addDays, dayNumber, type CalendarEvent, type EventPatch, type NewEvent 
 import type { OutboxEntry } from "./db";
 import { withCheck, type Habit, type HabitPatch, type HabitView, type NewHabit } from "./habits";
 import type { InboxItem, Triaged, TriageTarget } from "./inbox";
+import type { EntityRef, Linked } from "./links";
 import type { JournalEntry, PutJournal } from "./journal";
 import { applyProgress, type LibraryItem, type Progress, type ProgressPatch } from "./library";
 import type { Note, NotePatch } from "./notes";
@@ -48,6 +49,9 @@ export type Op =
   | { kind: "event.delete"; id: string }
   /** Last write wins, so replays are safe. */
   | { kind: "prefs.update"; patch: PreferencesPatch }
+  /** Idempotent per pair on the server (D-037). */
+  | { kind: "link.create"; from: EntityRef; to: EntityRef }
+  | { kind: "link.delete"; link_id: string }
   /** Reading progress (a PUT, so replays are safe). */
   | { kind: "library.progress"; file_id: string; patch: ProgressPatch };
 
@@ -106,6 +110,8 @@ export interface SyncApi {
   deleteEvent(id: string): Promise<void>;
   updatePreferences(patch: PreferencesPatch): Promise<Preferences>;
   setProgress(fileId: string, patch: ProgressPatch): Promise<Progress>;
+  link(from: EntityRef, to: EntityRef): Promise<Linked>;
+  unlink(linkId: string): Promise<void>;
 }
 
 export interface SyncResult {
@@ -148,6 +154,12 @@ async function apply(api: SyncApi, op: Op): Promise<number | void> {
         return;
       case "inbox.triage":
         await api.triage(op.id, op.to, op.date);
+        return;
+      case "link.create":
+        await api.link(op.from, op.to);
+        return;
+      case "link.delete":
+        await api.unlink(op.link_id);
         return;
       case "project.create":
         await api.createProject(op.project);
@@ -260,6 +272,10 @@ function describeOp(op: Op): string {
       return "save your dashboard layout";
     case "library.progress":
       return "save your reading progress";
+    case "link.create":
+      return `link a ${op.from.kind} to a ${op.to.kind}`;
+    case "link.delete":
+      return "remove a link";
   }
 }
 

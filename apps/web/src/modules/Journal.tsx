@@ -128,7 +128,6 @@ export function Journal({ online }: ModuleProps) {
         month={month}
         today={today}
         list={list}
-        offline={offline}
         onGo={go}
         onDeleted={() => setGeneration((g) => g + 1)}
       />
@@ -142,8 +141,6 @@ function DayEditor(props: {
   month: string;
   today: string;
   list: CachedList<JournalSummary>;
-  /** Links need a connection; deleting is queued offline (D-035). */
-  offline: boolean;
   onGo: (date: string) => void;
   onDeleted: () => void;
 }) {
@@ -175,7 +172,6 @@ function DayEditor(props: {
     },
   });
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const online = !props.offline && !editor.fromCache;
   const exists = Boolean(editor.doc);
 
   const remove = async () => {
@@ -262,7 +258,7 @@ function DayEditor(props: {
           />
           {exists && (
             <div className="mt-3">
-              <LinkedSection entity={{ kind: "journal", id: date }} disabled={!online} />
+              <LinkedSection entity={{ kind: "journal", id: date }} />
             </div>
           )}
           {exists && (

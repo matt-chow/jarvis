@@ -106,7 +106,6 @@ export function Notes({ online }: ModuleProps) {
           key={selected}
           id={selected}
           state={state}
-          offline={offline}
           online={online}
           onOpen={setSelected}
           onCreate={(title) => void create(title)}
@@ -123,13 +122,12 @@ export function Notes({ online }: ModuleProps) {
 function NoteEditor(props: {
   id: string;
   state: NotesState;
-  offline: boolean;
   /** Browser connectivity, for the backlinks list. */
   online: boolean;
   onOpen: (id: string) => void;
   onCreate: (title: string) => void;
 }) {
-  const { id, state, offline } = props;
+  const { id, state } = props;
   const { saved } = state;
   const editor = useAutosaveDoc<Note, Required<NoteFields>>({
     cacheKey: `note:${id}`,
@@ -162,8 +160,7 @@ function NoteEditor(props: {
     );
   }
 
-  // Links are online-only; pinning is saved with the text (D-034).
-  const online = !offline && !editor.fromCache;
+  // Pinning is saved with the text (D-034); links queue offline (D-037).
   const pinned = editor.fields.pinned ?? note.pinned;
 
   return (
@@ -204,7 +201,7 @@ function NoteEditor(props: {
       />
       <WikiSection id={id} body={editor.fields.body} notes={state.notes ?? []} online={props.online} onOpen={props.onOpen} onCreate={props.onCreate} />
       <div className="mt-3">
-        <LinkedSection entity={{ kind: "note", id }} disabled={!online} />
+        <LinkedSection entity={{ kind: "note", id }} />
       </div>
       <div className="mt-3 flex items-center justify-between">
         <span className="font-mono text-[11px] text-muted">created {formatDate(note.created_at)}</span>

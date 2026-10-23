@@ -1,14 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
-import { describeError } from "../hooks/useCachedList";
-import { reportIfUnauthorized } from "../hooks/useSession";
-import { api } from "../lib/api";
-import { KIND_GLYPH, entityRoute, filterCandidates, type Candidate, type EntityRef, type Linked } from "../lib/links";
+import { runOrQueue } from "../hooks/offline";
+import { useCachedList } from "../hooks/useCachedList";
+import { useOnline } from "../hooks/useOnline";
+import { SYNCED_EVENT } from "../hooks/useSync";
+import { api, isNetworkError } from "../lib/api";
+import { localDb } from "../lib/db";
+import { KIND_GLYPH, entityRoute, filterCandidates, isLocalLink, localLinkId, type Candidate, type EntityRef, type Linked } from "../lib/links";
+import { loadCachedData } from "../lib/searchCache";
+import type { Op } from "../lib/sync";
 import { localDate } from "../lib/tasks";
 import { inputClass } from "./ui";
 
-/** Every task, note, and project title, for the link picker. */
+/** Every task, note, and project title, for the link picker (offline: the copies on this device). */
 async function loadCandidates(): Promise<Candidate[]> {
-  const [tasks, notes, projects] = await Promise.all([api.tasks("all"), api.notes(), api.projects(true)]);
+  let tasks, notes, projects;
+  try {
+    [tasks, notes, projects] = await Promise.all([api.tasks("all"), api.notes(), api.projects(true)]);
+  } catch (e) {
+    if (!isNetworkError(e)) throw e;
+    const c = await loadCachedData(await localDb());
+    [tasks, notes, projects] = [c.tasks ?? [], c.notes ?? [], c.projects ?? []];
+  }
   return [
     ...tasks.map((t) => ({ kind: "task" as const, id: t.id, title: t.title })),
     ...notes.map((n) => ({ kind: "note" as const, id: n.id, title: n.title })),
@@ -16,51 +28,71 @@ async function loadCandidates(): Promise<Candidate[]> {
   ];
 }
 
-/** "Linked" list with a cross-module picker, shown inside an item's editor. */
+const samePair = (op: Op, from: EntityRef, to: EntityRef) =>
+  op.kind === "link.create" && op.from.kind === from.kind && op.from.id === from.id && op.to.kind === to.kind && op.to.id === to.id;
+
+/**
+ * "Linked" list with a cross-module picker, shown inside an item's editor.
+ * Works offline (D-037): the list is cached, and links made or removed are queued.
+ */
 export function LinkedSection({ entity, disabled }: { entity: EntityRef; disabled?: boolean }) {
-  const [links, setLinks] = useState<Linked[]>();
-  const [error, setError] = useState<string>();
+  const online = useOnline();
+  const { kind, id } = entity;
+  const fetchLinks = useCallback(() => api.links({ kind, id }), [kind, id]);
+  const list = useCachedList<Linked>(`links:${kind}:${id}`, "link", fetchLinks, online);
+  const links = list.items;
+  const error = list.error;
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState<Candidate[]>();
-
-  const fail = useCallback((e: unknown) => {
-    reportIfUnauthorized(e);
-    setError(describeError(e, "link"));
-  }, []);
+  const { reload } = list;
 
   useEffect(() => {
-    let cancelled = false;
-    api.links(entity).then((l) => !cancelled && setLinks(l), (e: unknown) => !cancelled && fail(e));
-    return () => {
-      cancelled = true;
-    };
-  }, [entity.kind, entity.id, fail]);
+    window.addEventListener(SYNCED_EVENT, reload);
+    return () => window.removeEventListener(SYNCED_EVENT, reload);
+  }, [reload]);
 
   const open = () => {
     setPicking(true);
     setQuery("");
-    if (!candidates) loadCandidates().then(setCandidates, fail);
+    if (!candidates) loadCandidates().then(setCandidates, (e: unknown) => list.setError(String(e)));
   };
 
-  const add = async (to: EntityRef) => {
-    setError(undefined);
-    try {
-      const l = await api.link(entity, to);
-      setLinks((cur) => [...(cur ?? []).filter((x) => x.link_id !== l.link_id), l]);
-      setPicking(false);
-    } catch (e) {
-      fail(e);
-    }
+  const add = async (to: Candidate) => {
+    const target: EntityRef = { kind: to.kind, id: to.id };
+    const placeholder: Linked = { link_id: localLinkId(entity, target), kind: to.kind, id: to.id, title: to.title, created_at: Date.now() };
+    const done = await runOrQueue<Linked, Linked>({
+      list,
+      noun: "link",
+      op: { kind: "link.create", from: entity, to: target },
+      server: () => api.link(entity, target),
+      fromServer: (cur, l) => [...cur.filter((x) => x.link_id !== l.link_id), l],
+      applyLocal: (cur) => [...cur.filter((x) => x.link_id !== placeholder.link_id), placeholder],
+      local: () => placeholder,
+    });
+    if (done) setPicking(false);
   };
 
-  const remove = async (linkId: string) => {
-    try {
-      await api.unlink(linkId);
-      setLinks((cur) => cur?.filter((l) => l.link_id !== linkId));
-    } catch (e) {
-      fail(e);
+  const remove = async (l: Linked) => {
+    if (isLocalLink(l.link_id)) {
+      // Made offline and not synced yet: cancel the queued create instead.
+      const target: EntityRef = { kind: l.kind, id: l.id };
+      await (await localDb()).dropWhere((op) => samePair(op as Op, entity, target));
+      list.replace(list.latest().filter((x) => x.link_id !== l.link_id));
+      return;
     }
+    await runOrQueue<Linked, true>({
+      list,
+      noun: "link",
+      op: { kind: "link.delete", link_id: l.link_id },
+      server: async () => {
+        await api.unlink(l.link_id);
+        return true;
+      },
+      fromServer: (cur) => cur.filter((x) => x.link_id !== l.link_id),
+      applyLocal: (cur) => cur.filter((x) => x.link_id !== l.link_id),
+      local: () => true,
+    });
   };
 
   // Journal days are offered when the query is a date (or "today").
@@ -97,7 +129,7 @@ export function LinkedSection({ entity, disabled }: { entity: EntityRef; disable
               <button
                 type="button"
                 disabled={disabled}
-                onClick={() => void remove(l.link_id)}
+                onClick={() => void remove(l)}
                 aria-label={`Unlink “${l.title}”`}
                 className="font-mono text-xs text-muted hover:text-bad disabled:opacity-50"
               >

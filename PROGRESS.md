@@ -62,10 +62,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
 | `cargo test -p directory-core` | ✅ 115 passed |
-| Vitest | ✅ 89 passed |
+| Vitest | ✅ 91 passed |
 | `npm run test:handoff` | ✅ 50 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
-| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 30/30 |
+| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 31/31 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -79,7 +79,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Search uses SQLite `LIKE`, which is case-insensitive for ASCII only, and
   reads whole note and journal bodies for snippets. Move to FTS5 when data
   grows.
-- Offline: links need a connection. An item triaged offline appears in
+- Offline: a link made offline shows only on the item it was made from
+  until it syncs (D-037). An item triaged offline appears in
   Tasks, Notes, or Journal only after it syncs (D-036). A new edit queued in the instant between a replay finishing
   and the open editor learning the new version can show a spurious
   conflict (resolved with "keep mine"). A project deleted offline leaves
@@ -120,6 +121,16 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-23 — Links work offline (D-037)
+- **Web:** `LinkedSection` uses a cached list, queued `link.create` and
+  `link.delete` ops, placeholder ids for unsynced links
+  (`lib/links.ts`), `LocalDb.dropWhere` to cancel an unsynced link, and
+  picker candidates from the device cache when offline. Links are no
+  longer disabled offline in Notes, Journal, or Projects.
+- **Tests:** web 91 (link and unlink replay, cancelling a queued link);
+  browser e2e 31/31, with a new step: unlink and relink offline, then
+  the server has exactly one link after the sync.
 
 ### 2026-10-23 — Inbox: triage works offline (D-036); e2e harness fixes
 - **Web:** the `inbox.triage` outbox op, `useInbox.triage` through

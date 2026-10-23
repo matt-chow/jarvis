@@ -155,6 +155,20 @@ export class LocalDb {
     for (const e of all) if (e.merge === key && e.seq !== undefined) await promisify(store.delete(e.seq));
   }
 
+  /** Remove queued changes whose op matches (e.g. a create cancelled before it synced). Returns how many. */
+  async dropWhere(match: (op: unknown) => boolean): Promise<number> {
+    const store = this.store("outbox", "readwrite");
+    const all = (await promisify(store.getAll())) as OutboxEntry[];
+    let n = 0;
+    for (const e of all) {
+      if (e.seq !== undefined && match(e.op)) {
+        await promisify(store.delete(e.seq));
+        n++;
+      }
+    }
+    return n;
+  }
+
   /** Queued changes for one document, oldest first. */
   async pendingFor(doc: string): Promise<OutboxEntry[]> {
     return (await this.outbox()).filter((e) => e.doc === doc);

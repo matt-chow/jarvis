@@ -2,6 +2,7 @@ import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import { LocalDb } from "./db";
+import { isLocalLink, localLinkId } from "./links";
 import { applyEventLocally, applyHabitLocally, applyInboxLocally, applyLocally, applyProjectLocally, clientId, replay, type Op, type SyncApi } from "./sync";
 import type { Note } from "./notes";
 import type { Task } from "./tasks";
@@ -50,6 +51,8 @@ function fakeApi(fail: (op: string) => unknown = () => undefined) {
       return note(id, 50);
     },
     deleteNote: async (id) => void (await run(`note-delete:${id}`)),
+    link: async (from, to) => ({ ...(await run(`link:${from.kind}:${from.id}>${to.kind}:${to.id}`)), link_id: "l1", kind: to.kind, id: to.id, title: "" }),
+    unlink: async (id) => void (await run(`unlink:${id}`)),
     triage: async (id, to, date) => ({ kind: "note", note: { ...(await run(`triage:${id}:${to}${date ? `:${date}` : ""}`)), id: "n", title: "", body: "", pinned: false } }),
     deleteJournal: async (date) => void (await run(`journal-delete:${date}`)),
     createHabit: async (h) => ({ ...(await run(`habit:${h.id}`)), name: h.name, days: [], archived: false }),
@@ -190,6 +193,34 @@ describe("inbox triage offline (D-036)", () => {
   it("removes the item from the local inbox", () => {
     const items = [{ id: "a1", text: "x", created_at: 1 }, { id: "b2", text: "y", created_at: 2 }];
     expect(applyInboxLocally(items, { kind: "inbox.triage", id: "a1", to: "note" }).map((i) => i.id)).toEqual(["b2"]);
+  });
+});
+
+describe("links offline (D-037)", () => {
+  const note = { kind: "note" as const, id: "n1" };
+  const task = { kind: "task" as const, id: "t1" };
+
+  it("replays link and unlink; an unlink of a link already gone is done", async () => {
+    const db = await outboxWith([
+      { kind: "link.create", from: note, to: task },
+      { kind: "link.delete", link_id: "old" },
+    ]);
+    const { api, calls } = fakeApi((op) => (op === "unlink:old" ? new ApiError(404, "not_found") : undefined));
+    const r = await replay(db, api);
+    expect(calls).toEqual(["link:note:n1>task:t1", "unlink:old"]);
+    expect(r).toMatchObject({ applied: 2, rejected: [], pending: 0 });
+  });
+
+  it("removing a link made offline cancels its queued create", async () => {
+    const db = await outboxWith([
+      { kind: "link.create", from: note, to: task },
+      { kind: "link.create", from: note, to: { kind: "project", id: "p1" } },
+    ]);
+    const dropped = await db.dropWhere((op) => (op as Op).kind === "link.create" && (op as { to: { id: string } }).to.id === "t1");
+    expect(dropped).toBe(1);
+    expect((await db.outbox()).map((e) => (e.op as { to: { id: string } }).to.id)).toEqual(["p1"]);
+    expect(localLinkId(note, task)).toBe("local:note:n1|task:t1");
+    expect(isLocalLink(localLinkId(note, task)) && !isLocalLink("abc")).toBe(true);
   });
 });
 

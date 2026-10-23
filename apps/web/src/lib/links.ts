@@ -16,6 +16,10 @@ export interface Linked {
   created_at: number;
 }
 
+/** Placeholder id for a link made offline, until the sync gives it a real one (D-037). */
+export const localLinkId = (from: EntityRef, to: EntityRef) => `local:${from.kind}:${from.id}|${to.kind}:${to.id}`;
+export const isLocalLink = (linkId: string) => linkId.startsWith("local:");
+
 export const KIND_GLYPH: Record<EntityKind, string> = { task: "☐", note: "¶", project: "▦", journal: "≡" };
 
 /** Hash route that opens an item (each module reads its selection param). */

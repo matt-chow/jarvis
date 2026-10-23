@@ -136,6 +136,20 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-037 — Links work offline
+**Status:** accepted
+- Each item's link list is cached (`links:<kind>:<id>`). The picker
+  offers the cached tasks, notes, and projects when the server is
+  unreachable.
+- Linking queues `link.create { from, to }`, which the server handles
+  idempotently per pair, so no client link id is needed. The local row
+  gets a placeholder id (`local:…`) until the next sync reloads the list.
+- Unlinking a synced link queues `link.delete { link_id }` (a 404 is
+  done). Unlinking a placeholder removes its queued create from the
+  outbox (`LocalDb.dropWhere`), so nothing reaches the server.
+- The other item's cached list isn't updated locally (its own title isn't
+  known there). The link shows on that side after the sync.
+
 ## D-036 — Inbox triage queues offline as one server-side operation
 **Status:** accepted
 - Triage offline queues `inbox.triage { id, to, date? }` and removes the

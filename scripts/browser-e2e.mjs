@@ -432,6 +432,31 @@ try {
     await page.evaluate(`fetch("/api/v1/tasks/${made.id}", { method: "DELETE", headers: { Origin: location.origin } })`);
   });
 
+  await step("Links offline: unlink and relink without a connection; both replay in order (D-037)", async () => {
+    const notes = await page.evaluate(`fetch("/api/v1/notes").then((r) => r.json())`);
+    const meeting = notes.notes.find((n) => n.title === "Meeting notes");
+    const serverLinks = () => page.evaluate(`fetch("/api/v1/links?kind=note&id=${meeting.id}").then((r) => r.json()).then((b) => b.links)`);
+    if (!(await serverLinks()).some((l) => l.title === "Write the quarterly report")) throw new Error("expected the link from the Links step");
+    await page.hash("/notes");
+    await page.click("Meeting notes");
+    await waitFor("links listed", () => page.evaluate(`[...document.querySelectorAll("a")].some((a) => a.innerText === "Write the quarterly report")`));
+    await page.send("Network.enable", {});
+    const net = (offline) => page.send("Network.emulateNetworkConditions", { offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    await net(true);
+    await waitFor("browser offline", () => page.evaluate("!navigator.onLine"));
+    await page.click("Unlink “Write the quarterly report”");
+    await page.waitForText("1 pending");
+    await page.click("+ link");
+    await page.fill("Link to", "quarterly");
+    await page.click("Write the quarterly report"); // offered from the copy on this device
+    await page.waitForText("2 pending");
+    await waitFor("relinked locally", () => page.evaluate(`[...document.querySelectorAll("a")].some((a) => a.innerText === "Write the quarterly report")`));
+    await net(false);
+    await waitFor("synced", async () => !/pending|syncing…/i.test(await page.text()), 30_000);
+    const after = await serverLinks();
+    if (after.filter((l) => l.title === "Write the quarterly report").length !== 1) throw new Error(`links after sync: ${JSON.stringify(after)}`);
+  });
+
   await step("Habits: add one, check off today, streak shows and reaches the server", async () => {
     await page.hash("/habits");
     await page.waitForText("No habits yet");
