@@ -136,6 +136,17 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-035 — Journal days can be deleted offline
+**Status:** accepted
+- Delete queues a `journal.delete` op (a 404 on replay counts as done)
+  and removes the day from the cached month and its `journal:<date>`
+  copy.
+- First it drops any queued coalesced save of that day
+  (`LocalDb.dropMerged`). Otherwise writing the day again would update
+  that older outbox slot in place, and it would replay before the delete,
+  which would then wipe the new text. The new text is saved create-only
+  (base 0) after the delete.
+
 ## D-034 — Pinning a note is part of its versioned save
 **Status:** accepted
 - `pinned` joins the note's autosaved fields, so the pin button edits

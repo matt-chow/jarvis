@@ -35,6 +35,7 @@ export type Op =
   | { kind: "note.delete"; id: string }
   /** `base` 0 = the day had no entry (create only). */
   | { kind: "journal.save"; date: string; fields: JournalFields; base?: number }
+  | { kind: "journal.delete"; date: string }
   | { kind: "habit.create"; habit: NewHabit & { id: string } }
   | { kind: "habit.update"; id: string; patch: HabitPatch }
   | { kind: "habit.delete"; id: string }
@@ -92,6 +93,7 @@ export interface SyncApi {
   updateNote(id: string, patch: NotePatch): Promise<Note>;
   deleteNote(id: string): Promise<void>;
   putJournal(date: string, entry: PutJournal): Promise<JournalEntry>;
+  deleteJournal(date: string): Promise<void>;
   createHabit(h: NewHabit & { id: string }): Promise<Habit>;
   updateHabit(id: string, patch: HabitPatch): Promise<Habit>;
   deleteHabit(id: string): Promise<void>;
@@ -160,6 +162,9 @@ async function apply(api: SyncApi, op: Op): Promise<number | void> {
         return;
       case "journal.save":
         return (await api.putJournal(op.date, { ...op.fields, expected_updated_at: op.base })).updated_at;
+      case "journal.delete":
+        await api.deleteJournal(op.date);
+        return;
       case "habit.create":
         await api.createHabit(op.habit);
         return;
@@ -226,6 +231,8 @@ function describeOp(op: Op): string {
       return "delete a note";
     case "journal.save":
       return `save the journal for ${op.date}`;
+    case "journal.delete":
+      return `delete the journal for ${op.date}`;
     case "habit.create":
       return `create habit “${op.habit.name}”`;
     case "habit.update":

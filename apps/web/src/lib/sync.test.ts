@@ -50,6 +50,7 @@ function fakeApi(fail: (op: string) => unknown = () => undefined) {
       return note(id, 50);
     },
     deleteNote: async (id) => void (await run(`note-delete:${id}`)),
+    deleteJournal: async (date) => void (await run(`journal-delete:${date}`)),
     createHabit: async (h) => ({ ...(await run(`habit:${h.id}`)), name: h.name, days: [], archived: false }),
     updateHabit: async (id) => ({ ...(await run(`habit-update:${id}`)), name: "", days: [], archived: false }),
     deleteHabit: async (id) => void (await run(`habit-delete:${id}`)),
@@ -208,6 +209,21 @@ describe("document saves (D-018)", () => {
     const { api, calls } = fakeApi(() => undefined);
     await replay(db, api);
     expect(calls).toEqual(["note-save:n1@7 pinned=true"]);
+  });
+
+  it("deletes a journal day offline without a later rewrite replaying before the delete (D-035)", async () => {
+    const day = (body: string, base?: number): Op => ({ kind: "journal.save", date: "2026-10-20", fields: { body, mood: null }, base });
+    const db = await outboxWith([]);
+    await db.enqueueMerged("journal:2026-10-20", () => day("first draft", 5));
+    // Delete: the queued save is dropped, then the delete is queued.
+    await db.dropMerged("journal:2026-10-20");
+    await db.enqueue({ kind: "journal.delete", date: "2026-10-20" } satisfies Op, "journal:2026-10-20");
+    // Writing the day again starts a new create-only save after the delete.
+    await db.enqueueMerged("journal:2026-10-20", (q) => ({ ...day("fresh start", 0), base: q ? (q as { base?: number }).base : 0 }));
+    const { api, calls } = fakeApi((op) => (op === "journal-delete:2026-10-20" ? new ApiError(404, "not_found") : undefined));
+    const r = await replay(db, api);
+    expect(calls).toEqual(["journal-delete:2026-10-20", "journal:2026-10-20@0"]);
+    expect(r).toMatchObject({ applied: 2, rejected: [], pending: 0 });
   });
 
   it("keeps an edit made while its save was in flight, rebased on the version just written", async () => {

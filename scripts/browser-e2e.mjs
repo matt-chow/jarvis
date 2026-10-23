@@ -383,6 +383,30 @@ try {
     await page.evaluate(`fetch("/api/v1/inbox").then((r) => r.json()).then((b) => Promise.all(b.items.map((i) => fetch("/api/v1/inbox/" + i.id, { method: "DELETE", headers: { Origin: location.origin } }))))`);
   });
 
+  await step("Journal offline: delete a day, write it again, and both sync in order (D-035)", async () => {
+    const yesterday = await page.evaluate(`(() => { const d = new Date(); d.setDate(d.getDate() - 1); const p = (n) => String(n).padStart(2, "0"); return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()); })()`);
+    const serverDay = () => page.evaluate(`fetch("/api/v1/journal/${yesterday}").then((r) => (r.ok ? r.json() : null))`);
+    await page.hash("/journal");
+    await page.click("Previous day");
+    await page.fill("Journal entry", "Yesterday, first version");
+    await waitFor("first version saved", async () => (await serverDay())?.body === "Yesterday, first version");
+    await page.send("Network.enable", {});
+    const net = (offline) => page.send("Network.emulateNetworkConditions", { offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    await net(true);
+    await waitFor("browser offline", () => page.evaluate("!navigator.onLine"));
+    await page.click("delete entry");
+    await page.click("confirm delete");
+    await page.waitForText("1 pending");
+    await waitFor("day emptied", () => page.evaluate(`document.querySelector('textarea[aria-label="Journal entry"]')?.value === ""`));
+    await page.fill("Journal entry", "Yesterday, rewritten");
+    await page.waitForText("2 pending");
+    await net(false);
+    await waitFor("synced", async () => !/pending|syncing…/i.test(await page.text()), 30_000);
+    const day = await serverDay();
+    if (day?.body !== "Yesterday, rewritten") throw new Error(`after sync: ${JSON.stringify(day)}`);
+    await page.evaluate(`fetch("/api/v1/journal/${yesterday}", { method: "DELETE", headers: { Origin: location.origin } })`);
+  });
+
   await step("Habits: add one, check off today, streak shows and reaches the server", async () => {
     await page.hash("/habits");
     await page.waitForText("No habits yet");

@@ -5,10 +5,11 @@ import { LinkedSection } from "../components/LinkedSection";
 import { Button, Panel, inputClass } from "../components/ui";
 import { SAVE_STATUS_TEXT, useAutosaveDoc } from "../hooks/useAutosaveDoc";
 import { useCachedList, type CachedList } from "../hooks/useCachedList";
+import { runOrQueue } from "../hooks/offline";
 import { SYNCED_EVENT } from "../hooks/useSync";
 import { useHashParam } from "../hooks/useHashParam";
-import { reportIfUnauthorized } from "../hooks/useSession";
 import { api } from "../lib/api";
+import { localDb } from "../lib/db";
 import {
   MOODS,
   longDate,
@@ -21,6 +22,7 @@ import {
   type JournalEntry,
   type JournalSummary,
 } from "../lib/journal";
+import { journalDoc } from "../lib/sync";
 import { localDate } from "../lib/tasks";
 
 // Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
@@ -140,7 +142,7 @@ function DayEditor(props: {
   month: string;
   today: string;
   list: CachedList<JournalSummary>;
-  /** Deleting and links need a connection. */
+  /** Links need a connection; deleting is queued offline (D-035). */
   offline: boolean;
   onGo: (date: string) => void;
   onDeleted: () => void;
@@ -178,13 +180,27 @@ function DayEditor(props: {
 
   const remove = async () => {
     editor.discard();
-    try {
-      await api.deleteJournal(date);
-      void list.mutate(async () => true, (cur) => cur.filter((e) => e.date !== date));
-      props.onDeleted();
-    } catch (e) {
-      reportIfUnauthorized(e);
-    }
+    const doc = journalDoc(date);
+    const db = await localDb();
+    // A queued save of this day would replay before the delete; it's moot now (D-035).
+    await db.dropMerged(doc);
+    const gone = (cur: JournalSummary[]) => cur.filter((e) => e.date !== date);
+    const ok = await runOrQueue({
+      list,
+      noun: "entry",
+      op: { kind: "journal.delete", date },
+      doc,
+      server: async () => {
+        await api.deleteJournal(date);
+        return true;
+      },
+      fromServer: gone,
+      applyLocal: gone,
+      local: () => true,
+    });
+    if (!ok) return;
+    await db.deleteValue(doc).catch(() => {});
+    props.onDeleted();
   };
 
   return (
@@ -261,7 +277,7 @@ function DayEditor(props: {
                   </Button>
                 </span>
               ) : (
-                <Button variant="danger" className={small} disabled={!online} onClick={() => setConfirmDelete(true)}>
+                <Button variant="danger" className={small} onClick={() => setConfirmDelete(true)}>
                   delete entry
                 </Button>
               )}

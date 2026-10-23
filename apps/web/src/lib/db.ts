@@ -145,6 +145,16 @@ export class LocalDb {
     else await promisify(store.add({ op: update(undefined), created_at: Date.now(), doc: key, merge: key } satisfies OutboxEntry));
   }
 
+  /**
+   * Drop a document's queued coalesced save (before queueing its delete,
+   * so a later save can't merge into a slot that replays before the delete).
+   */
+  async dropMerged(key: string): Promise<void> {
+    const store = this.store("outbox", "readwrite");
+    const all = (await promisify(store.getAll())) as OutboxEntry[];
+    for (const e of all) if (e.merge === key && e.seq !== undefined) await promisify(store.delete(e.seq));
+  }
+
   /** Queued changes for one document, oldest first. */
   async pendingFor(doc: string): Promise<OutboxEntry[]> {
     return (await this.outbox()).filter((e) => e.doc === doc);

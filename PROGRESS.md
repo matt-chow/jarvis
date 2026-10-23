@@ -62,10 +62,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
 | `cargo test -p directory-core` | ✅ 115 passed |
-| Vitest | ✅ 86 passed |
+| Vitest | ✅ 87 passed |
 | `npm run test:handoff` | ✅ 50 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
-| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 28/28 |
+| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 29/29 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -79,7 +79,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Search uses SQLite `LIKE`, which is case-insensitive for ASCII only, and
   reads whole note and journal bodies for snippets. Move to FTS5 when data
   grows.
-- Offline: links, journal delete, and inbox triage need a
+- Offline: links and inbox triage need a
   connection. A new edit queued in the instant between a replay finishing
   and the open editor learning the new version can show a spurious
   conflict (resolved with "keep mine"). A project deleted offline leaves
@@ -120,6 +120,14 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-23 — Journal: delete works offline (D-035)
+- **Web:** `journal.delete` outbox op, `LocalDb.dropMerged`, and the
+  Journal screen deletes through `runOrQueue` (delete is no longer
+  disabled offline).
+- **Tests:** web 87 (delete, then rewrite, replays in order);
+  browser e2e 29/29 (a new step: delete yesterday offline, write it
+  again, reconnect, and the server has the rewrite).
 
 ### 2026-10-23 — Notes: pinning works offline (D-034)
 - **Web:** `NoteFields.pinned`; the Notes editor saves the pin with the
