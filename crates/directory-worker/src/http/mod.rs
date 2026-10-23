@@ -4,6 +4,7 @@
 pub mod auth;
 pub mod automations;
 pub mod backup;
+pub mod diagnostics;
 pub mod events;
 pub mod export;
 pub mod files;

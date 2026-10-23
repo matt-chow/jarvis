@@ -504,6 +504,19 @@ async function local() {
       await api.req("DELETE", `/api/v1/events/${event.id}`);
     });
 
+    await check("diagnostics: client error reports are validated, cleaned, listed newest first, and cleared", async () => {
+      const report = (body) => api.req("POST", "/api/v1/diagnostics/errors", { body, headers: { "User-Agent": "smoke-agent" } });
+      expect((await report({ message: "   " })).status === 400, "empty message");
+      expect((await report({ message: "TypeError: first", module: "notes", stack: "at x" })).status === 201, "report");
+      expect((await report({ message: "RangeError: second\u0000", module: "tasks" })).status === 201, "report 2");
+      const list = (await api.req("GET", "/api/v1/diagnostics/errors")).json.errors;
+      expect(list.length === 2 && list[0].message === "RangeError: second" && list[1].stack === "at x", `list → ${JSON.stringify(list)}`);
+      expect(list[0].user_agent === "smoke-agent" && list[0].owner_id === undefined, "user agent kept, no owner id");
+      expect((await api.req("DELETE", "/api/v1/diagnostics/errors")).status === 204, "clear");
+      expect((await api.req("GET", "/api/v1/diagnostics/errors")).json.errors.length === 0, "cleared");
+      expect((await fetch(`${baseUrl}/api/v1/diagnostics/errors`, { method: "POST" })).status === 401, "anonymous → 401");
+    });
+
     await check("export: one JSON download with every record, no credential material", async () => {
       const task = (await api.req("POST", "/api/v1/tasks", { body: { title: "Export me" } })).json;
       const note = (await api.req("POST", "/api/v1/notes", { body: { body: "Exported note body" } })).json;

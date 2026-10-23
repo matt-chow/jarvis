@@ -5,6 +5,7 @@ import { Button, Panel } from "../components/ui";
 import { reportIfUnauthorized } from "../hooks/useSession";
 import { api, ApiError, isNetworkError, type DeviceToken, type PasskeyInfo } from "../lib/api";
 import { KINDS, KIND_LABELS, planImport, type ExportPlan, type ImportKind, type ImportReport } from "../lib/backup";
+import type { ClientError } from "../lib/errors";
 import { formatDate } from "../lib/format";
 import { localDate } from "../lib/tasks";
 import { creationRequest, describePasskeyError, encodeRegistration } from "../lib/webauthn";
@@ -217,7 +218,87 @@ export function Settings({ online, session }: ModuleProps) {
         </Button>
         <Restore online={online} />
       </Panel>
+
+      <Diagnostics online={online} />
     </div>
+  );
+}
+
+/** Errors this account's browsers reported (D-027). */
+function Diagnostics({ online }: { online: boolean }) {
+  const [errors, setErrors] = useState<ClientError[]>();
+  const [problem, setProblem] = useState<string>();
+  const [open, setOpen] = useState<string>();
+
+  const load = useCallback(() => {
+    api.clientErrors().then(setErrors, (e: unknown) => {
+      reportIfUnauthorized(e);
+      setProblem(describe(e));
+    });
+  }, []);
+  useEffect(() => {
+    if (online) load();
+  }, [online, load]);
+
+  const clear = async () => {
+    try {
+      await api.clearClientErrors();
+      setErrors([]);
+    } catch (e) {
+      reportIfUnauthorized(e);
+      setProblem(describe(e));
+    }
+  };
+
+  return (
+    <Panel
+      title={`diagnostics${errors ? ` · ${errors.length}` : ""}`}
+      className="lg:col-span-2"
+      actions={
+        <span className="flex gap-1.5">
+          <Button className="min-h-7 px-2 text-[10px]" disabled={!online} onClick={load}>
+            refresh
+          </Button>
+          <Button className="min-h-7 px-2 text-[10px]" variant="danger" disabled={!online || !errors?.length} onClick={() => void clear()}>
+            clear
+          </Button>
+        </span>
+      }
+    >
+      <p className="text-sm text-muted">Errors from your browsers, newest first (the latest 200 are kept). Useful when something misbehaves.</p>
+      {problem && (
+        <p role="alert" className="mt-2 text-sm text-bad">
+          {problem}
+        </p>
+      )}
+      {!online ? (
+        <p className="mt-3 text-sm text-muted">Needs a connection.</p>
+      ) : !errors ? (
+        <p className="mt-3 text-sm text-muted">Loading…</p>
+      ) : errors.length === 0 ? (
+        <p className="mt-3 text-sm text-muted">No errors reported.</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-line">
+          {errors.map((e) => (
+            <li key={e.id} className="py-2">
+              <button type="button" aria-expanded={open === e.id} onClick={() => setOpen(open === e.id ? undefined : e.id)} className="w-full text-left">
+                <span className="block font-mono text-[11px] text-muted">
+                  {formatDate(e.at)} · {e.module || "app"}
+                </span>
+                <span className="block text-sm break-words">{e.message}</span>
+              </button>
+              {open === e.id && (
+                <pre className="mt-2 max-h-48 overflow-auto rounded-sm bg-sunken/60 p-2 font-mono text-[10px] whitespace-pre-wrap text-muted">
+                  {e.stack || "(no stack)"}
+                  {"\n"}
+                  {e.user_agent}
+                </pre>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
   );
 }
 

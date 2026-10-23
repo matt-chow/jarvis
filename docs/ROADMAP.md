@@ -82,5 +82,5 @@ part of every slice, not deferred to the end.
 | HTTP Range for file content | ✅ done |
 | Accessibility: names on every control (audited per module), AA contrast tokens (tested), visible input focus, skip link | ✅ done (automated checks; a screen-reader pass on real devices is still owed) |
 | Security review, performance | planned |
-| Error recovery and monitoring | planned (free-tier options only) |
+| Error recovery (per-module boundary) and monitoring (client error reports in Settings › diagnostics, Worker logs) | ✅ done (D-027) |
 | Mobile (iOS) verification | needs a device |

@@ -447,6 +447,28 @@ try {
     await waitFor("main focused", () => page.evaluate(`document.activeElement?.tagName === "MAIN"`));
   });
 
+  await step("Errors: a crashing module is contained and recoverable; errors reach Settings › diagnostics", async () => {
+    // Make date formatting throw so the Notes list crashes while rendering.
+    await page.evaluate(`(() => { window.__fmt = Date.prototype.toLocaleDateString; Date.prototype.toLocaleDateString = () => { throw new Error("e2e boundary probe"); }; })()`);
+    await page.hash("/notes");
+    await page.waitForText("This screen hit a problem");
+    await page.waitForText("e2e boundary probe");
+    if (!(await page.text()).includes("Settings")) throw new Error("the shell went down with the module");
+    await page.evaluate(`Date.prototype.toLocaleDateString = window.__fmt`);
+    await page.click("try again");
+    await page.waitForText("Meeting notes"); // the list renders again
+    // An unhandled promise rejection is reported too.
+    await page.evaluate(`setTimeout(() => Promise.reject(new Error("e2e unhandled probe")), 0)`);
+    await page.hash("/settings");
+    await waitFor("reports listed", async () => {
+      await page.click("refresh");
+      const t = await page.text();
+      return t.includes("e2e boundary probe") && t.includes("e2e unhandled probe");
+    }, 15_000);
+    await page.click("clear");
+    await page.waitForText("No errors reported.");
+  });
+
   await step("Projects: create, add a task from the project, progress updates", async () => {
     await page.hash("/projects");
     await page.waitForText("No active projects");

@@ -11,6 +11,7 @@
 pub mod automations;
 pub mod backup;
 pub mod calendar;
+pub mod diagnostics;
 pub mod encoding;
 pub mod entropy;
 pub mod export;

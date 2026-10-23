@@ -6,6 +6,7 @@
 import type { NewRule, Rule, RulePatch } from "./automations";
 import type { ImportKind, ImportReport } from "./backup";
 import type { CalendarEvent, EventPatch, NewEvent } from "./calendar";
+import type { ClientError, ErrorReport } from "./errors";
 import type { FileEntry, Listing, Usage } from "./files";
 import { HISTORY_DAYS, type Habit, type HabitPatch, type HabitView, type NewHabit } from "./habits";
 import type { InboxItem, Triaged, TriageTarget } from "./inbox";
@@ -180,6 +181,11 @@ export class Api {
   createNote = (n: { id?: string; title?: string; body?: string; pinned?: boolean }) => this.call<Note>("POST", "/api/v1/notes", n);
   updateNote = (id: string, patch: NotePatch) => this.call<Note>("PATCH", `/api/v1/notes/${encodeURIComponent(id)}`, patch);
   deleteNote = (id: string) => this.call<void>("DELETE", `/api/v1/notes/${encodeURIComponent(id)}`);
+
+  // ---- Diagnostics ----
+  reportError = (r: ErrorReport) => this.call<{ id: string }>("POST", "/api/v1/diagnostics/errors", r);
+  clientErrors = async () => (await this.call<{ errors: ClientError[] }>("GET", "/api/v1/diagnostics/errors")).errors;
+  clearClientErrors = () => this.call<void>("DELETE", "/api/v1/diagnostics/errors");
 
   // ---- Restore ----
   importBatch = (kind: ImportKind, records: unknown[]) => this.call<ImportReport>("POST", `/api/v1/import/${kind}`, { records });

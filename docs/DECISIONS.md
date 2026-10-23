@@ -136,6 +136,21 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-027 — Errors are contained per module and reported to the owner's own log
+**Status:** accepted
+- Each module renders inside an error boundary keyed by module. A crash
+  shows "try again" and "reload app" while the shell and navigation keep
+  working. Data lives on the server or in IndexedDB, so nothing is lost.
+- Boundary crashes, uncaught errors, and unhandled rejections are posted
+  to `/api/v1/diagnostics/errors` (authenticated). The client sends each
+  message at most once per 5 minutes and at most 5 reports a minute. The
+  server cleans and caps fields and keeps the newest 200 per owner. They
+  show in Settings › diagnostics and are logged with `console_warn` for
+  `wrangler tail`.
+- No third-party monitoring service. Cloudflare's Workers Logs
+  (`[observability]` in wrangler config) is free-tier, but enabling it is
+  left for the first deploy so the owner can see it.
+
 ## D-026 — Accessibility is checked automatically
 **Status:** accepted
 - The browser e2e audits every module through the browser's computed

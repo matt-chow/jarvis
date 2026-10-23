@@ -61,11 +61,11 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | Command | Result (2026-10-22) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
-| `cargo test -p directory-core` | ✅ 109 passed |
-| Vitest | ✅ 70 passed |
+| `cargo test -p directory-core` | ✅ 110 passed |
+| Vitest | ✅ 72 passed |
 | `npm run test:handoff` | ✅ 50 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
-| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 26/26 |
+| `npm run test:browser` (headless Edge, virtual passkey) | ✅ 27/27 |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -106,9 +106,9 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. P5: error recovery and monitoring within the free tier (no paid
-   services): a global error boundary with recovery, structured Worker
-   error logs, and a client error report endpoint.
+1. P5 security review: walk every route for auth, owner scoping, input
+   limits, and headers. Document the findings in docs/SECURITY.md and fix
+   any gaps.
 2. Search over events and habits.
 3. Remaining owner decisions: deploy approval, voice, AI provider, reader
    dependency.
@@ -116,6 +116,23 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-22 — M5 slice: Error recovery and diagnostics (D-027)
+- **Migration 0019:** `client_errors`. Schema version 19.
+- **Core:** `diagnostics` module (clean and cap fields, prune to 200,
+  list, clear).
+- **Worker:** `/api/v1/diagnostics/errors` (32 KiB limit; logs a warning).
+- **Web:**
+  - A per-module `ErrorBoundary` (try again / reload app).
+  - Global reporting of uncaught errors and unhandled rejections, with
+    throttling and dedupe (`lib/errors.ts`).
+  - A Settings › diagnostics panel (list, expand stack, refresh, clear).
+- **Tests:**
+  - core 110; web 72 (throttle, describe).
+  - smoke: validate, clean, order, user agent, clear, 401.
+  - browser e2e 27/27: date formatting is made to throw so Notes crashes;
+    the shell survives, "try again" recovers, and both the crash and an
+    unhandled rejection reach diagnostics.
 
 ### 2026-10-22 — M5 slice: Accessibility (D-026)
 - **Audit:** `scripts/lib/a11y.mjs` (CDP accessibility tree). The browser

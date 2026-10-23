@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import { AuthScreen } from "./components/AuthScreen";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { installGlobalErrorReporting } from "./hooks/reportError";
 import { PlayerProvider } from "./components/Player";
 import { StatusChip, StageTag, type Tone } from "./components/ui";
 import { useHealth, type HealthState } from "./hooks/useHealth";
@@ -90,6 +92,9 @@ export function App() {
   const session = useSession(online);
   const sync = useSync(online);
   const main = useRef<HTMLElement>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  useEffect(() => installGlobalErrorReporting(() => activeRef.current), []);
   const current = MODULES.find((m) => m.id === active)!;
   const View = VIEWS[active];
   const swState = swChip(sw);
@@ -220,7 +225,10 @@ export function App() {
 
         <main ref={main} tabIndex={-1} className="flex-1 overflow-y-auto px-4 py-6 pb-44 focus:outline-none md:px-8 md:pb-24">
           <div className="mx-auto max-w-5xl">
-            <View online={online} health={health} sw={sw} session={session} navigate={navigate} />
+            {/* A crash stays inside the module; switching modules starts fresh. */}
+            <ErrorBoundary key={active} module={active}>
+              <View online={online} health={health} sw={sw} session={session} navigate={navigate} />
+            </ErrorBoundary>
           </div>
         </main>
 
