@@ -7,6 +7,7 @@
 //
 //   BASE_URL=https://directory.<you>.workers.dev DIRECTORY_API_TOKEN=dir_... npm run smoke
 //     Read-mostly checks against a deployed Worker using a device API token.
+import { readFileSync } from "node:fs";
 import { SoftAuthenticator } from "./lib/authenticator.mjs";
 import { startDevServer } from "./lib/devserver.mjs";
 
@@ -69,6 +70,34 @@ async function staticChecks(base) {
     const swText = await sw.text();
     expect(sw.status === 200 && swText.includes("directory-shell-") && !swText.includes("__PRECACHE_MANIFEST__"), "sw.js");
   });
+  await check("app shell security headers (docs/SECURITY.md)", async () => {
+    const h = (await fetch(`${base}/`)).headers;
+    const csp = h.get("content-security-policy") ?? "";
+    for (const part of ["default-src 'self'", "frame-ancestors 'none'", "media-src 'self' blob:"]) expect(csp.includes(part), `CSP lacks ${part}: ${csp}`);
+    expect(h.get("x-frame-options") === "DENY" && h.get("x-content-type-options") === "nosniff", "frame and sniffing headers");
+    expect(/microphone=\(\)/.test(h.get("permissions-policy") ?? ""), "permissions policy");
+  });
+}
+
+/** Every route in the Worker's router, as [METHOD, path]. */
+function routeTable() {
+  const src = readFileSync(new URL("../crates/directory-worker/src/lib.rs", import.meta.url), "utf8");
+  return [...src.matchAll(/\.(get|post|put|patch|delete)_async\("([^"]+)"/g)].map((m) => [m[1].toUpperCase(), m[2]]);
+}
+/** Public by design: health, the sign-in/setup ceremony, the session probe, and sign-out. */
+const isPublicRoute = (path) => /^\/api\/v1\/(health|auth\/(session|login\/|setup\/|logout))/.test(path);
+const fillRoute = (path) => path.replace(/:date/g, "2026-01-01").replace(/:kind/g, "notes").replace(/:[a-z_]+/g, "0".repeat(32));
+const bodyFor = (method) => (method === "GET" || method === "DELETE" ? undefined : {});
+
+/** Non-public routes that answer something other than 401 to an anonymous caller. */
+async function anonymousLeaks(api) {
+  const open = [];
+  for (const [method, path] of routeTable()) {
+    if (isPublicRoute(path)) continue;
+    const r = await api.req(method, fillRoute(path), { body: bodyFor(method), cookie: false });
+    if (r.status !== 401) open.push(`${method} ${path} → ${r.status}`);
+  }
+  return open;
 }
 
 async function local() {
@@ -839,6 +868,20 @@ async function local() {
       expect(r.status === 401, `after revoke → ${r.status}`);
     });
 
+    await check("security sweep: every data route (read from the router) refuses anonymous callers and cross-origin cookie writes", async () => {
+      const routes = routeTable();
+      expect(routes.length > 60, `found ${routes.length} routes`);
+      const open = await anonymousLeaks(api);
+      const forged = [];
+      for (const [method, path] of routes) {
+        if (isPublicRoute(path) || method === "GET") continue;
+        const evil = await api.req(method, fillRoute(path), { body: bodyFor(method), origin: false, headers: { Origin: "https://evil.example" } });
+        if (evil.status !== 403) forged.push(`${method} ${path} → ${evil.status}`);
+      }
+      expect(open.length === 0, `reachable without auth: ${open.join(", ")}`);
+      expect(forged.length === 0, `cross-origin cookie writes not refused: ${forged.join(", ")}`);
+    });
+
     await check("sign-in endpoints are rate limited per client (429 + Retry-After)", async () => {
       let limited;
       for (let i = 0; i < 40 && !limited; i++) {
@@ -867,8 +910,9 @@ async function remote(base) {
     const r = await api.req("GET", "/api/v1/health");
     expect(r.status === 200 && r.json.status === "ok", `${r.status} ${r.text}`);
   });
-  await check("anonymous access to private routes → 401", async () => {
-    expect((await api.req("GET", "/api/v1/files")).status === 401, "files");
+  await check("every non-public route refuses anonymous callers (401)", async () => {
+    const open = await anonymousLeaks(api);
+    expect(open.length === 0, `reachable without auth: ${open.join(", ")}`);
   });
   if (token) {
     await check("device token file round trip", async () => {

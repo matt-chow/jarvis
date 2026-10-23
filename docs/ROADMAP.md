@@ -81,6 +81,7 @@ part of every slice, not deferred to the end.
 | Backup restore: merge-only import of the export (D-025) | ✅ done (file contents need re-upload) |
 | HTTP Range for file content | ✅ done |
 | Accessibility: names on every control (audited per module), AA contrast tokens (tested), visible input focus, skip link | ✅ done (automated checks; a screen-reader pass on real devices is still owed) |
-| Security review, performance | planned |
+| Security review: route sweep (auth + CSRF on every route), header checks, docs/SECURITY.md | ✅ done; fixed a CSP gap that blocked offline music |
+| Performance (Worker CPU on Workers Free, bundle size) | planned; CPU needs a deploy to measure |
 | Error recovery (per-module boundary) and monitoring (client error reports in Settings › diagnostics, Worker logs) | ✅ done (D-027) |
 | Mobile (iOS) verification | needs a device |

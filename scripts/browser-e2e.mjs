@@ -387,6 +387,11 @@ try {
     await page.click("Pause");
     await page.click("Save “Tone” for offline");
     await page.waitForText("saved offline");
+    // Saved tracks play from the device (a blob: URL the page CSP must allow).
+    await page.click("Close player");
+    await page.click("Play “Tone”");
+    await waitFor("saved copy playing", () => page.evaluate(`(() => { const a = document.querySelector("audio"); return !!a && a.currentSrc.startsWith("blob:") && a.currentTime > 0 && !a.paused; })()`), 20_000);
+    await page.click("Pause");
     await page.fill("New playlist", "Focus");
     await page.click("create");
     await page.waitForText("Empty. Add tracks");

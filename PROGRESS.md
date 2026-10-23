@@ -106,9 +106,9 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. P5 security review: walk every route for auth, owner scoping, input
-   limits, and headers. Document the findings in docs/SECURITY.md and fix
-   any gaps.
+1. P5 performance: web bundle size (code-split modules), and measure
+   Worker CPU after the first deploy.
+2. P5: "forget this device" (clear IndexedDB on sign-out, optional).
 2. Search over events and habits.
 3. Remaining owner decisions: deploy approval, voice, AI provider, reader
    dependency.
@@ -116,6 +116,19 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-22 — M5 slice: Security review
+- **docs/SECURITY.md:** the model (owner-only, passkeys, sessions, CSRF,
+  tokens, R2 sandboxing, JARVIS and automation limits, input caps,
+  headers), what's checked automatically, a review log, and open items.
+- **Smoke:**
+  - A route sweep reads every route from the Worker router. Non-public
+    routes must answer 401 anonymously (also in remote mode), and
+    cookie writes from a foreign Origin must get 403.
+  - App-shell security headers are checked locally and remotely.
+- **Fix:** the CSP had no `media-src`, so music saved offline (a blob: URL)
+  couldn't play. Added `media-src 'self' blob:`. The browser e2e now plays
+  the saved copy; it failed before the fix.
 
 ### 2026-10-22 — M5 slice: Error recovery and diagnostics (D-027)
 - **Migration 0019:** `client_errors`. Schema version 19.
