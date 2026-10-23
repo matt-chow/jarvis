@@ -965,7 +965,8 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     ActionResult {
                         ok: true,
                         message: format!("{} found: {}{more}.", hits.len(), names.join("; ")),
-                        entity: entity(top.kind, &top.id),
+                        // Events and habits aren't linkable entities.
+                        entity: top.kind.entity().and_then(|k| entity(k, &top.id)),
                         changed: false,
                     }
                 }

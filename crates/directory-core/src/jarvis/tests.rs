@@ -9,7 +9,7 @@ use crate::inbox::memory::MemoryInbox;
 use crate::journal::testing::MemoryJournal;
 use crate::notes::testing::MemoryNotes;
 use crate::projects::memory::MemoryProjects;
-use crate::search::{Candidate, SearchSource};
+use crate::search::{Candidate, SearchKind, SearchSource};
 use crate::tasks::memory::MemoryTasks;
 use crate::test_util::block_on;
 use std::cell::RefCell;
@@ -19,11 +19,11 @@ impl SearchSource for MemoryTasks {
     async fn candidates(
         &self,
         owner_id: &str,
-        kind: EntityKind,
+        kind: SearchKind,
         pattern: &str,
         _: u32,
     ) -> Result<Vec<Candidate>, String> {
-        if kind != EntityKind::Task {
+        if kind != SearchKind::Task {
             return Ok(vec![]);
         }
         let needle = pattern.trim_matches('%').to_lowercase();
@@ -38,6 +38,7 @@ impl SearchSource for MemoryTasks {
                 title: t.title.clone(),
                 body: t.notes.clone(),
                 updated_at: t.updated_at,
+                date: None,
             })
             .collect())
     }

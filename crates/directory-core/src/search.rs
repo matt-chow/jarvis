@@ -1,10 +1,56 @@
-//! Universal search across the owner's tasks, notes, projects, and journal.
+//! Universal search across the owner's tasks, notes, projects, journal,
+//! calendar events, and habits.
 //! Substring matching (case-insensitive) is enough at personal scale; the
 //! `SearchSource` boundary lets a full-text index replace it later.
 
 use crate::identity::Principal;
 use crate::links::EntityKind;
 use serde::Serialize;
+
+/// What a hit is: the linkable kinds plus calendar events and habits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchKind {
+    Task,
+    Note,
+    Project,
+    Journal,
+    Event,
+    Habit,
+}
+
+impl SearchKind {
+    pub const ALL: [SearchKind; 6] = [
+        Self::Task,
+        Self::Note,
+        Self::Project,
+        Self::Journal,
+        Self::Event,
+        Self::Habit,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Task => "task",
+            Self::Note => "note",
+            Self::Project => "project",
+            Self::Journal => "journal",
+            Self::Event => "event",
+            Self::Habit => "habit",
+        }
+    }
+
+    /// The link kind, for kinds that can be linked.
+    pub fn entity(self) -> Option<EntityKind> {
+        match self {
+            Self::Task => Some(EntityKind::Task),
+            Self::Note => Some(EntityKind::Note),
+            Self::Project => Some(EntityKind::Project),
+            Self::Journal => Some(EntityKind::Journal),
+            Self::Event | Self::Habit => None,
+        }
+    }
+}
 
 pub const MIN_QUERY: usize = 2;
 pub const MAX_QUERY: usize = 100;
@@ -16,21 +62,25 @@ const SNIPPET_RADIUS: usize = 60;
 /// A candidate row from a source: `body` is the text a snippet is cut from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Candidate {
-    pub kind: EntityKind,
+    pub kind: SearchKind,
     pub id: String,
     pub title: String,
     pub body: String,
     pub updated_at: i64,
+    /// Events: their (first) start date, so clients can open that day.
+    pub date: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SearchHit {
-    pub kind: EntityKind,
+    pub kind: SearchKind,
     pub id: String,
     pub title: String,
     pub snippet: String,
     pub title_match: bool,
     pub updated_at: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,7 +95,7 @@ pub trait SearchSource {
     async fn candidates(
         &self,
         owner_id: &str,
-        kind: EntityKind,
+        kind: SearchKind,
         pattern: &str,
         limit: u32,
     ) -> Result<Vec<Candidate>, String>;
@@ -124,12 +174,7 @@ pub async fn search<S: SearchSource>(
     let pattern = like_pattern(q);
     let q_chars: Vec<char> = q.chars().collect();
     let mut hits = Vec::new();
-    for kind in [
-        EntityKind::Task,
-        EntityKind::Note,
-        EntityKind::Project,
-        EntityKind::Journal,
-    ] {
+    for kind in SearchKind::ALL {
         let rows = source
             .candidates(&p.user_id, kind, &pattern, PER_KIND)
             .await
@@ -144,6 +189,7 @@ pub async fn search<S: SearchSource>(
                 title: c.title,
                 title_match,
                 updated_at: c.updated_at,
+                date: c.date,
             });
         }
     }
@@ -168,7 +214,7 @@ mod tests {
         async fn candidates(
             &self,
             _: &str,
-            kind: EntityKind,
+            kind: SearchKind,
             pattern: &str,
             _: u32,
         ) -> Result<Vec<Candidate>, String> {
@@ -186,13 +232,14 @@ mod tests {
         }
     }
 
-    fn c(kind: EntityKind, id: &str, title: &str, body: &str, at: i64) -> Candidate {
+    fn c(kind: SearchKind, id: &str, title: &str, body: &str, at: i64) -> Candidate {
         Candidate {
             kind,
             id: id.into(),
             title: title.into(),
             body: body.into(),
             updated_at: at,
+            date: None,
         }
     }
 
@@ -206,10 +253,10 @@ mod tests {
     #[test]
     fn ranks_title_matches_first_then_recent() {
         let src = Fake(vec![
-            c(EntityKind::Note, "n1", "Groceries", "buy dentist floss", 9),
-            c(EntityKind::Task, "t1", "Call the dentist", "", 1),
+            c(SearchKind::Note, "n1", "Groceries", "buy dentist floss", 9),
+            c(SearchKind::Task, "t1", "Call the dentist", "", 1),
             c(
-                EntityKind::Journal,
+                SearchKind::Journal,
                 "2026-10-21",
                 "2026-10-21",
                 "Went to the dentist today",
@@ -221,6 +268,24 @@ mod tests {
         assert_eq!(order, ["t1", "n1", "2026-10-21"]);
         assert!(hits[0].title_match && !hits[1].title_match);
         assert_eq!(hits[1].snippet, "buy dentist floss");
+    }
+
+    #[test]
+    fn events_and_habits_are_searched_and_events_carry_their_date() {
+        let mut event = c(SearchKind::Event, "e1", "Dentist appointment", "Main St", 3);
+        event.date = Some("2026-10-23".into());
+        let src = Fake(vec![
+            event,
+            c(SearchKind::Habit, "h1", "Floss after dentist", "", 2),
+        ]);
+        let hits = block_on(search(&src, &me(), "dentist")).unwrap();
+        assert_eq!(
+            hits.iter().map(|h| h.kind.as_str()).collect::<Vec<_>>(),
+            ["event", "habit"]
+        );
+        assert_eq!(hits[0].date.as_deref(), Some("2026-10-23"));
+        assert_eq!(SearchKind::Event.entity(), None);
+        assert_eq!(SearchKind::Note.entity(), Some(EntityKind::Note));
     }
 
     #[test]

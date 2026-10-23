@@ -706,6 +706,18 @@ async function local() {
       expect((await api.req("DELETE", `/api/v1/jarvis/presets/${p.json.id}`)).status === 404, "gone");
     });
 
+    await check("search: calendar events (title, location, notes) and habits, with the event's date", async () => {
+      const event = (await api.req("POST", "/api/v1/events", { body: { title: "Quokka meetup", start_date: "2026-11-05", location: "Rottnest" } })).json;
+      const habit = (await api.req("POST", "/api/v1/habits", { body: { name: "Feed the quokka" } })).json;
+      const hits = (await api.req("GET", "/api/v1/search?q=quokka")).json.hits;
+      const e = hits.find((h) => h.kind === "event");
+      expect(e && e.id === event.id && e.date === "2026-11-05", `event hit → ${JSON.stringify(hits)}`);
+      expect(hits.some((h) => h.kind === "habit" && h.id === habit.id), "habit hit");
+      expect((await api.req("GET", "/api/v1/search?q=rottnest")).json.hits.some((h) => h.id === event.id), "location searched");
+      await api.req("DELETE", `/api/v1/events/${event.id}`);
+      await api.req("DELETE", `/api/v1/habits/${habit.id}`);
+    });
+
     await check("search: across kinds, title matches first, LIKE wildcards escaped, jarvis find", async () => {
       const task = (await api.req("POST", "/api/v1/tasks", { body: { title: "Renew passport", notes: "form 100% done" } })).json;
       const note = (await api.req("POST", "/api/v1/notes", { body: { body: "Travel docs\nPassport is in the top drawer" } })).json;

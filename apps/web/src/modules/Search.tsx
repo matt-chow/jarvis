@@ -5,8 +5,7 @@ import { describeError } from "../hooks/useCachedList";
 import { useHashParam } from "../hooks/useHashParam";
 import { reportIfUnauthorized } from "../hooks/useSession";
 import { api } from "../lib/api";
-import { KIND_GLYPH, entityRoute } from "../lib/links";
-import type { SearchHit } from "../lib/search";
+import { SEARCH_GLYPH, hitRoute, type SearchHit } from "../lib/search";
 
 // Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
 
@@ -93,9 +92,9 @@ export function Search({ online }: ModuleProps) {
           <ul className="mt-3 divide-y divide-line">
             {hits.map((h) => (
               <li key={`${h.kind}:${h.id}`}>
-                <a href={entityRoute(h)} className="flex gap-3 py-2.5 hover:bg-sunken/40">
+                <a href={hitRoute(h)} className="flex gap-3 py-2.5 hover:bg-sunken/40">
                   <span aria-hidden className="w-4 shrink-0 text-center font-mono text-muted">
-                    {KIND_GLYPH[h.kind]}
+                    {SEARCH_GLYPH[h.kind]}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm">{highlight(h.title, query)}</span>

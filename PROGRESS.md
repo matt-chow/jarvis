@@ -61,8 +61,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | Command | Result (2026-10-22) |
 | --- | --- |
 | `npm run verify` (fmt, clippy `-D warnings`, tsc, unit tests, builds, deploy dry run) | ✅ pass |
-| `cargo test -p directory-core` | ✅ 110 passed |
-| Vitest | ✅ 74 passed |
+| `cargo test -p directory-core` | ✅ 111 passed |
+| Vitest | ✅ 75 passed |
 | `npm run test:handoff` | ✅ 50 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
 | `npm run test:browser` (headless Edge, virtual passkey) | ✅ 27/27 |
@@ -106,9 +106,12 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to move the repo out of OneDrive.
 
 ### Next task
-1. Search over events and habits.
-2. Investigate an intermittent browser e2e failure seen once: "Offline
-   edits" showed the queued task as pending but not yet in the list.
+1. Watch item: an intermittent "Offline edits" browser failure seen once
+   (task queued but not listed). It hasn't recurred in five full runs since
+   the stale-connection fix (D-028), but that fix isn't proven to be the
+   cause.
+2. Deploy readiness: everything blocking M1 is the owner's call (see
+   below).
 3. Measure Worker CPU after the first deploy (owner approval needed).
 4. Remaining owner decisions: deploy approval, voice, AI provider, reader
    dependency.
@@ -116,6 +119,16 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-22 — Search over events and habits
+- **Core:** `search::SearchKind` adds `event` and `habit` (`entity()` maps
+  the linkable kinds back). Event hits carry their start `date`. JARVIS
+  `find` links only linkable hits.
+- **Worker:** event (title, location, notes) and habit (name) queries.
+- **Web:** `lib/search.ts` `hitRoute`: events open their day on the
+  calendar, habits open Habits.
+- **Tests:** core 111, web 75, smoke (event by title and location with its
+  date; habit).
 
 ### 2026-10-22 — M5 slice: Forget this device (D-028)
 - **Web:**
