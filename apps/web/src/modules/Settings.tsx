@@ -3,6 +3,7 @@ import type { ModuleProps } from "../App";
 import { deviceLabel } from "../components/AuthScreen";
 import { Button, Panel } from "../components/ui";
 import { reportIfUnauthorized } from "../hooks/useSession";
+import { localDb } from "../lib/db";
 import { api, ApiError, isNetworkError, type DeviceToken, type PasskeyInfo } from "../lib/api";
 import { KINDS, KIND_LABELS, planImport, type ExportPlan, type ImportKind, type ImportReport } from "../lib/backup";
 import type { ClientError } from "../lib/errors";
@@ -99,9 +100,7 @@ export function Settings({ online, session }: ModuleProps) {
         title="account"
         className="lg:col-span-2"
         actions={
-          <Button onClick={() => void session.signOut()} className={small}>
-            sign out
-          </Button>
+          <SignOut session={session} />
         }
       >
         <p className="text-sm">
@@ -421,4 +420,42 @@ async function downloadExport() {
   const a = Object.assign(document.createElement("a"), { href: url, download: `directory-export-${localDate()}.json` });
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Sign out, optionally forgetting this device's saved data (D-028). */
+function SignOut({ session }: { session: ModuleProps["session"] }) {
+  const small = "min-h-7 px-2 text-[10px]";
+  const [confirm, setConfirm] = useState<number>();
+  const ask = async () => {
+    const pending = await localDb()
+      .then((db) => db.outbox())
+      .then((o) => o.length)
+      .catch(() => 0);
+    setConfirm(pending);
+  };
+  if (confirm !== undefined) {
+    return (
+      <span className="flex flex-wrap items-center justify-end gap-1.5">
+        <span role="alert" className="text-xs text-muted">
+          {confirm > 0 ? `${confirm} change${confirm === 1 ? " hasn't" : "s haven't"} synced yet and will be lost. ` : ""}Delete everything saved in this browser?
+        </span>
+        <Button className={small} onClick={() => setConfirm(undefined)}>
+          keep
+        </Button>
+        <Button variant="danger" className={small} onClick={() => void session.signOut({ forget: true })}>
+          sign out and forget
+        </Button>
+      </span>
+    );
+  }
+  return (
+    <span className="flex gap-1.5">
+      <Button onClick={() => void session.signOut()} className={small}>
+        sign out
+      </Button>
+      <Button onClick={() => void ask()} className={small} title="Also delete the offline copy of your data in this browser">
+        sign out and forget this device
+      </Button>
+    </span>
+  );
 }

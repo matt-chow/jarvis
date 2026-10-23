@@ -42,17 +42,17 @@ interface Stores {
 }
 type StoreName = keyof Stores;
 
-function upgrade(db: IDBDatabase, oldVersion: number) {
-  if (oldVersion < 1) {
-    db.createObjectStore("notes", { keyPath: "id" }).createIndex("updatedAt", "updatedAt");
-    db.createObjectStore("kv");
-  }
-  if (oldVersion < 2) {
-    db.createObjectStore("outbox", { keyPath: "seq", autoIncrement: true });
-  }
-  if (oldVersion < 3) {
-    db.createObjectStore("media", { keyPath: "id" });
-  }
+/**
+ * Create whatever stores are missing. Keyed on what exists rather than on
+ * `oldVersion`, so a database created empty by something else (an extension,
+ * devtools, a half-finished delete) still ends up complete.
+ */
+function upgrade(db: IDBDatabase) {
+  const missing = (name: StoreName) => !db.objectStoreNames.contains(name);
+  if (missing("notes")) db.createObjectStore("notes", { keyPath: "id" }).createIndex("updatedAt", "updatedAt");
+  if (missing("kv")) db.createObjectStore("kv");
+  if (missing("outbox")) db.createObjectStore("outbox", { keyPath: "seq", autoIncrement: true });
+  if (missing("media")) db.createObjectStore("media", { keyPath: "id" });
 }
 
 function promisify<T>(req: IDBRequest<T>): Promise<T> {
@@ -63,15 +63,22 @@ function promisify<T>(req: IDBRequest<T>): Promise<T> {
 }
 
 export class LocalDb {
+  /** Called once if the connection is closed for us (upgrade or delete elsewhere). */
+  onclose?: () => void;
+
   private constructor(private readonly db: IDBDatabase) {
-    // Let another tab upgrade the schema instead of blocking it.
-    db.onversionchange = () => db.close();
+    // Let another tab upgrade (or a "forget" delete) proceed instead of blocking it.
+    db.onversionchange = () => {
+      db.close();
+      this.onclose?.();
+    };
+    db.onclose = () => this.onclose?.();
   }
 
   static open(factory: IDBFactory = indexedDB, name = DB_NAME): Promise<LocalDb> {
     return new Promise((resolve, reject) => {
       const req = factory.open(name, DB_VERSION);
-      req.onupgradeneeded = (e) => upgrade(req.result, e.oldVersion);
+      req.onupgradeneeded = () => upgrade(req.result);
       req.onsuccess = () => resolve(new LocalDb(req.result));
       req.onerror = () => reject(req.error);
       req.onblocked = () => reject(new Error("IndexedDB upgrade blocked by another tab"));
@@ -180,6 +187,34 @@ let shared: Promise<LocalDb> | undefined;
 
 /** App-wide connection, opened lazily. */
 export function localDb(): Promise<LocalDb> {
-  shared ??= LocalDb.open();
+  if (!shared) {
+    const p = LocalDb.open().then((db) => {
+      // A closed connection is useless: the next caller opens a fresh one.
+      db.onclose = () => {
+        if (shared === p) shared = undefined;
+      };
+      return db;
+    });
+    shared = p;
+  }
   return shared;
+}
+
+/**
+ * Delete everything Directory stored in this browser ("forget this device").
+ * Unsynced outbox changes are lost: callers check `outbox()` first.
+ */
+export async function deleteLocalData(factory: IDBFactory = indexedDB, name = DB_NAME): Promise<void> {
+  if (name === DB_NAME && shared) {
+    const db = await shared.catch(() => undefined);
+    db?.close();
+    shared = undefined;
+  }
+  await new Promise<void>((resolve, reject) => {
+    const req = factory.deleteDatabase(name);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+    // Another tab still has it open; it closes on `versionchange`, then this succeeds.
+    req.onblocked = () => {};
+  });
 }

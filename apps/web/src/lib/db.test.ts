@@ -1,6 +1,6 @@
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
-import { LocalDb, type Note } from "./db";
+import { LocalDb, deleteLocalData, type Note } from "./db";
 
 const note = (id: string, updatedAt: number): Note => ({ id, body: `note ${id}`, createdAt: 0, updatedAt });
 
@@ -31,6 +31,35 @@ describe("LocalDb", () => {
     expect(await second.getValue("health:last")).toEqual({ status: "ok" });
     expect(await second.getValue("missing")).toBeUndefined();
     second.close();
+  });
+
+  it("completes a database something else created empty", async () => {
+    const factory = new IDBFactory();
+    await new Promise<void>((res) => {
+      const r = factory.open("empty", 1); // no stores
+      r.onsuccess = () => {
+        r.result.close();
+        res();
+      };
+    });
+    const db = await LocalDb.open(factory, "empty");
+    await db.setValue("session:last", { ok: true });
+    expect(await db.getValue("session:last")).toEqual({ ok: true });
+    expect(await db.outbox()).toEqual([]);
+    db.close();
+  });
+
+  it("forgets everything on request", async () => {
+    const factory = new IDBFactory();
+    const db = await LocalDb.open(factory, "forget");
+    await db.setValue("tasks:last", [1]);
+    await db.enqueue({ kind: "x" });
+    db.close();
+    await deleteLocalData(factory, "forget");
+    const fresh = await LocalDb.open(factory, "forget");
+    expect(await fresh.getValue("tasks:last")).toBeUndefined();
+    expect(await fresh.outbox()).toHaveLength(0);
+    fresh.close();
   });
 
   it("keeps tracks saved for offline playback", async () => {

@@ -85,7 +85,7 @@ try {
       r.onsuccess = () => {
         const tx = r.result.transaction("notes", "readwrite");
         tx.objectStore("notes").put({ id: "legacy", body: "Legacy scratch\\nfrom sprint 00", createdAt: 1, updatedAt: 1 });
-        tx.oncomplete = () => res(true);
+        tx.oncomplete = () => { r.result.close(); res(true); }; // a stray open connection would block deletes
       };
     })`);
     await page.hash("/notes");
@@ -558,15 +558,32 @@ try {
     if (!body.files?.some((f) => f.name === "hello e2e.txt")) throw new Error(`token list: ${JSON.stringify(body)}`);
   });
 
-  await step("sign out returns to the sign-in screen", async () => {
-    await page.click("sign out");
+  await step("sign out and forget this device: asks first, then deletes the browser's copy", async () => {
+    const cached = `indexedDB.databases().then((dbs) => dbs.some((d) => d.name === "directory") && new Promise((res) => { const r = indexedDB.open("directory"); r.onsuccess = () => { const db = r.result; if (!db.objectStoreNames.contains("kv")) { db.close(); return res(false); } const g = db.transaction("kv").objectStore("kv").get("tasks:last"); g.onsuccess = () => { db.close(); res(g.result !== undefined); }; }; }))`;
+    if (!(await page.evaluate(cached))) throw new Error("expected cached tasks before forgetting");
+    await page.click("sign out and forget this device");
+    await page.waitForText("Delete everything saved in this browser?");
+    await page.click("sign out and forget");
     await page.waitForText("sign in with passkey".toUpperCase());
+    if (await page.evaluate(cached)) throw new Error("cached tasks survived 'forget this device'");
   });
 
   await step("passkey sign-in restores the session", async () => {
     await page.click("sign in with passkey");
     // The route is preserved across sign-in: back on Settings.
     await page.waitForText("Signed in as Browser Owner");
+    // The session is saved on the device again (the offline relaunch needs it).
+    const kv = `indexedDB.databases().then((dbs) => !dbs.some((d) => d.name === "directory") ? {} : new Promise((res) => { const r = indexedDB.open("directory"); r.onsuccess = () => { const db = r.result; if (!db.objectStoreNames.contains("kv")) { db.close(); return res({}); } const tx = db.transaction("kv"); const k = tx.objectStore("kv").getAllKeys(); const s = tx.objectStore("kv").get("session:last"); tx.oncomplete = () => { db.close(); res({ keys: k.result, session: s.result }); }; }; }))`;
+    await waitFor("session saved on the device", async () => !!(await page.evaluate(kv)).session?.user, 10_000).catch(async () => {
+      throw new Error(`kv after sign-in: ${JSON.stringify(await page.evaluate(kv))}`);
+    });
+    // Rebuild the offline copies the last step relies on.
+    await page.hash("/notes");
+    await page.click("Meeting notes");
+    await waitFor("note body cached", async () => (await page.evaluate(`document.querySelector('textarea[aria-label="Note body"]')?.value ?? ""`)).includes("Agenda: launch plan"));
+    await page.hash("/tasks");
+    await waitFor("tasks loaded", () => page.evaluate(`!!document.querySelector('input[aria-label="New task"]:not([disabled])')`));
+    await page.hash("/settings"); // the offline step expects to reopen on Settings
   });
 
   await step("service worker controls the page", async () => {

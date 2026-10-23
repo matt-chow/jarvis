@@ -136,6 +136,21 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-028 — "Forget this device" deletes the browser's copy, after a warning
+**Status:** accepted
+- Settings › account offers "sign out and forget this device". It signs
+  out, then deletes the whole `directory` IndexedDB database: caches, the
+  saved session, the outbox, and tracks saved offline. If changes haven't
+  synced, the confirmation says how many will be lost. Plain sign-out
+  still keeps the offline copy.
+- **Robustness:**
+  - A closed shared connection (another tab upgrading, or a delete) is
+    dropped, and the next caller reopens. Before, a stale handle made
+    writes fail silently.
+  - Upgrades create whatever stores are missing, keyed on what exists
+    rather than the old version number, so a database something else
+    created empty is completed rather than left broken.
+
 ## D-027 — Errors are contained per module and reported to the owner's own log
 **Status:** accepted
 - Each module renders inside an error boundary keyed by module. A crash

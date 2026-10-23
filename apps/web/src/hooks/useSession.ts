@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, type SessionUser } from "../lib/api";
-import { localDb } from "../lib/db";
+import { localDb, deleteLocalData } from "../lib/db";
 
 const CACHE_KEY = "session:last";
 
@@ -15,7 +15,8 @@ export interface SessionApi {
   status: SessionStatus;
   refresh: () => Promise<void>;
   signedIn: (user: SessionUser) => void;
-  signOut: () => Promise<void>;
+  /** `forget`: also delete everything saved in this browser (D-028). */
+  signOut: (opts?: { forget?: boolean }) => Promise<void>;
 }
 
 interface Cached {
@@ -73,11 +74,12 @@ export function useSession(online: boolean): SessionApi {
     void cache(user).catch(() => {});
   }, []);
 
-  const signOut = useCallback(async () => {
+  const signOut = useCallback(async (opts?: { forget?: boolean }) => {
     try {
       await api.logout();
     } finally {
       await cache(undefined).catch(() => {});
+      if (opts?.forget) await deleteLocalData().catch(() => {});
       setStatus({ kind: "signed-out", setupRequired: false });
     }
   }, []);

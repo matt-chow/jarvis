@@ -110,7 +110,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
    docs/SECURITY.md open items).
 2. Search over events and habits.
 3. Measure Worker CPU after the first deploy (owner approval needed).
-3. Remaining owner decisions: deploy approval, voice, AI provider, reader
+4. Remaining owner decisions: deploy approval, voice, AI provider, reader
    dependency.
 
 ---
