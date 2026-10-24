@@ -87,8 +87,6 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   conflict (resolved with "keep mine"). A project deleted offline leaves
   its tasks showing the old project until the next sync refresh.
 - `wrangler dev` must be restarted after rebuilding `apps/web/dist`.
-- The repo lives under OneDrive, which slows down and locks `node_modules` and
-  `target`.
 - No CI pipeline yet. `npm run verify`, smoke, and browser e2e are CI-ready.
 - iOS Safari is not verified on a device.
 
@@ -111,7 +109,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   That is a new way of acting as the owner, so it is a security-policy
   change (AGENTS.md). Also needed: per-owner time zones (the client can
   report its IANA zone, converted with `Intl` in the Worker).
-- Whether to move the repo out of OneDrive.
+- Whether to delete the retired OneDrive copy of the repo (D-040).
 
 ### Next task
 1. Watch item: the intermittent "Offline edits" failure (task queued but
@@ -128,6 +126,18 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-24 — Repo moved out of OneDrive (D-040)
+- Copied to `C:\Users\mchow\dev\jarvis` with robocopy, excluding build
+  output (`node_modules`, `target`, `dist`, the worker build, and the busy
+  `.wrangler/hdr`). Gitignored local files (`.dev.vars`, `.handoff/`, and
+  `.wrangler` state) came along.
+- **Checks:** `git fsck --full` is clean, the `git ls-files -s` hash is
+  identical, and `diff -rq` shows no differences. After `npm ci`: verify
+  ✅ (core 117, web 94, handoff 50), smoke ✅, browser e2e ✅.
+- The OneDrive copy is retired at 9b9d978 and not deleted (it needs owner
+  approval). Agent memory was copied to the new project path.
+- Mail feasibility research: docs/MAIL_FEASIBILITY.md.
 
 ### 2026-10-23 — Reliability: stale list loads can't overwrite edits (D-039)
 - **Web:** `lib/gate.ts` (load tokens), used by `useCachedList` for loads,

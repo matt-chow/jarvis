@@ -136,6 +136,13 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-040 — The repo lives outside OneDrive
+**Status:** accepted (owner request, 2026-10-24)
+OneDrive sync locked `node_modules`, `target`, and SQLite state, which
+caused flaky e2e startups (SQLITE_READONLY). The active repo is now
+`C:\Users\mchow\dev\jarvis`. The OneDrive copy stays read-only at 9b9d978
+until the owner approves deleting it.
+
 ## D-039 — A cached list ignores responses that newer changes overtook
 **Status:** accepted
 - `useCachedList` gives each load a token from `lib/gate.ts`. A local edit
