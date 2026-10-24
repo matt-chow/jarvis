@@ -132,6 +132,63 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-10-24 — Staging preparation: full guide, remote checks, Downloads cleanup
+- **"STAGING.md missing":** it existed only at the active repo path
+  (`C:\Users\mchow\dev\jarvis\docs\STAGING.md`, first committed in
+  005250e). It wasn't in the retired OneDrive copy, which stops at 9b9d978,
+  before the file was written. It wasn't on GitHub either: `main` is 10+
+  commits ahead of `origin/main` (never pushed, by policy).
+- **docs/STAGING.md** is rewritten as a complete Windows/PowerShell guide:
+  - prerequisites and login;
+  - dashboard actions;
+  - staging-only D1/R2;
+  - vars and secrets;
+  - safe migrations;
+  - deploy;
+  - HTTPS and auth checks;
+  - persistence and private-storage tests;
+  - JARVIS tests;
+  - iPhone prerequisites;
+  - free tier and billing;
+  - troubleshooting and rollback.
+
+  Owner actions are marked separately from commands, and every command was
+  checked against the repo's scripts and wrangler 4.151.3's flags.
+- **Remote smoke** (`BASE_URL=… npm run smoke`) adds:
+  - task persistence (create, read back, delete);
+  - private storage (content refused without auth);
+  - `/jarvis/ask` with `DIRECTORY_JARVIS_TOKEN`.
+
+  `npm run smoke:remote-local` (scripts/remote-smoke-local.mjs) runs
+  those remote checks against an isolated local Worker: all passed. They
+  haven't run against Cloudflare.
+- **Downloads cleanup:**
+  - Found 75 `directory-export-*.json` files in `C:\Users\mchow\Downloads`.
+  - All 75 are browser-e2e artifacts, not owner data:
+    - format `directory-export`, schema v9–v22;
+    - the test owner "Browser Owner", with the e2e fixture note;
+    - 75 distinct user ids (a fresh test database per run);
+    - no credential-like strings.
+  - Cause: the e2e "export my data" step downloaded into the default
+    Downloads folder.
+  - All 75 were moved, hash-verified (SHA-256 before and after, no
+    overwrite), to `C:\Users\mchow\Documents\Directory\Backups\e2e-test-exports\`,
+    with a `MANIFEST-sha256.txt`.
+  - That folder is the local Documents directory. The Windows "Documents"
+    known folder points to OneDrive, so the OneDrive copy was avoided.
+  - Nothing was deleted except each source file, after its copy verified.
+  - The app doesn't depend on that location: export is a browser
+    download, and restore uses a file picker.
+  - Fix: the e2e browser downloads into its throwaway profile
+    (`Browser.setDownloadBehavior`).
+  - `.gitignore` ignores `directory-export-*.json`.
+- **Tests:**
+  - verify ✅ (core 133, web 96, handoff 50);
+  - smoke ✅;
+  - remote-mode smoke against a local Worker ✅;
+  - staging dry run ✅ (directory-db-staging, directory-files-staging);
+  - browser e2e 32/32, with no new files in Downloads.
+
 ### 2026-10-24 — Planner: plans can stay within one project (D-041)
 - **JARVIS:**
   - `priorities` and `suggest` take "for|in|on project <name>",

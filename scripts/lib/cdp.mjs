@@ -89,6 +89,9 @@ export async function launch() {
   }, 30_000);
 
   const cdp = await connect(wsUrl);
+  // Downloads (e.g. the e2e data export) go into the throwaway profile, never
+  // the owner's Downloads folder.
+  await cdp.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: join(profile, "downloads") });
   const { targetId } = await cdp.send("Target.createTarget", { url: "about:blank" });
   const { sessionId } = await cdp.send("Target.attachToTarget", { targetId, flatten: true });
   const send = (method, params) => cdp.send(method, params, sessionId);

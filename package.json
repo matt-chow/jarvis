@@ -21,6 +21,7 @@
     "test:rust": "cargo test -p directory-core",
     "test:web": "npm run test -w @directory/web",
     "smoke": "node scripts/smoke.mjs",
+    "smoke:remote-local": "node scripts/remote-smoke-local.mjs",
     "verify": "npm run lint && npm test && npm run test:handoff && npm run build && npm run build:worker",
     "test:handoff": "bash scripts/test-handoff.sh",
     "deploy": "npm run build && wrangler deploy",

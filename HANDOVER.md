@@ -1,6 +1,6 @@
 # Handover
 
-Base commit: 08c9b12
+Base commit: 815dc45
 From: claude → To: (either; no handoff in progress)
 Updated: 2026-10-24
 
@@ -39,6 +39,11 @@ e2e 32/32 ✅.
 See "Next steps"; this file is updated at each milestone.
 
 ## Next steps
+0. **Staging prep is done** (2026-10-24). docs/STAGING.md is the
+   step-by-step guide. Its first owner action is §1: `npx wrangler login`,
+   run from `C:\Users\mchow\dev\jarvis`. Agents stop before
+   creating any Cloudflare resource, activating billing, migrating, or
+   deploying.
 1. Owner: deploy staging (docs/STAGING.md), then build the iPhone Shortcut
    (docs/JARVIS_SHORTCUTS.md) and run the on-device checks. Misheard or
    unsupported phrases become parser tests.
@@ -65,6 +70,14 @@ Clean after each commit. No stashes.
   foreground if memory is tight.
 
 ## Done (earlier sessions)
+- 2026-10-24, staging prep:
+  - docs/STAGING.md rewritten in full.
+  - Remote smoke covers tasks, private storage, and JARVIS ask; also
+    `npm run smoke:remote-local`.
+  - 75 e2e export files moved from Downloads to
+    `C:\Users\mchow\Documents\Directory\Backups\e2e-test-exports\`
+    (hash-verified).
+  - e2e downloads now stay in the temp profile.
 - Offline library (D-030), offline search (D-031), read-only offline Files
   (D-032), quota race and orphaned blobs (D-033, migration 0020), offline
   pinning (D-034), journal delete (D-035), triage (D-036), links (D-037),

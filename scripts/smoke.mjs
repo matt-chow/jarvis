@@ -1068,8 +1068,44 @@ async function remote(base) {
       expect(get.text === "remote smoke", "body");
       expect((await api.req("DELETE", `/api/v1/files/${put.json.id}`, { headers: auth })).status === 204, "delete");
     });
+    await check("task persists in D1 (create, read back, delete)", async () => {
+      const auth = { Authorization: `Bearer ${token}` };
+      const title = `staging smoke ${Date.now()}`;
+      const made = await api.req("POST", "/api/v1/tasks", { body: { title, estimate_minutes: 5 }, headers: auth });
+      expect(made.status === 201, `create ${made.status} ${made.text}`);
+      const back = await api.req("GET", `/api/v1/tasks/${made.json.id}`, { headers: auth });
+      expect(back.status === 200 && back.json.title === title && back.json.estimate_minutes === 5, `read back ${back.status}`);
+      expect((await api.req("DELETE", `/api/v1/tasks/${made.json.id}`, { headers: auth })).status === 204, "delete");
+      expect((await api.req("GET", `/api/v1/tasks/${made.json.id}`, { headers: auth })).status === 404, "gone");
+    });
+    await check("private storage: file content needs auth", async () => {
+      const auth = { Authorization: `Bearer ${token}` };
+      const put = await api.req("POST", `/api/v1/files?folder=smoke&name=private-${Date.now()}.txt`, { body: "private", headers: { ...auth, "Content-Type": "text/plain" } });
+      expect(put.status === 201, `upload ${put.status}`);
+      const anon = await fetch(`${base}/api/v1/files/${put.json.id}/content`);
+      expect(anon.status === 401, `anonymous content → ${anon.status}`);
+      expect((await api.req("DELETE", `/api/v1/files/${put.json.id}`, { headers: auth })).status === 204, "delete");
+    });
   } else {
-    console.log("  skip file round trip (set DIRECTORY_API_TOKEN to a device token)");
+    console.log("  skip file round trip and task persistence (set DIRECTORY_API_TOKEN to a full device token)");
+  }
+  const jarvisToken = process.env.DIRECTORY_JARVIS_TOKEN;
+  if (jarvisToken) {
+    await check("jarvis ask with a JARVIS-only token: reads run, writes wait for yes, other routes refused", async () => {
+      const auth = { Authorization: `Bearer ${jarvisToken}` };
+      const today = new Date().toISOString().slice(0, 10);
+      const ask = (body) => api.req("POST", "/api/v1/jarvis/ask", { body: { today, ...body }, headers: auth });
+      const read = await ask({ text: "what should I do today" });
+      expect(read.status === 200 && read.json.status === "executed" && typeof read.json.speech === "string", `priorities → ${read.status} ${read.text}`);
+      const write = await ask({ text: "add task staging smoke voice check" });
+      expect(write.json.status === "pending" && write.json.needs_confirmation, `preview → ${write.text}`);
+      const no = await ask({ text: "no", confirm: write.json.plan_id });
+      expect(no.json.status === "cancelled", `cancel → ${no.text}`);
+      const tasks = await api.req("GET", "/api/v1/tasks", { headers: auth });
+      expect(tasks.status === 403 && tasks.json.error === "token_scope", `tasks with JARVIS token → ${tasks.status}`);
+    });
+  } else {
+    console.log("  skip jarvis ask (set DIRECTORY_JARVIS_TOKEN to a JARVIS-only device token)");
   }
   await staticChecks(base);
 }

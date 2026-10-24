@@ -23,3 +23,6 @@ Thumbs.db
 # Agent handoff diagnostics (scripts/pre-compact.sh) and personal Claude settings
 .handoff/
 .claude/settings.local.json
+
+# Data exports (directory-export-*.json) are personal backups: keep them out of the repo.
+directory-export-*.json
