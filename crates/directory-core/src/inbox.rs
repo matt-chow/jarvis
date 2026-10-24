@@ -132,6 +132,7 @@ pub fn task_from_text(text: &str) -> NewTask {
         due_date: None,
         parent_id: None,
         project_id: None,
+        estimate_minutes: None,
     }
 }
 

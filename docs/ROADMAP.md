@@ -44,7 +44,9 @@ part of every slice, not deferred to the end.
 | Command presets (saved commands, one-tap run) | ✅ done |
 | Voice input (Web Speech API where available; text fallback) | **needs owner approval**: browser speech services send audio to the vendor |
 | More commands: `find` ✅, projects ✅ (new, list, tasks `in project …`, also within one plan), agenda ✅, habit check-ins ✅, links ✅ | ✅ done |
-| AI intent provider | needs owner approval (provider, budget) |
+| Planner: explainable priorities and time-boxed suggestions; JARVIS `priorities`, `suggest`, task updates (D-041) | ✅ done |
+| iPhone via Apple Shortcuts: `/api/v1/jarvis/ask` with JARVIS-only tokens (docs/JARVIS_SHORTCUTS.md) | in progress |
+| AI intent provider: optional OpenRouter free model, $0, parser first | in progress (owner sets the key) |
 
 - A command registry where modules expose typed, validated commands.
 - Text command input, then voice (Web Speech API).

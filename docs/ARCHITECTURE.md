@@ -121,8 +121,9 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | POST | `/api/v1/projects` | session or token | `{ id?, name, description? }` → `201` (optional client id; a repeat → `409 exists`) |
 | GET / PATCH / DELETE | `/api/v1/projects/{id}` | session or token | PATCH `name, description, status`. DELETE keeps the project's tasks and unassigns them. |
 | GET | `/api/v1/tasks?status=all|open|closed` | session or token | Owner's tasks and subtasks (max 1000) |
-| POST | `/api/v1/tasks` | session or token | `{ title, notes?, priority?, due_date?, parent_id?, project_id? }` → `201`. Subtasks are one level deep and can't set `project_id`. |
-| GET / PATCH / DELETE | `/api/v1/tasks/{id}` | session or token | PATCH: any of `title, notes, status, priority, due_date, project_id` (`null` clears the due date or project). DELETE cascades to subtasks. |
+| POST | `/api/v1/tasks` | session or token | `{ title, notes?, priority?, due_date?, parent_id?, project_id?, estimate_minutes? (1–1440) }` → `201`. Subtasks are one level deep and can't set `project_id`. |
+| GET | `/api/v1/tasks/plan?date=&minutes=&project_id=` | session or token | Planner proposal (D-041): ranked open tasks with scored reasons; `minutes` (1–960) fills that much time in rank order. Read-only. |
+| GET / PATCH / DELETE | `/api/v1/tasks/{id}` | session or token | PATCH: any of `title, notes, status, priority, due_date, project_id, estimate_minutes` (`null` clears the due date, project, or estimate). DELETE cascades to subtasks. |
 | GET | `/api/v1/library` | session or token | PDF/ePub files with reading progress (reading, want, unread, finished) |
 | PUT / DELETE | `/api/v1/library/{file_id}/progress` | session or token | PUT `{ status?, current_page?, total_pages?, position? }`. Percent is derived from pages; reaching the last page finishes the document. DELETE resets it. |
 | GET | `/api/v1/files?folder=` | session or token | `{ folder, folders, files }` from D1 metadata (no R2 list operations) |
@@ -166,6 +167,7 @@ JSON bodies are capped at 64 KiB.
   - `0018`: `playlists` (ordered file ids as JSON).
   - `0019`: `client_errors` (bounded per owner).
   - `0020`: `blob_orphans` (R2 deletes to retry, D-033).
+  - `0021`: `tasks.estimate_minutes` (planner, D-041).
 - IndexedDB v3 adds a `media` store: tracks the owner chose to save for
   offline playback (blobs, explicit download; the service worker still never
   caches `/api/*`).

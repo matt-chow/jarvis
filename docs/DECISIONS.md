@@ -136,6 +136,41 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-041 — A deterministic, explainable planner that only proposes
+**Status:** accepted (owner goal, 2026-10-24)
+`directory-core::planner` scores open tasks with fixed, documented points.
+Every point carries a reason, so the planner can always say why.
+
+| Factor | Points |
+| --- | --- |
+| Urgency, overdue | 50, plus 2 per day overdue (capped at 10 days) |
+| Urgency, due today / tomorrow / in 2–3 / 4–7 / 8–14 days | 45 / 35 / 25 / 15 / 5 |
+| Importance, priority high / medium / low | 30 / 20 / 10 |
+| Momentum, already in progress | 10 |
+| Dependencies, a subtask (unblocks its parent) | 5 |
+| Stale, undated and 14+ days old | 3 |
+
+Dependencies use the existing one-level subtasks. A parent with open
+subtasks is blocked, so it isn't offered. Its subtasks inherit its
+deadline and priority when those are stronger.
+
+With a time budget, picks are filled greedily in rank order, and tasks that
+don't fit are counted (`too_long`). Tasks without an estimate count as 30
+minutes and are labelled "no estimate". Ties break by deadline, then
+shorter task, then id. The output is deterministic.
+
+Tasks gain an optional `estimate_minutes` (1–1440, migration 0021).
+
+The planner never writes. `GET /api/v1/tasks/plan` and the JARVIS
+`priorities`/`suggest` commands are read-only. Re-dating or
+re-prioritising goes through `update task` commands, which need approval.
+AI may only phrase a request (minutes, which task). It never computes
+scores.
+
+Explicit task-to-task dependencies (beyond subtasks), calendar-aware free
+time, and Jev as an optional classifier are future work. None is an MVP
+dependency.
+
 ## D-040 — The repo lives outside OneDrive
 **Status:** accepted (owner request, 2026-10-24)
 OneDrive sync locked `node_modules`, `target`, and SQLite state, which

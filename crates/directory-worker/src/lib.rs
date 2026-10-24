@@ -118,6 +118,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         // Tasks
         .get_async("/api/v1/tasks", tasks::list)
         .post_async("/api/v1/tasks", tasks::create)
+        .get_async("/api/v1/tasks/plan", tasks::plan)
         .get_async("/api/v1/tasks/:id", tasks::get)
         .patch_async("/api/v1/tasks/:id", tasks::update)
         .delete_async("/api/v1/tasks/:id", tasks::delete)

@@ -13,6 +13,8 @@ export interface Task {
   status: TaskStatus;
   priority: TaskPriority;
   due_date: string | null;
+  /** Expected minutes of work (planner, D-041). Missing in caches from before it existed. */
+  estimate_minutes?: number | null;
   created_at: number;
   updated_at: number;
   completed_at: number | null;
@@ -27,10 +29,11 @@ export interface NewTask {
   due_date?: string | null;
   parent_id?: string;
   project_id?: string;
+  estimate_minutes?: number | null;
 }
 
 /** Fields omitted are unchanged; `due_date: null` clears. */
-export type TaskPatch = Partial<Pick<Task, "title" | "notes" | "status" | "priority" | "due_date" | "project_id">>;
+export type TaskPatch = Partial<Pick<Task, "title" | "notes" | "status" | "priority" | "due_date" | "project_id" | "estimate_minutes">>;
 
 export type TaskFilter = "open" | "closed" | "all";
 
@@ -112,4 +115,50 @@ export function taskTree(tasks: Task[], filter: TaskFilter): TaskNode[] {
     .filter((t) => filter === "all" || (filter === "open" ? isOpen(t) : !isOpen(t)))
     .sort(compareTasks)
     .map((task) => ({ task, subtasks: (children.get(task.id) ?? []).sort(compareTasks) }));
+}
+
+/** One reason a task scored the way it did (planner, D-041). */
+export interface PlanFactor {
+  points: number;
+  reason: string;
+}
+
+export interface PlanPick {
+  task_id: string;
+  title: string;
+  score: number;
+  factors: PlanFactor[];
+  /** The task's estimate, or 30 when it has none (`estimated: false`). */
+  minutes: number;
+  estimated: boolean;
+  due_date: string | null;
+}
+
+/** `GET /api/v1/tasks/plan`: a proposal only; nothing is saved. */
+export interface PlanProposal {
+  date: string;
+  minutes: number | null;
+  picks: PlanPick[];
+  total_minutes: number;
+  /** Open tasks waiting on their own open subtasks. */
+  blocked: number;
+  /** Ranked tasks left out because they don't fit the time. */
+  too_long: number;
+}
+
+/** "45 min", "1 h", "1 h 30 min" (matches the server's wording). */
+export function formatMinutes(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m} min`;
+  return m === 0 ? `${h} h` : `${h} h ${m} min`;
+}
+
+/** Parse an estimate input: whole minutes 1–1440, empty clears; otherwise undefined (invalid). */
+export function parseEstimate(raw: string): number | null | undefined {
+  const s = raw.trim();
+  if (s === "") return null;
+  if (!/^\d+$/.test(s)) return undefined;
+  const n = Number(s);
+  return n >= 1 && n <= 1440 ? n : undefined;
 }

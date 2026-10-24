@@ -337,6 +337,7 @@ export function applyLocally(tasks: Task[], op: Op, now = Date.now()): Task[] {
         status: "todo",
         priority: t.priority ?? "none",
         due_date: t.due_date ?? null,
+        estimate_minutes: t.estimate_minutes ?? null,
         created_at: now,
         updated_at: now,
         completed_at: null,

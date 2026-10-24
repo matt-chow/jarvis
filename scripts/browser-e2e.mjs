@@ -293,6 +293,33 @@ try {
     }
   });
 
+  await step("Tasks plan: an estimate saves; 'suggest' fills the free minutes with reasons (D-041)", async () => {
+    await page.hash("/tasks");
+    // The previous step left the "Done" filter and a task open.
+    await page.click("Close task details");
+    await page.evaluate(`[...document.querySelectorAll("[role=tab]")].find((t) => t.innerText.trim().toLowerCase() === "open").click()`);
+    await page.waitForText("Nothing open");
+    await page.fill("New task", "Plan e2e quick");
+    await page.click("add");
+    await page.waitForText("Plan e2e quick");
+    await page.click("Plan e2e quick");
+    await page.fill("estimate (minutes)", "15");
+    await page.evaluate(`document.querySelector('input[placeholder="e.g. 30"]').dispatchEvent(new FocusEvent("focusout", { bubbles: true }))`);
+    for (let i = 0; ; i++) {
+      const all = await page.evaluate(`fetch("/api/v1/tasks?status=open").then((r) => r.json())`);
+      if (all.tasks.some((t) => t.title === "Plan e2e quick" && t.estimate_minutes === 15)) break;
+      if (i > 50) throw new Error(`estimate not saved: ${JSON.stringify(all)}`);
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    await page.click("Close task details");
+    await page.fill("minutes free", "20");
+    await page.click("suggest");
+    await page.waitForText("1. Plan e2e quick");
+    await page.waitForText("15 min of 20 min planned");
+    await shot("tasks-plan");
+    await page.click("Complete “Plan e2e quick”");
+  });
+
   await step("Links: link a note to a task via the picker, follow the deep link, see the back-link", async () => {
     await page.hash("/notes");
     await page.click("Meeting notes");

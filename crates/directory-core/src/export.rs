@@ -155,6 +155,7 @@ mod tests {
                 status: Status::Todo,
                 priority: Priority::None,
                 due_date: None,
+                estimate_minutes: None,
                 created_at: 1,
                 updated_at: 1,
                 completed_at: None,

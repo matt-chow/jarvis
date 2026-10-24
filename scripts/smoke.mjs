@@ -720,6 +720,40 @@ async function local() {
       await api.req("DELETE", `/api/v1/notes/${note.id}`);
     });
 
+    await check("planner (D-041): estimates validated; ranked proposal with reasons; time budget; jarvis priorities/suggest/update", async () => {
+      const today = "2026-10-21";
+      const bad = await api.req("POST", "/api/v1/tasks", { body: { title: "Too long", estimate_minutes: 2000 } });
+      expect(bad.status === 400 && bad.json.message.startsWith("estimate_minutes"), `estimate 2000 → ${bad.status}`);
+      const urgent = (await api.req("POST", "/api/v1/tasks", { body: { title: "Planner urgent", due_date: "2026-10-20", priority: "high", estimate_minutes: 20 } })).json;
+      const quick = (await api.req("POST", "/api/v1/tasks", { body: { title: "Planner quick", estimate_minutes: 10 } })).json;
+      const long = (await api.req("POST", "/api/v1/tasks", { body: { title: "Planner long", priority: "medium", estimate_minutes: 300 } })).json;
+      expect(urgent.estimate_minutes === 20, `created with estimate → ${JSON.stringify(urgent)}`);
+      const plan = await api.req("GET", `/api/v1/tasks/plan?date=${today}`);
+      expect(plan.status === 200 && plan.json.picks[0].task_id === urgent.id, `top pick → ${plan.text}`);
+      expect(plan.json.picks[0].factors.some((f) => f.reason === "overdue by 1 day"), "reason given");
+      const fit = await api.req("GET", `/api/v1/tasks/plan?date=${today}&minutes=30`);
+      const ids = fit.json.picks.map((p) => p.task_id);
+      expect(ids.includes(urgent.id) && ids.includes(quick.id) && !ids.includes(long.id) && fit.json.total_minutes <= 30, `30 min → ${fit.text}`);
+      expect((await api.req("GET", `/api/v1/tasks/plan?date=nope`)).status === 400, "bad date → 400");
+      expect((await api.req("GET", `/api/v1/tasks/plan?date=${today}&minutes=0`)).status === 400, "0 minutes → 400");
+
+      const say = (input) => api.req("POST", "/api/v1/jarvis/plan", { body: { input, today } });
+      const top = await say("What should I do today?");
+      expect(top.json.status === "executed" && top.json.results[0].message.includes("1. Planner urgent (overdue by 1 day, high priority)"), `priorities → ${top.text}`);
+      const sug = await say("I have 15 minutes");
+      expect(sug.json.results[0].message.startsWith("For 15 min on Wednesday 2026-10-21: 1. Planner quick (10 min)"), `suggest → ${sug.text}`);
+      const up = await say("move planner long to friday; set priority of planner quick to high");
+      expect(up.json.status === "pending" && up.json.requires_approval, "updates need approval");
+      const ran = await api.req("POST", `/api/v1/jarvis/plans/${up.json.id}/execute`);
+      expect(ran.json.status === "executed", `update ran → ${ran.text}`);
+      const after = (await api.req("GET", `/api/v1/tasks/${long.id}`)).json;
+      expect(after.due_date === "2026-10-23", `moved → ${after.due_date}`);
+      expect((await api.req("GET", `/api/v1/tasks/${quick.id}`)).json.priority === "high", "re-prioritized");
+      const cleared = await api.req("PATCH", `/api/v1/tasks/${long.id}`, { body: { estimate_minutes: null } });
+      expect(cleared.json.estimate_minutes === null, "estimate cleared");
+      for (const t of [urgent, quick, long]) await api.req("DELETE", `/api/v1/tasks/${t.id}`);
+    });
+
     await check("jarvis presets: save (validated by parsing), list, delete", async () => {
       const bad = await api.req("POST", "/api/v1/jarvis/presets", { body: { name: "Bad", input: "dance" } });
       expect(bad.status === 400 && bad.json.error === "not_understood", `unparseable → ${bad.status}`);

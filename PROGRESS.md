@@ -127,6 +127,30 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-10-24 — Planner and JARVIS task commands (D-041)
+- **Core:**
+  - `planner.rs`: scoring with reasons, subtask dependencies, and a time
+    budget.
+  - Tasks gain `estimate_minutes` (validated 1–1440; restore validates it
+    too).
+  - JARVIS:
+    - New commands `priorities`, `suggest` (read-only), and
+      `update task` (due date, clear due date, priority, estimate;
+      needs approval).
+    - `add task` takes "high priority" and "takes 20 minutes" clauses.
+    - The parser understands dictation punctuation and durations ("an hour
+      and a half", "45m").
+- **Worker:** `GET /api/v1/tasks/plan`; migration 0021; schema v21.
+- **Web:** Tasks has a provisional **plan** panel (priorities, or suggest
+  for N minutes, with reasons; needs a connection) and an estimate field.
+- **Tests:**
+  - core 126 (planner 6, parser phrases, service flow);
+  - web 96;
+  - smoke: new planner check, all passed;
+  - browser e2e: new "Tasks plan" step, all passed (32);
+  - verify ✅.
+- Staging config: `[env.staging]` + docs/STAGING.md (005250e).
+
 ### 2026-10-24 — Repo moved out of OneDrive (D-040)
 - Copied to `C:\Users\mchow\dev\jarvis` with robocopy, excluding build
   output (`node_modules`, `target`, `dist`, the worker build, and the busy

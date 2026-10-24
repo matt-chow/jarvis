@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareTasks, dueInfo, localDate, taskTree, type Task } from "./tasks";
+import { compareTasks, dueInfo, formatMinutes, localDate, parseEstimate, taskTree, type Task } from "./tasks";
 
 let seq = 0;
 function task(over: Partial<Task>): Task {
@@ -60,5 +60,23 @@ describe("ordering and tree", () => {
     expect(open[0].subtasks.map((t) => t.id)).toEqual([sub2.id, sub1.id]);
     expect(taskTree(all, "closed").map((n) => n.task.id)).toEqual([closed.id]);
     expect(taskTree(all, "all")).toHaveLength(2);
+  });
+});
+
+describe("planner helpers (D-041)", () => {
+  it("formats minutes like the server", () => {
+    expect(formatMinutes(45)).toBe("45 min");
+    expect(formatMinutes(60)).toBe("1 h");
+    expect(formatMinutes(90)).toBe("1 h 30 min");
+  });
+
+  it("parses estimates: whole minutes 1–1440, empty clears", () => {
+    expect(parseEstimate("")).toBeNull();
+    expect(parseEstimate(" 30 ")).toBe(30);
+    expect(parseEstimate("1440")).toBe(1440);
+    expect(parseEstimate("0")).toBeUndefined();
+    expect(parseEstimate("1441")).toBeUndefined();
+    expect(parseEstimate("1.5")).toBeUndefined();
+    expect(parseEstimate("soon")).toBeUndefined();
   });
 });

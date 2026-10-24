@@ -7,6 +7,7 @@ use crate::d1::{D1ProjectRepository, D1TaskRepository};
 use crate::{bindings, entropy::WebCryptoEntropy, try_or_respond};
 use directory_core::automations::Event;
 use directory_core::identity::Principal;
+use directory_core::planner;
 use directory_core::projects::ProjectRepository;
 use directory_core::tasks::{Filter, NewTask, Status, Task, TaskError, TaskPatch, TaskService};
 use serde::Serialize;
@@ -145,5 +146,41 @@ pub async fn delete(req: Request, rc: RouteContext<()>) -> Result<Response> {
     match c.service().delete(&c.principal, &id_param(&rc)).await {
         Ok(()) => no_content(),
         Err(e) => task_error(e),
+    }
+}
+
+/// `GET /api/v1/tasks/plan?date=YYYY-MM-DD[&minutes=N][&project_id=…]`: the
+/// planner's proposal (D-041). Read-only; nothing is saved.
+pub async fn plan(req: Request, rc: RouteContext<()>) -> Result<Response> {
+    let c = try_or_respond!(ctx(&req, &rc).await?);
+    let url = req.url()?;
+    let get = |name: &str| {
+        url.query_pairs()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.into_owned())
+    };
+    let date = get("date").unwrap_or_default();
+    let minutes = match get("minutes").filter(|m| !m.is_empty()) {
+        None => None,
+        Some(m) => match m.parse::<u32>() {
+            Ok(m) => Some(m),
+            Err(_) => return error_with(400, "invalid_input", "minutes: expected a number"),
+        },
+    };
+    let open = match c.service().list(&c.principal, Filter::Open).await {
+        Ok(open) => open,
+        Err(e) => return task_error(e),
+    };
+    let constraints = planner::Constraints {
+        minutes,
+        project_id: get("project_id").filter(|p| !p.is_empty()),
+        max_items: None,
+    };
+    let now = Date::now().as_millis() as i64;
+    match planner::propose(&open, &date, now, &constraints) {
+        Ok(p) => json(200, &p),
+        Err(planner::PlanError::Invalid(f, w)) => {
+            error_with(400, "invalid_input", format!("{f}: {w}"))
+        }
     }
 }

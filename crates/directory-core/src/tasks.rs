@@ -12,6 +12,8 @@ pub const MAX_NOTES: usize = 10_000;
 pub const MAX_OPEN: u32 = 2_000;
 /// Closed tasks a list includes: the most recently completed.
 pub const MAX_RECENT_CLOSED: u32 = 500;
+/// Longest estimate, in minutes (one day).
+pub const MAX_ESTIMATE: u32 = 1_440;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -91,6 +93,8 @@ pub struct Task {
     pub priority: Priority,
     /// `YYYY-MM-DD`
     pub due_date: Option<String>,
+    /// Expected minutes of work, for the planner (D-041).
+    pub estimate_minutes: Option<u32>,
     pub created_at: i64,
     pub updated_at: i64,
     pub completed_at: Option<i64>,
@@ -134,6 +138,8 @@ pub struct NewTask {
     pub parent_id: Option<String>,
     #[serde(default)]
     pub project_id: Option<String>,
+    #[serde(default)]
+    pub estimate_minutes: Option<u32>,
 }
 
 /// Partial update. For nullable fields, `Some(None)` (JSON `null`) clears.
@@ -151,6 +157,8 @@ pub struct TaskPatch {
     pub due_date: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
     pub project_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub estimate_minutes: Option<Option<u32>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -180,6 +188,16 @@ pub trait TaskRepository {
 
 fn backend(e: String) -> TaskError {
     TaskError::Backend(e)
+}
+
+fn estimate(minutes: Option<u32>) -> Result<Option<u32>, TaskError> {
+    match minutes {
+        Some(m) if m == 0 || m > MAX_ESTIMATE => Err(TaskError::Invalid(
+            "estimate_minutes",
+            "must be 1 to 1440 minutes",
+        )),
+        m => Ok(m),
+    }
 }
 
 fn field<T>(name: &'static str, r: Result<T, &'static str>) -> Result<T, TaskError> {
@@ -306,6 +324,7 @@ impl<'a, R: TaskRepository, E: Entropy + ?Sized> TaskService<'a, R, E> {
             status: Status::Todo,
             priority: input.priority.unwrap_or(Priority::None),
             due_date,
+            estimate_minutes: estimate(input.estimate_minutes)?,
             created_at: self.now,
             updated_at: self.now,
             completed_at: None,
@@ -336,6 +355,9 @@ impl<'a, R: TaskRepository, E: Entropy + ?Sized> TaskService<'a, R, E> {
                 .map(validate::date)
                 .transpose()
                 .map_err(|w| TaskError::Invalid("due_date", w))?;
+        }
+        if let Some(minutes) = patch.estimate_minutes {
+            task.estimate_minutes = estimate(minutes)?;
         }
         if let Some(project) = patch.project_id {
             if task.parent_id.is_some() {
@@ -480,6 +502,7 @@ mod tests {
             due_date: None,
             parent_id: None,
             project_id: None,
+            estimate_minutes: None,
         }
     }
 
@@ -499,6 +522,7 @@ mod tests {
             status,
             priority: Priority::None,
             due_date: None,
+            estimate_minutes: None,
             created_at: i64::from(i),
             updated_at: i64::from(i),
             completed_at: (status == Status::Done).then_some(i64::from(i)),

@@ -644,3 +644,73 @@ fn link_commands_resolve_names_and_link_through_the_links_module() {
         Err(JarvisError::Unresolved(m)) if m.starts_with("No note matches")
     ));
 }
+
+#[test]
+fn task_details_updates_and_planner_commands() {
+    let f = F::default();
+    let plan = f
+        .plan("add task file taxes high priority due friday; add task stretch takes 10 minutes; add task read low priority takes 1 hour")
+        .unwrap();
+    assert_eq!(
+        plan.actions[0].summary,
+        "Create task “file taxes” due 2026-10-23, high priority"
+    );
+    assert_eq!(plan.actions[1].summary, "Create task “stretch”, 10 min");
+    f.execute(&plan.id, 1_100).unwrap();
+    {
+        let tasks = f.tasks.0.borrow();
+        assert_eq!(tasks[0].priority, Priority::High);
+        assert_eq!(tasks[1].estimate_minutes, Some(10));
+        assert_eq!(
+            (tasks[2].priority, tasks[2].estimate_minutes),
+            (Priority::Low, Some(60))
+        );
+    }
+
+    // Priorities and suggestions are read-only: they run at once, change nothing.
+    let top = f.plan("What should I do today?").unwrap();
+    assert!(!top.requires_approval);
+    assert_eq!(
+        top.results[0].message,
+        "Top 3 for Wednesday 2026-10-21: 1. file taxes (due in 2 days, high priority). 2. read (low priority). 3. stretch."
+    );
+    let fit = f.plan("I have 45 minutes. What should I do?").unwrap();
+    assert_eq!(
+        fit.results[0].message,
+        "For 45 min on Wednesday 2026-10-21: 1. file taxes (about 30 min, no estimate, due in 2 days, high priority). 2. stretch (10 min). That's 40 min in all."
+    );
+    assert_eq!(
+        f.plan("what can I do in 5 min").unwrap().results[0].message,
+        "Nothing open fits in 5 min; the shortest takes longer."
+    );
+
+    // Updates resolve the task by name and wait for approval.
+    let up = f.plan("move taxes to monday").unwrap();
+    assert!(up.requires_approval);
+    assert_eq!(
+        up.actions[0].summary,
+        "Update task “file taxes”: due 2026-10-26"
+    );
+    let done = f.execute(&up.id, 1_200).unwrap();
+    assert_eq!(
+        done.results[0].message,
+        "Updated “file taxes”: due 2026-10-26."
+    );
+    let id = f.plan("set priority of stretch to medium").unwrap().id;
+    f.execute(&id, 1_300).unwrap();
+    let id = f.plan("estimate taxes at 2 hours").unwrap().id;
+    f.execute(&id, 1_400).unwrap();
+    let id = f.plan("clear the due date of taxes").unwrap().id;
+    f.execute(&id, 1_500).unwrap();
+    let tasks = f.tasks.0.borrow();
+    assert_eq!(tasks[1].priority, Priority::Medium);
+    assert_eq!(
+        (tasks[0].estimate_minutes, tasks[0].due_date.as_deref()),
+        (Some(120), None)
+    );
+    drop(tasks);
+    assert!(matches!(
+        f.plan("move nothing-like-this to friday"),
+        Err(JarvisError::Unresolved(_))
+    ));
+}

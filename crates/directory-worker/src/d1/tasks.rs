@@ -16,7 +16,7 @@ impl D1TaskRepository {
 }
 
 const COLUMNS: &str =
-    "id, owner_id, parent_id, title, notes, status, priority, due_date, created_at, updated_at, completed_at, project_id";
+    "id, owner_id, parent_id, title, notes, status, priority, due_date, created_at, updated_at, completed_at, project_id, estimate_minutes";
 
 #[derive(Deserialize)]
 struct Row {
@@ -32,6 +32,7 @@ struct Row {
     updated_at: f64,
     completed_at: Option<f64>,
     project_id: Option<String>,
+    estimate_minutes: Option<f64>,
 }
 
 impl TryFrom<Row> for Task {
@@ -50,6 +51,7 @@ impl TryFrom<Row> for Task {
             created_at: r.created_at as i64,
             updated_at: r.updated_at as i64,
             completed_at: r.completed_at.map(|t| t as i64),
+            estimate_minutes: r.estimate_minutes.map(|m| m as u32),
         })
     }
 }
@@ -99,7 +101,7 @@ impl TaskRepository for D1TaskRepository {
 
     async fn insert(&self, t: &Task) -> Result<(), String> {
         let sql = format!(
-            "INSERT INTO tasks ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"
+            "INSERT INTO tasks ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)"
         );
         stmt(
             &self.db,
@@ -117,6 +119,7 @@ impl TaskRepository for D1TaskRepository {
                 int(t.updated_at),
                 opt_int(t.completed_at),
                 opt_text(t.project_id.as_deref()),
+                opt_int(t.estimate_minutes.map(i64::from)),
             ],
         )?
         .run()
@@ -129,7 +132,8 @@ impl TaskRepository for D1TaskRepository {
         let r = stmt(
             &self.db,
             "UPDATE tasks SET title = ?3, notes = ?4, status = ?5, priority = ?6, due_date = ?7,
-                    updated_at = ?8, completed_at = ?9, project_id = ?10
+                    updated_at = ?8, completed_at = ?9, project_id = ?10,
+                    estimate_minutes = ?11
               WHERE owner_id = ?1 AND id = ?2",
             &[
                 text(&t.owner_id),
@@ -142,6 +146,7 @@ impl TaskRepository for D1TaskRepository {
                 int(t.updated_at),
                 opt_int(t.completed_at),
                 opt_text(t.project_id.as_deref()),
+                opt_int(t.estimate_minutes.map(i64::from)),
             ],
         )?
         .run()

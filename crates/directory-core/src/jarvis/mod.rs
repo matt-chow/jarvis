@@ -17,10 +17,11 @@ use crate::inbox::{Capture, InboxError, InboxRepository, InboxService};
 use crate::journal::{JournalError, JournalRepository, JournalService};
 use crate::links::{EntityKind, EntityRef, LinkError, LinkRepository, LinkService, NewLink};
 use crate::notes::{NewNote, NoteError, NoteRepository, NoteService};
+use crate::planner::{self, Constraints};
 use crate::projects::{NewProject, ProjectError, ProjectRepository, ProjectService};
 use crate::search::{self, SearchError, SearchSource};
 use crate::tasks::{
-    self, Filter, NewTask, Status, TaskError, TaskPatch, TaskRepository, TaskService,
+    self, Filter, NewTask, Priority, Status, TaskError, TaskPatch, TaskRepository, TaskService,
 };
 use crate::validate;
 use serde::{Deserialize, Serialize};
@@ -43,6 +44,29 @@ pub enum Command {
         /// Filled in when the plan is resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        priority: Option<Priority>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        estimate_minutes: Option<u32>,
+    },
+    /// Change an open task's deadline, priority, or estimate. `task_id`/`title`
+    /// are filled in when the plan is resolved.
+    UpdateTask {
+        query: String,
+        change: TaskChange,
+        #[serde(default)]
+        task_id: Option<String>,
+        #[serde(default)]
+        title: Option<String>,
+    },
+    /// The planner's top tasks for `date` (D-041).
+    Priorities {
+        date: String,
+    },
+    /// What fits in `minutes` of free time, by the planner's ranking.
+    Suggest {
+        date: String,
+        minutes: u32,
     },
     CreateProject {
         name: String,
@@ -84,6 +108,44 @@ pub enum Command {
     Find {
         query: String,
     },
+}
+
+/// What an `UpdateTask` changes. `due_date: Some(None)` clears the deadline.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskChange {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "validate::double_option"
+    )]
+    pub due_date: Option<Option<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<Priority>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimate_minutes: Option<u32>,
+}
+
+impl TaskChange {
+    pub fn is_empty(&self) -> bool {
+        self.due_date.is_none() && self.priority.is_none() && self.estimate_minutes.is_none()
+    }
+
+    /// "due 2026-10-23, high priority, 30 min"
+    fn describe(&self) -> String {
+        let mut parts = Vec::new();
+        match &self.due_date {
+            Some(Some(d)) => parts.push(format!("due {d}")),
+            Some(None) => parts.push("no due date".into()),
+            None => {}
+        }
+        if let Some(p) = self.priority {
+            parts.push(format!("{} priority", p.as_str()));
+        }
+        if let Some(m) = self.estimate_minutes {
+            parts.push(format!("estimate {}", planner::duration(m)));
+        }
+        parts.join(", ")
+    }
 }
 
 /// One side of a `link` command: what the user typed, and what it resolved to.
@@ -138,9 +200,12 @@ fn quote(s: &str, max: usize) -> String {
 impl Command {
     pub fn risk(&self) -> Risk {
         match self {
-            Self::ListTasks | Self::ListProjects | Self::Agenda { .. } | Self::Find { .. } => {
-                Risk::Read
-            }
+            Self::ListTasks
+            | Self::ListProjects
+            | Self::Agenda { .. }
+            | Self::Find { .. }
+            | Self::Priorities { .. }
+            | Self::Suggest { .. } => Risk::Read,
             _ => Risk::Write,
         }
     }
@@ -152,6 +217,8 @@ impl Command {
                 title,
                 due_date,
                 project,
+                priority,
+                estimate_minutes,
                 ..
             } => {
                 let mut s = format!("Create task {}", quote(title, 80));
@@ -161,7 +228,27 @@ impl Command {
                 if let Some(d) = due_date {
                     s.push_str(&format!(" due {d}"));
                 }
+                if let Some(p) = priority {
+                    s.push_str(&format!(", {} priority", p.as_str()));
+                }
+                if let Some(m) = estimate_minutes {
+                    s.push_str(&format!(", {}", planner::duration(*m)));
+                }
                 s
+            }
+            Self::UpdateTask {
+                query,
+                change,
+                title,
+                ..
+            } => format!(
+                "Update task {}: {}",
+                quote(title.as_deref().unwrap_or(query), 80),
+                change.describe()
+            ),
+            Self::Priorities { date } => format!("Show top priorities for {date}"),
+            Self::Suggest { minutes, .. } => {
+                format!("Suggest work for {}", planner::duration(*minutes))
             }
             Self::CreateProject { name } => format!("Create project {}", quote(name, 80)),
             Self::ListProjects => "List active projects".into(),
@@ -462,6 +549,59 @@ fn agenda_message(
     }
 }
 
+/// "Top 2 for Friday 2026-10-23: 1. Pay rent (overdue by 2 days, high
+/// priority). 2. Read." or, with a time budget, "For 45 min: …".
+fn plan_message(p: &planner::Proposal) -> String {
+    let day = format!(
+        "{} {}",
+        WEEKDAY_NAMES[validate::weekday(&p.date) as usize],
+        p.date
+    );
+    if p.picks.is_empty() {
+        return match (p.minutes, p.too_long) {
+            (Some(m), n) if n > 0 => format!(
+                "Nothing open fits in {}; the shortest takes longer.",
+                planner::duration(m)
+            ),
+            _ if p.blocked > 0 => "Only tasks waiting on their subtasks are open.".into(),
+            _ => "Nothing open. Nice.".into(),
+        };
+    }
+    let items: Vec<String> = p
+        .picks
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let mut why: Vec<String> = s.factors.iter().map(|f| f.reason.clone()).collect();
+            if p.minutes.is_some() {
+                let length = planner::duration(s.minutes);
+                why.insert(
+                    0,
+                    if s.estimated {
+                        length
+                    } else {
+                        format!("about {length}, no estimate")
+                    },
+                );
+            }
+            if why.is_empty() {
+                format!("{}. {}", i + 1, s.title)
+            } else {
+                format!("{}. {} ({})", i + 1, s.title, why.join(", "))
+            }
+        })
+        .collect();
+    match p.minutes {
+        Some(m) => format!(
+            "For {} on {day}: {}. That's {} in all.",
+            planner::duration(m),
+            items.join(". "),
+            planner::duration(p.total_minutes)
+        ),
+        None => format!("Top {} for {day}: {}.", p.picks.len(), items.join(". ")),
+    }
+}
+
 fn project_failure(e: ProjectError) -> ActionResult {
     failure(match e {
         ProjectError::Invalid(f, w) => format!("Invalid {f}: {w}."),
@@ -664,25 +804,31 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                 })
             }
             Command::CompleteTask { query, .. } => {
-                let open = TaskService::new(t.tasks(), self.entropy, self.now)
-                    .list(p, Filter::Open)
-                    .await
-                    .map_err(|e| match e {
-                        TaskError::Backend(b) => JarvisError::Backend(b),
-                        _ => JarvisError::Unresolved("Couldn't read your tasks.".into()),
-                    })?;
-                let t = pick(&open, |t| &t.title, &query)
-                    .map_err(|m| ambiguity(&query, "open task", &m, |t| &t.title))?;
+                let t = self.resolve_open_task(p, &query, t).await?;
                 Ok(Command::CompleteTask {
-                    task_id: Some(t.id.clone()),
-                    title: Some(t.title.clone()),
+                    task_id: Some(t.id),
+                    title: Some(t.title),
                     query,
+                })
+            }
+            Command::UpdateTask { query, change, .. } => {
+                if change.is_empty() {
+                    return Err(JarvisError::Invalid("change", "nothing to change"));
+                }
+                let t = self.resolve_open_task(p, &query, t).await?;
+                Ok(Command::UpdateTask {
+                    task_id: Some(t.id),
+                    title: Some(t.title),
+                    query,
+                    change,
                 })
             }
             Command::CreateTask {
                 title,
                 due_date,
                 project: Some(query),
+                priority,
+                estimate_minutes,
                 ..
             } => {
                 let active = ProjectService::new(t.projects(), self.entropy, self.now)
@@ -698,6 +844,8 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                         due_date,
                         project: Some(pr.name.clone()),
                         project_id: Some(pr.id.clone()),
+                        priority,
+                        estimate_minutes,
                     }),
                     // Created by an earlier step of this plan: look it up when it runs.
                     Err(m) if m.is_empty() && created_earlier(earlier, &query).is_some() => {
@@ -706,6 +854,8 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                             due_date,
                             project: created_earlier(earlier, &query),
                             project_id: None,
+                            priority,
+                            estimate_minutes,
                         })
                     }
                     Err(m) => Err(ambiguity(&query, "active project", &m, |x| &x.name)),
@@ -713,6 +863,25 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
             }
             other => Ok(other),
         }
+    }
+
+    /// The one open task whose title matches `query`.
+    async fn resolve_open_task<C: CommandTargets>(
+        &self,
+        p: &Principal,
+        query: &str,
+        t: &C,
+    ) -> Result<tasks::Task, JarvisError> {
+        let open = TaskService::new(t.tasks(), self.entropy, self.now)
+            .list(p, Filter::Open)
+            .await
+            .map_err(|e| match e {
+                TaskError::Backend(b) => JarvisError::Backend(b),
+                _ => JarvisError::Unresolved("Couldn't read your tasks.".into()),
+            })?;
+        pick(&open, |t| &t.title, query)
+            .cloned()
+            .map_err(|m| ambiguity(query, "open task", &m, |t| &t.title))
     }
 
     /// Approve and run a pending plan (exactly once).
@@ -837,6 +1006,46 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         (PlanStatus::Executed, results)
     }
 
+    /// Priorities (no time budget) or suggestions for `minutes`, as one
+    /// spoken-friendly sentence with the reasons for each pick.
+    async fn plan_work<C: CommandTargets>(
+        &self,
+        p: &Principal,
+        t: &C,
+        date: &str,
+        minutes: Option<u32>,
+    ) -> ActionResult {
+        let open = match TaskService::new(t.tasks(), self.entropy, self.now)
+            .list(p, Filter::Open)
+            .await
+        {
+            Ok(open) => open,
+            Err(e) => return task_failure(e),
+        };
+        let c = Constraints {
+            minutes,
+            max_items: Some(if minutes.is_some() {
+                LIST_PREVIEW
+            } else {
+                planner::TOP
+            }),
+            ..Default::default()
+        };
+        let proposal = match planner::propose(&open, date, self.now, &c) {
+            Ok(proposal) => proposal,
+            Err(planner::PlanError::Invalid(f, w)) => return failure(format!("Invalid {f}: {w}.")),
+        };
+        ActionResult {
+            ok: true,
+            message: plan_message(&proposal),
+            entity: proposal.picks.first().map(|s| EntityRef {
+                kind: EntityKind::Task,
+                id: s.task_id.clone(),
+            }),
+            changed: false,
+        }
+    }
+
     async fn run_one<C>(&self, p: &Principal, command: &Command, t: &C) -> ActionResult
     where
         C: CommandTargets,
@@ -854,6 +1063,8 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                 due_date,
                 project,
                 project_id,
+                priority,
+                estimate_minutes,
             } => {
                 // A project created earlier in this plan is looked up by its exact name now.
                 let project_id = match (project, project_id) {
@@ -876,10 +1087,11 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     id: None,
                     title: title.clone(),
                     notes: None,
-                    priority: None,
+                    priority: *priority,
                     due_date: due_date.clone(),
                     parent_id: None,
                     project_id: project_id.clone(),
+                    estimate_minutes: *estimate_minutes,
                 };
                 match tasks.create(p, input).await {
                     Ok(task) => ActionResult {
@@ -1163,6 +1375,34 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     changed: false,
                 }
             }
+            Command::UpdateTask {
+                task_id: Some(id),
+                change,
+                ..
+            } => {
+                let patch = TaskPatch {
+                    due_date: change.due_date.clone(),
+                    priority: change.priority,
+                    estimate_minutes: change.estimate_minutes.map(Some),
+                    ..Default::default()
+                };
+                match tasks.update(p, id, patch).await {
+                    Ok(task) => ActionResult {
+                        ok: true,
+                        message: format!("Updated “{}”: {}.", task.title, change.describe()),
+                        entity: entity(EntityKind::Task, &task.id),
+                        changed: false,
+                    },
+                    Err(e) => task_failure(e),
+                }
+            }
+            Command::UpdateTask {
+                task_id: None,
+                query,
+                ..
+            } => failure(format!("No task was resolved for “{query}”.")),
+            Command::Priorities { date } => self.plan_work(p, t, date, None).await,
+            Command::Suggest { date, minutes } => self.plan_work(p, t, date, Some(*minutes)).await,
             Command::ListTasks => match tasks.list(p, Filter::Open).await {
                 Ok(open) => {
                     let mut top: Vec<&tasks::Task> =

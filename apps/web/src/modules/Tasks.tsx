@@ -2,19 +2,25 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { ModuleProps } from "../App";
 import { LinkedSection } from "../components/LinkedSection";
 import { Button, Panel, inputClass } from "../components/ui";
+import { describeError } from "../hooks/useCachedList";
 import { useHashParam } from "../hooks/useHashParam";
+import { reportIfUnauthorized } from "../hooks/useSession";
 import { useProjects } from "../hooks/useProjects";
 import { useTasks, type TasksState } from "../hooks/useTasks";
+import { api } from "../lib/api";
 import { hashParam } from "../lib/modules";
 import type { Project } from "../lib/projects";
 import {
   PRIORITY_LABELS,
   STATUS_LABELS,
   dueInfo,
+  formatMinutes,
   isOpen,
   localDate,
+  parseEstimate,
   RECENT_CLOSED_SHOWN,
   taskTree,
+  type PlanProposal,
   type Task,
   type TaskFilter,
   type TaskNode,
@@ -173,6 +179,18 @@ export function Tasks({ online }: ModuleProps) {
         )}
       </Panel>
 
+      {!selectedNode && (
+        <PlanPanel
+          online={online}
+          today={today}
+          tasks={state.tasks}
+          onSelect={(id) => {
+            const t = state.tasks?.find((x) => x.id === id);
+            setFilter("open");
+            setSelected(t?.parent_id ?? id);
+          }}
+        />
+      )}
       {selectedNode && (
         <TaskDetail
           key={selectedNode.task.id}
@@ -184,6 +202,116 @@ export function Tasks({ online }: ModuleProps) {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * The deterministic planner (D-041): what to do today, or what fits in the
+ * time available, with the reasons for each pick. It only proposes.
+ */
+function PlanPanel(props: { online: boolean; today: string; tasks: Task[] | undefined; onSelect: (id: string) => void }) {
+  const { online, today, tasks, onSelect } = props;
+  const [minutes, setMinutes] = useState("");
+  const [plan, setPlan] = useState<PlanProposal>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const budget = minutes.trim() === "" ? undefined : Number(minutes);
+  const invalid = budget !== undefined && !(Number.isInteger(budget) && budget >= 1 && budget <= 960);
+
+  const run = async (e?: FormEvent) => {
+    e?.preventDefault();
+    if (invalid) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      setPlan(await api.planTasks(today, budget));
+    } catch (err) {
+      reportIfUnauthorized(err);
+      setError(describeError(err, "plan"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Keep a shown plan current as tasks change (completed, re-dated, …).
+  const shown = plan !== undefined;
+  useEffect(() => {
+    if (shown && online) void run();
+  }, [tasks]);
+
+  return (
+    <Panel title="plan">
+      <form onSubmit={run} className="flex items-end gap-2">
+        <label className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="label">minutes free (optional)</span>
+          <input
+            value={minutes}
+            inputMode="numeric"
+            placeholder="e.g. 45"
+            onChange={(e) => setMinutes(e.target.value)}
+            aria-invalid={invalid}
+            className={inputClass}
+          />
+        </label>
+        <Button type="submit" disabled={!online || busy || invalid}>
+          {busy ? "planning…" : budget ? "suggest" : "priorities"}
+        </Button>
+      </form>
+      {invalid && <p className="mt-2 text-sm text-bad">Enter whole minutes from 1 to 960.</p>}
+      {!online && <p className="mt-3 text-sm text-muted">Planning needs a connection.</p>}
+      {error && (
+        <p role="alert" className="mt-3 text-sm text-bad">
+          {error}
+        </p>
+      )}
+      {!plan && !error && online && (
+        <p className="mt-3 text-sm text-muted">
+          Ranks open tasks by deadline, priority, progress, and subtasks. Nothing is changed.
+        </p>
+      )}
+      {plan && plan.picks.length === 0 && (
+        <p className="mt-3 text-sm text-muted">
+          {plan.minutes && plan.too_long > 0
+            ? `Nothing open fits in ${formatMinutes(plan.minutes)}.`
+            : plan.blocked > 0
+              ? "Only tasks waiting on their subtasks are open."
+              : "Nothing open."}
+        </p>
+      )}
+      {plan && plan.picks.length > 0 && (
+        <>
+          <ol className="mt-3 flex flex-col gap-2">
+            {plan.picks.map((pick, i) => (
+              <li key={pick.task_id}>
+                <button
+                  type="button"
+                  onClick={() => onSelect(pick.task_id)}
+                  className="w-full rounded-sm px-2 py-1 text-left hover:bg-sunken/60"
+                >
+                  <span className="text-sm">
+                    {i + 1}. {pick.title}
+                  </span>
+                  <span className="block text-xs text-muted">
+                    {[
+                      pick.estimated ? formatMinutes(pick.minutes) : `~${formatMinutes(pick.minutes)} (no estimate)`,
+                      ...pick.factors.map((f) => f.reason),
+                    ].join(" · ")}
+                    {" · "}
+                    {pick.score} pts
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ol>
+          {plan.minutes && (
+            <p className="mt-2 text-xs text-muted">
+              {formatMinutes(plan.total_minutes)} of {formatMinutes(plan.minutes)} planned
+              {plan.too_long > 0 ? ` · ${plan.too_long} longer task${plan.too_long === 1 ? "" : "s"} left out` : ""}.
+            </p>
+          )}
+        </>
+      )}
+    </Panel>
   );
 }
 
@@ -281,11 +409,17 @@ function TaskDetail(props: { node: TaskNode; state: TasksState; projects: Projec
   const [title, setTitle] = useState(task.title);
   const [notes, setNotes] = useState(task.notes);
   const [subtask, setSubtask] = useState("");
+  const [estimate, setEstimate] = useState(task.estimate_minutes ? String(task.estimate_minutes) : "");
+  const estimateValue = parseEstimate(estimate);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const saveTitle = () => {
     if (title.trim() && title.trim() !== task.title) void state.update(task.id, { title });
     else setTitle(task.title);
+  };
+  const saveEstimate = () => {
+    if (estimateValue === undefined) return;
+    if (estimateValue !== (task.estimate_minutes ?? null)) void state.update(task.id, { estimate_minutes: estimateValue });
   };
   const saveNotes = () => {
     if (notes !== task.notes) void state.update(task.id, { notes });
@@ -387,6 +521,22 @@ function TaskDetail(props: { node: TaskNode; state: TasksState; projects: Projec
               </Button>
             )}
           </span>
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="label">estimate (minutes)</span>
+          <input
+            value={estimate}
+            disabled={readOnly}
+            inputMode="numeric"
+            placeholder="e.g. 30"
+            onChange={(e) => setEstimate(e.target.value)}
+            onBlur={saveEstimate}
+            onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+            aria-invalid={estimateValue === undefined}
+            className={inputClass}
+          />
+          {estimateValue === undefined && <span className="text-xs text-bad">Whole minutes from 1 to 1440, or empty.</span>}
         </label>
 
         <label className="flex flex-col gap-1">

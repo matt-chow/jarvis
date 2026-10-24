@@ -26,6 +26,7 @@ pub mod library;
 pub mod links;
 pub mod music;
 pub mod notes;
+pub mod planner;
 pub mod preferences;
 pub mod projects;
 pub mod rate_limit;

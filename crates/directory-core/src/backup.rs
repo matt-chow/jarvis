@@ -244,6 +244,11 @@ async fn task<T: ImportTargets>(t: &T, p: &Principal, mut r: Task) -> Result<Out
     if let Some(d) = &r.due_date {
         try_reject!(ok_or_reject(validate::date(d), "due_date"));
     }
+    if r.estimate_minutes
+        .is_some_and(|m| m == 0 || m > tasks::MAX_ESTIMATE)
+    {
+        return reject("estimate_minutes: must be 1 to 1440");
+    }
     try_reject!(timestamps(r.created_at, r.updated_at));
     if let Some(parent) = &r.parent_id {
         // Parents are sent before subtasks; one level only.

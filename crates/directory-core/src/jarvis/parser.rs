@@ -14,11 +14,18 @@
 //!   list tasks                         · also: tasks, open tasks, what's open
 //!   find <text>                        · also: search, search for, look up
 //!   link <kind> <name> to|with <kind> <name>   · kinds: task, note, project, journal (a date)
+//!   what should I do [today|tomorrow]  · also: priorities, what are my priorities
+//!   I have <duration>                  · also: what can I do in, suggest work for
+//!   move|reschedule <task> to <date>   · also: set due date of, clear due date of
+//!   set priority of <task> to <p>      · also: make <task> high priority, prioritize
+//!   estimate <task> at <duration>
+//! New tasks also take "high priority" and "takes 20 minutes" clauses.
 //! Steps are separated by `;` or ` then `. Dates: today, tomorrow, a weekday
 //! (next occurrence), or YYYY-MM-DD.
 
-use super::{Command, LinkTarget};
+use super::{Command, LinkTarget, TaskChange};
 use crate::links::EntityKind;
+use crate::tasks::Priority;
 use crate::validate;
 
 pub const MAX_STEPS: usize = 5;
@@ -38,6 +45,10 @@ pub const EXAMPLES: &[&str] = &[
     "list tasks",
     "find passport",
     "add task buy milk; note milk was out of stock",
+    "what should I do today",
+    "I have 30 minutes",
+    "move call the dentist to monday",
+    "set priority of call the dentist to high",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -206,6 +217,381 @@ fn parse_link(rest: &str, today: &str) -> Result<Command, ParseError> {
     })
 }
 
+fn word_number(w: &str) -> Option<f64> {
+    if let Ok(n) = w.parse::<f64>() {
+        return (n.is_finite() && n > 0.0).then_some(n);
+    }
+    Some(match w {
+        "a" | "an" | "one" => 1.0,
+        "two" => 2.0,
+        "three" => 3.0,
+        "four" => 4.0,
+        "five" => 5.0,
+        "six" => 6.0,
+        "seven" => 7.0,
+        "eight" => 8.0,
+        "nine" => 9.0,
+        "ten" => 10.0,
+        "fifteen" => 15.0,
+        "twenty" => 20.0,
+        "thirty" => 30.0,
+        "forty" => 40.0,
+        "forty-five" => 45.0,
+        "fifty" => 50.0,
+        "sixty" => 60.0,
+        "ninety" => 90.0,
+        _ => return None,
+    })
+}
+
+/// "30 minutes", "1 hour 30 min", "1.5 hours", "an hour and a half",
+/// "half an hour", "45m". The whole of `words` must be a duration.
+pub fn parse_minutes(words: &[&str]) -> Option<u32> {
+    let words: Vec<String> = words
+        .iter()
+        .map(|w| w.trim_matches(|c: char| ",.!?".contains(c)).to_lowercase())
+        .filter(|w| !w.is_empty())
+        .collect();
+    let joined = words.join(" ");
+    let special = match joined.as_str() {
+        "half an hour" | "a half hour" | "half hour" => Some(30),
+        "an hour and a half" | "one and a half hours" | "hour and a half" => Some(90),
+        "quarter of an hour" | "a quarter hour" => Some(15),
+        _ => None,
+    };
+    if special.is_some() {
+        return special;
+    }
+    let mut total = 0.0;
+    let mut i = 0;
+    let mut any = false;
+    while i < words.len() {
+        let w = words[i].as_str();
+        if w == "and" && any {
+            i += 1;
+            continue;
+        }
+        // "45m", "2h", "30min"
+        let split = w.find(|c: char| !c.is_ascii_digit() && c != '.');
+        let (num, unit, step) = match split {
+            Some(at) if at > 0 => (word_number(&w[..at])?, &w[at..], 1),
+            _ => (word_number(w)?, words.get(i + 1).map(String::as_str)?, 2),
+        };
+        let per = match unit {
+            "m" | "min" | "mins" | "minute" | "minutes" => 1.0,
+            "h" | "hr" | "hrs" | "hour" | "hours" => 60.0,
+            _ => return None,
+        };
+        total += num * per;
+        any = true;
+        i += step;
+    }
+    let total = total.round();
+    (any && (1.0..=24.0 * 60.0).contains(&total)).then_some(total as u32)
+}
+
+/// The longest leading run of `words` that is a duration, and the words after it.
+fn leading_minutes<'a>(words: &'a [&'a str]) -> Option<(u32, &'a [&'a str])> {
+    (1..=words.len().min(6))
+        .rev()
+        .find_map(|j| parse_minutes(&words[..j]).map(|m| (m, &words[j..])))
+}
+
+/// "what are my priorities [today|tomorrow]", "what should I do", and
+/// "I have 30 minutes", "what can I do in an hour", "suggest work for 45 min".
+fn parse_planning(step: &str, lower: &str, today: &str) -> Option<Command> {
+    let budget = strip(
+        step,
+        &[
+            "what should i do in",
+            "what should i do with",
+            "what should i do for",
+            "what should i work on for",
+            "what should i work on in",
+            "what can i do in",
+            "what can i do with",
+            "what can i get done in",
+            "suggest work for",
+            "suggest tasks for",
+            "suggest something for",
+            "plan my next",
+            "plan the next",
+            "i have got",
+            "i've got",
+            "i have",
+            "i got",
+            "i'm free for",
+            "i am free for",
+        ],
+    );
+    if let Some(rest) = budget {
+        let words: Vec<&str> = rest.split_whitespace().collect();
+        if let Some((minutes, _)) = leading_minutes(&words) {
+            return Some(Command::Suggest {
+                date: today.to_owned(),
+                minutes,
+            });
+        }
+    }
+    let (base, date) = [
+        (" for tomorrow", 1),
+        (" tomorrow", 1),
+        (" for today", 0),
+        (" today", 0),
+    ]
+    .iter()
+    .find_map(|(suffix, days)| lower.strip_suffix(suffix).map(|b| (b, *days)))
+    .unwrap_or((lower, 0));
+    let base = base
+        .trim_start_matches("today's ")
+        .trim_start_matches("todays ");
+    matches!(
+        base,
+        "priorities"
+            | "my priorities"
+            | "top priorities"
+            | "my top priorities"
+            | "what are my priorities"
+            | "what are my top priorities"
+            | "what are the priorities"
+            | "what should i do"
+            | "what should i work on"
+            | "what should i focus on"
+            | "what's next"
+            | "what is next"
+            | "what's important"
+            | "plan my day"
+    )
+    .then(|| Command::Priorities {
+        date: validate::add_days(today, date),
+    })
+}
+
+fn priority_word(w: &str) -> Option<Priority> {
+    match w
+        .trim_matches(|c: char| ",.!?".contains(c))
+        .to_lowercase()
+        .as_str()
+    {
+        "high" | "urgent" | "top" => Some(Priority::High),
+        "medium" | "normal" => Some(Priority::Medium),
+        "low" => Some(Priority::Low),
+        "no" | "none" => Some(Priority::None),
+        _ => None,
+    }
+}
+
+/// Words that may follow a priority or estimate clause inside a new task.
+const CLAUSE_END: [&str; 7] = ["due", "by", "in", "to", "for", "takes", "taking"];
+
+fn clause_ends(words: &[&str], at: usize) -> bool {
+    at == words.len() || CLAUSE_END.iter().any(|k| words[at].eq_ignore_ascii_case(k))
+}
+
+/// Take "high priority" / "priority high" and "takes 20 minutes" out of a new
+/// task's text, when they end it or come before another clause (due, in project).
+fn split_extras(rest: &str) -> (String, Option<Priority>, Option<u32>) {
+    let mut words: Vec<&str> = rest.split_whitespace().collect();
+    let mut priority = None;
+    let mut estimate = None;
+    let mut i = 1;
+    while i < words.len() {
+        let w = words[i];
+        let next = words.get(i + 1).copied().unwrap_or("");
+        let is_priority = |s: &str| {
+            s.trim_end_matches([',', '.'])
+                .eq_ignore_ascii_case("priority")
+        };
+        if priority.is_none() && is_priority(next) && clause_ends(&words, i + 2) {
+            if let Some(p) = priority_word(w) {
+                priority = Some(p);
+                words.drain(i..i + 2);
+                continue;
+            }
+        }
+        if priority.is_none() && is_priority(w) && clause_ends(&words, i + 2) {
+            if let Some(p) = priority_word(next) {
+                priority = Some(p);
+                words.drain(i..i + 2);
+                continue;
+            }
+        }
+        if estimate.is_none()
+            && (w.eq_ignore_ascii_case("takes") || w.eq_ignore_ascii_case("taking"))
+        {
+            let found = (i + 2..=words.len().min(i + 7))
+                .rev()
+                .find(|&j| clause_ends(&words, j) && parse_minutes(&words[i + 1..j]).is_some());
+            if let Some(j) = found {
+                estimate = parse_minutes(&words[i + 1..j]);
+                words.drain(i..j);
+                continue;
+            }
+        }
+        i += 1;
+    }
+    (words.join(" "), priority, estimate)
+}
+
+/// Changes to an existing task: deadline, priority, estimate.
+fn parse_update(step: &str, today: &str) -> Result<Option<Command>, ParseError> {
+    let update = |query: &str, change: TaskChange| {
+        let query = query
+            .trim()
+            .trim_matches(|c: char| ",.!?\"“”".contains(c))
+            .trim();
+        if query.is_empty() {
+            Err(ParseError::MissingText("which task"))
+        } else {
+            Ok(Some(Command::UpdateTask {
+                query: query.to_owned(),
+                change,
+                task_id: None,
+                title: None,
+            }))
+        }
+    };
+    let date_of = |w: &str| parse_date(w, today).ok_or_else(|| ParseError::BadDate(w.to_owned()));
+    // "<verb> <task> to <rest>": the last " to " splits task from value.
+    let split_to = |rest: &str| -> Option<(String, String)> {
+        let words: Vec<&str> = rest.split_whitespace().collect();
+        let at = (1..words.len().saturating_sub(1)).rev().find(|&i| {
+            ["to", "for", "at"]
+                .iter()
+                .any(|k| words[i].eq_ignore_ascii_case(k))
+        })?;
+        Some((words[..at].join(" "), words[at + 1..].join(" ")))
+    };
+    if let Some(rest) = strip(
+        step,
+        &[
+            "set the priority of",
+            "set priority of",
+            "set priority for",
+            "change the priority of",
+            "change priority of",
+        ],
+    ) {
+        let usage = ParseError::MissingText("a priority, like: set priority of taxes to high");
+        let (task, value) = split_to(rest).ok_or(usage.clone())?;
+        let priority = priority_word(&value).ok_or(usage)?;
+        return update(
+            &task,
+            TaskChange {
+                priority: Some(priority),
+                ..Default::default()
+            },
+        );
+    }
+    if let Some(rest) = strip(step, &["make", "mark"]) {
+        let words: Vec<&str> = rest.split_whitespace().collect();
+        let n = words.len();
+        if n >= 3
+            && words[n - 1]
+                .trim_end_matches(['.', '!'])
+                .eq_ignore_ascii_case("priority")
+        {
+            if let Some(p) = priority_word(words[n - 2]) {
+                let end = if n >= 4 && words[n - 3].eq_ignore_ascii_case("as") {
+                    n - 3
+                } else {
+                    n - 2
+                };
+                return update(
+                    &words[..end].join(" "),
+                    TaskChange {
+                        priority: Some(p),
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+        return Ok(None);
+    }
+    if let Some(rest) = strip(step, &["prioritize", "prioritise"]) {
+        return update(
+            rest,
+            TaskChange {
+                priority: Some(Priority::High),
+                ..Default::default()
+            },
+        );
+    }
+    if let Some(rest) = strip(step, &["deprioritize", "deprioritise"]) {
+        return update(
+            rest,
+            TaskChange {
+                priority: Some(Priority::Low),
+                ..Default::default()
+            },
+        );
+    }
+    if let Some(rest) = strip(
+        step,
+        &[
+            "clear the due date of",
+            "clear due date of",
+            "clear the due date for",
+            "clear due date for",
+            "remove the due date from",
+            "remove due date from",
+        ],
+    ) {
+        return update(
+            rest,
+            TaskChange {
+                due_date: Some(None),
+                ..Default::default()
+            },
+        );
+    }
+    if let Some(rest) = strip(
+        step,
+        &[
+            "set the due date of",
+            "set due date of",
+            "set due date for",
+            "change the due date of",
+            "change due date of",
+            "reschedule",
+            "move",
+            "push",
+        ],
+    ) {
+        let usage = ParseError::MissingText("a date, like: move taxes to friday");
+        let (task, value) = split_to(rest).ok_or(usage)?;
+        return update(
+            &task,
+            TaskChange {
+                due_date: Some(Some(date_of(&value)?)),
+                ..Default::default()
+            },
+        );
+    }
+    if let Some(rest) = strip(
+        step,
+        &[
+            "set the estimate of",
+            "set estimate of",
+            "set estimate for",
+            "estimate",
+        ],
+    ) {
+        let usage = ParseError::MissingText("a length, like: estimate taxes at 45 minutes");
+        let (task, value) = split_to(rest).ok_or(usage.clone())?;
+        let words: Vec<&str> = value.split_whitespace().collect();
+        let minutes = parse_minutes(&words).ok_or(usage)?;
+        return update(
+            &task,
+            TaskChange {
+                estimate_minutes: Some(minutes),
+                ..Default::default()
+            },
+        );
+    }
+    Ok(None)
+}
+
 fn parse_step(step: &str, today: &str) -> Result<Command, ParseError> {
     let step = strip(step, &["please", "jarvis,", "jarvis"]).unwrap_or(step);
     let lower = step.to_lowercase();
@@ -221,6 +607,12 @@ fn parse_step(step: &str, today: &str) -> Result<Command, ParseError> {
         "list projects" | "show projects" | "projects" | "active projects"
     ) {
         return Ok(Command::ListProjects);
+    }
+    if let Some(c) = parse_planning(step, lower, today) {
+        return Ok(c);
+    }
+    if let Some(c) = parse_update(step, today)? {
+        return Ok(c);
     }
     if let Some(rest) = strip(
         step,
@@ -290,7 +682,8 @@ fn parse_step(step: &str, today: &str) -> Result<Command, ParseError> {
             "todo",
         ],
     ) {
-        let (rest, project) = split_project(require(rest, "task title")?);
+        let (rest, priority, estimate_minutes) = split_extras(require(rest, "task title")?);
+        let (rest, project) = split_project(&rest);
         let (title, project, due_date) = match project {
             // "… in project garden due friday": the date trails the project name.
             Some(name) => match split_due(&name, today)? {
@@ -305,11 +698,18 @@ fn parse_step(step: &str, today: &str) -> Result<Command, ParseError> {
                 (title, None, due)
             }
         };
+        // Dictation ends sentences with a period; it isn't part of the title.
+        let title = title.trim_end_matches('.').trim().to_owned();
+        if title.is_empty() {
+            return Err(ParseError::MissingText("task title"));
+        }
         return Ok(Command::CreateTask {
             title,
             due_date,
             project,
             project_id: None,
+            priority,
+            estimate_minutes,
         });
     }
     if let Some(rest) = strip(
@@ -379,7 +779,9 @@ mod tests {
                 title: "Call the dentist".into(),
                 due_date: None,
                 project: None,
-                project_id: None
+                project_id: None,
+                priority: None,
+                estimate_minutes: None
             }
         );
         assert_eq!(
@@ -388,7 +790,9 @@ mod tests {
                 title: "Call the dentist".into(),
                 due_date: Some("2026-10-23".into()),
                 project: None,
-                project_id: None
+                project_id: None,
+                priority: None,
+                estimate_minutes: None
             }
         );
         assert_eq!(
@@ -397,7 +801,9 @@ mod tests {
                 title: "renew passport".into(),
                 due_date: Some("2026-12-01".into()),
                 project: None,
-                project_id: None
+                project_id: None,
+                priority: None,
+                estimate_minutes: None
             }
         );
         assert_eq!(
@@ -406,7 +812,9 @@ mod tests {
                 title: "water plants".into(),
                 due_date: Some("2026-10-22".into()),
                 project: None,
-                project_id: None
+                project_id: None,
+                priority: None,
+                estimate_minutes: None
             }
         );
         // "by" followed by a non-date is just part of the title.
@@ -416,7 +824,9 @@ mod tests {
                 title: "walk by the river".into(),
                 due_date: None,
                 project: None,
-                project_id: None
+                project_id: None,
+                priority: None,
+                estimate_minutes: None
             }
         );
         assert_eq!(
@@ -503,7 +913,9 @@ mod tests {
                 title: "日本語".into(),
                 due_date: None,
                 project: None,
-                project_id: None
+                project_id: None,
+                priority: None,
+                estimate_minutes: None
             }
         );
     }
@@ -535,6 +947,8 @@ mod tests {
             due_date: due.map(Into::into),
             project: project.map(Into::into),
             project_id: None,
+            priority: None,
+            estimate_minutes: None,
         };
         assert_eq!(
             one("add task plant tomatoes in project garden due friday"),
@@ -641,6 +1055,138 @@ mod link_tests {
                 matches!(parse(bad, TODAY), Err(ParseError::MissingText(_))),
                 "{bad}"
             );
+        }
+    }
+
+    #[test]
+    fn durations() {
+        let m = |s: &str| parse_minutes(&s.split_whitespace().collect::<Vec<_>>());
+        assert_eq!(m("30 minutes"), Some(30));
+        assert_eq!(m("1 hour 30 min"), Some(90));
+        assert_eq!(m("1 hour and 15 minutes."), Some(75));
+        assert_eq!(m("1.5 hours"), Some(90));
+        assert_eq!(m("an hour"), Some(60));
+        assert_eq!(m("half an hour"), Some(30));
+        assert_eq!(m("an hour and a half"), Some(90));
+        assert_eq!(m("45m"), Some(45));
+        assert_eq!(m("2h"), Some(120));
+        assert_eq!(m("twenty minutes"), Some(20));
+        assert_eq!(m("minutes"), None);
+        assert_eq!(m("30 apples"), None);
+        assert_eq!(m("30"), None);
+        assert_eq!(m("25 hours"), None);
+    }
+
+    #[test]
+    fn planning_and_update_phrases() {
+        let one = |s: &str| parse(s, TODAY).unwrap().remove(0);
+        let suggest = |minutes| Command::Suggest {
+            date: TODAY.into(),
+            minutes,
+        };
+        assert_eq!(one("I have 30 minutes"), suggest(30));
+        assert_eq!(
+            one("Jarvis, I've got an hour. What should I do?"),
+            suggest(60)
+        );
+        assert_eq!(one("what can I do in 45 min?"), suggest(45));
+        assert_eq!(one("suggest work for 2 hours"), suggest(120));
+        let top = |date: &str| Command::Priorities { date: date.into() };
+        assert_eq!(one("What should I do today?"), top(TODAY));
+        assert_eq!(one("what are my priorities"), top(TODAY));
+        assert_eq!(one("priorities for tomorrow"), top("2026-10-22"));
+        assert_eq!(one("Today's priorities."), top(TODAY));
+
+        let up = |q: &str, change: TaskChange| Command::UpdateTask {
+            query: q.into(),
+            change,
+            task_id: None,
+            title: None,
+        };
+        let pri = |p| TaskChange {
+            priority: Some(p),
+            ..Default::default()
+        };
+        let due = |d: Option<&str>| TaskChange {
+            due_date: Some(d.map(Into::into)),
+            ..Default::default()
+        };
+        assert_eq!(
+            one("set priority of taxes to high"),
+            up("taxes", pri(Priority::High))
+        );
+        assert_eq!(
+            one("make walk to the park low priority"),
+            up("walk to the park", pri(Priority::Low))
+        );
+        assert_eq!(
+            one("mark taxes as urgent priority"),
+            up("taxes", pri(Priority::High))
+        );
+        assert_eq!(one("prioritize taxes"), up("taxes", pri(Priority::High)));
+        assert_eq!(
+            one("move talk to Sam to friday"),
+            up("talk to Sam", due(Some("2026-10-23")))
+        );
+        assert_eq!(
+            one("reschedule taxes for tomorrow."),
+            up("taxes", due(Some("2026-10-22")))
+        );
+        assert_eq!(one("clear the due date of taxes"), up("taxes", due(None)));
+        assert_eq!(
+            one("estimate taxes at 1 hour"),
+            up(
+                "taxes",
+                TaskChange {
+                    estimate_minutes: Some(60),
+                    ..Default::default()
+                }
+            )
+        );
+        assert!(matches!(
+            parse("move taxes to someday", TODAY),
+            Err(ParseError::BadDate(_))
+        ));
+        assert!(matches!(
+            parse("set priority of taxes to soon", TODAY),
+            Err(ParseError::MissingText(_))
+        ));
+        // "mark done" still completes a task.
+        assert!(matches!(
+            one("mark done taxes"),
+            Command::CompleteTask { .. }
+        ));
+
+        // Priority and estimate clauses on a new task; elsewhere they stay in the title.
+        match one("Add task file taxes high priority due Friday.") {
+            Command::CreateTask {
+                title,
+                priority,
+                due_date,
+                ..
+            } => assert_eq!(
+                (title.as_str(), priority, due_date.as_deref()),
+                ("file taxes", Some(Priority::High), Some("2026-10-23"))
+            ),
+            other => panic!("{other:?}"),
+        }
+        match one("add task review high priority bugs takes 45 minutes in project work") {
+            Command::CreateTask {
+                title,
+                priority,
+                estimate_minutes,
+                project,
+                ..
+            } => assert_eq!(
+                (
+                    title.as_str(),
+                    priority,
+                    estimate_minutes,
+                    project.as_deref()
+                ),
+                ("review high priority bugs", None, Some(45), Some("work"))
+            ),
+            other => panic!("{other:?}"),
         }
     }
 }

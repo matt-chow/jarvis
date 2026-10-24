@@ -19,7 +19,7 @@ import type { Note, NotePatch, NoteSummary } from "./notes";
 import type { Preferences, PreferencesPatch } from "./preferences";
 import type { NewProject, Project, ProjectPatch } from "./projects";
 import type { SearchHit } from "./search";
-import { localDate, type NewTask, type Task, type TaskFilter, type TaskPatch } from "./tasks";
+import { localDate, type NewTask, type PlanProposal, type Task, type TaskFilter, type TaskPatch } from "./tasks";
 import type { AssertionJson, CreationOptionsJson, RegistrationJson, RequestOptionsJson } from "./webauthn";
 
 export interface HealthCheck {
@@ -240,6 +240,11 @@ export class Api {
   updateTask = (id: string, patch: TaskPatch) =>
     this.call<Task>("PATCH", `/api/v1/tasks/${encodeURIComponent(id)}?today=${localDate()}`, patch);
   deleteTask = (id: string) => this.call<void>("DELETE", `/api/v1/tasks/${encodeURIComponent(id)}`);
+  planTasks = (date: string, minutes?: number) =>
+    this.call<PlanProposal>(
+      "GET",
+      `/api/v1/tasks/plan?date=${date}${minutes ? `&minutes=${minutes}` : ""}`,
+    );
 
   // ---- JARVIS ----
   /** Preview a command. Read-only plans come back already executed. */
