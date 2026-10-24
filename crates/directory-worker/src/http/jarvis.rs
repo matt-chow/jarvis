@@ -2,6 +2,7 @@
 
 use super::auth::{jarvis_principal, principal};
 use super::{error, error_with, json, no_content, read_json};
+use crate::ai::{DailyBudget, OpenRouter};
 use crate::d1::{
     D1EventRepository, D1HabitRepository, D1InboxRepository, D1JarvisRepository,
     D1JournalRepository, D1LinkRepository, D1NoteRepository, D1PresetRepository,
@@ -13,7 +14,7 @@ use directory_core::identity::Principal;
 use directory_core::jarvis::parser::{ParseError, EXAMPLES};
 use directory_core::jarvis::presets::{NewPreset, PresetError, PresetService};
 use directory_core::jarvis::{
-    voice, Command, CommandTargets, DeterministicParser, JarvisError, JarvisService, Plan,
+    ai::ParserThenModel, voice, Command, CommandTargets, JarvisError, JarvisService, Plan,
     PlanRequest,
 };
 use directory_core::tasks::TaskRepository;
@@ -151,9 +152,14 @@ pub async fn plan(mut req: Request, rc: RouteContext<()>) -> Result<Response> {
     let c = try_or_respond!(ctx(&req, &rc).await?);
     let input: PlanRequest = try_or_respond!(read_json(&mut req).await?);
     let targets = Targets::from_env(&rc.env)?;
+    let (model, budget) = ai_parts(&rc.env, &c.principal)?;
+    let provider = ParserThenModel {
+        model: model.as_ref(),
+        budget: &budget,
+    };
     match c
         .service()
-        .plan(&c.principal, &DeterministicParser, input, &targets)
+        .plan(&c.principal, &provider, input, &targets)
         .await
     {
         Ok(plan) => json(200, &plan),
@@ -336,8 +342,18 @@ pub async fn ask(mut req: Request, rc: RouteContext<()>) -> Result<Response> {
         input: body.text,
         today,
     };
-    spoken(
-        svc.plan(&c.principal, &DeterministicParser, input, &targets)
-            .await,
-    )
+    let (model, budget) = ai_parts(&rc.env, &c.principal)?;
+    let provider = ParserThenModel {
+        model: model.as_ref(),
+        budget: &budget,
+    };
+    spoken(svc.plan(&c.principal, &provider, input, &targets).await)
+}
+
+/// The optional AI model (D-043) and its per-owner daily budget.
+fn ai_parts(env: &Env, p: &Principal) -> Result<(Option<OpenRouter>, DailyBudget)> {
+    Ok((
+        OpenRouter::from_env(env),
+        DailyBudget::new(env, &p.user_id)?,
+    ))
 }

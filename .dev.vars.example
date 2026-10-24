@@ -10,3 +10,9 @@ DIRECTORY_SETUP_TOKEN=local-setup-token-change-me-0123456789abcdef
 DIRECTORY_RP_ID=localhost
 # Worker dev server and Vite dev server origins.
 DIRECTORY_ORIGINS=http://localhost:8787,http://localhost:5173
+
+# Optional: AI intent parsing via a free OpenRouter model (D-043). Leave unset
+# to keep JARVIS deterministic-only. Only model ids ending in ":free" are used.
+# OPENROUTER_API_KEY=sk-or-...
+# JARVIS_AI_MODEL=<model id ending in :free>
+# JARVIS_AI_DAILY=40

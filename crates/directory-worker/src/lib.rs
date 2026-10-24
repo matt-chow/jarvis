@@ -6,6 +6,7 @@
 
 use worker::*;
 
+mod ai;
 mod bindings;
 mod d1;
 mod entropy;

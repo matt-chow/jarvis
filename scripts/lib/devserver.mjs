@@ -48,6 +48,10 @@ export async function startDevServer({ port = 8790, name = "smoke" } = {}) {
       `DIRECTORY_ORIGINS=${origin}`,
       // Small quota so tests can exercise the limit.
       "DIRECTORY_QUOTA_BYTES=1000000",
+      // AI intent parsing configured with a paid model id: it must stay off (D-043),
+      // so no request ever leaves for OpenRouter during tests.
+      "OPENROUTER_API_KEY=sk-or-test-not-a-real-key",
+      "JARVIS_AI_MODEL=example/paid-model",
     ].join("\n"),
   );
 

@@ -44,6 +44,10 @@ DIRECTORY_ORIGINS = ""
 
 # Secrets (not stored here):
 #   DIRECTORY_SETUP_TOKEN — `npx wrangler secret put DIRECTORY_SETUP_TOKEN`; locally via .dev.vars
+#   OPENROUTER_API_KEY    — optional, AI intent parsing (D-043, docs/JARVIS_SHORTCUTS.md).
+# Optional AI vars (AI stays off unless both the key and a ":free" model are set):
+#   JARVIS_AI_MODEL = "<openrouter model id ending in :free>"
+#   JARVIS_AI_DAILY = "40"   # most AI calls per owner per UTC day
 
 # ---------------------------------------------------------------------------
 # Staging (docs/STAGING.md): a separate Worker, D1 database, and private R2

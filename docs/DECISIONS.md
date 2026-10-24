@@ -136,6 +136,41 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-043 — Optional AI intent parsing: OpenRouter free models, parser first
+**Status:** accepted (owner goal, 2026-10-24: "optional OpenRouter
+free-model adapter, $0 default budget, no automatic paid fallback")
+
+`IntentProvider` is now `ParserThenModel`:
+- The deterministic parser always runs first.
+- Only a sentence it doesn't recognise (`ParseError::Unknown`) goes to the
+  model. A recognised command with a bad date or missing text doesn't.
+
+The model:
+- Gets a fixed system prompt plus "TODAY + REQUEST", and nothing else: no
+  tasks and no ids.
+- Must reply with a JSON array of `AiCommand`s, a restricted set (create
+  or update or complete task, priorities, suggest, list, agenda, capture,
+  find) with **no id fields**.
+- Its reply is validated (dates, lengths, minutes, at most 5 steps),
+  converted to `Command`s, resolved by name, and approved exactly like
+  typed input.
+- Any failure (HTTP, junk, invalid) returns the parser's own "didn't
+  understand".
+
+Cost controls:
+- AI is off unless the secret `OPENROUTER_API_KEY` and the var
+  `JARVIS_AI_MODEL` are both set, and the model id ends in `:free` (not
+  `openrouter/…` routers).
+- There are no fallback models or routing options in the request, and a $0
+  key can't pay.
+- A per-owner daily cap (`JARVIS_AI_DAILY`, default 40) is counted in the
+  rate-limit table. The cap fails closed.
+
+Privacy: the request text goes to OpenRouter and the model's provider; the
+owner opts in by setting the key. The adapter is in the Worker
+(`ai.rs`), and the logic is in core (`jarvis::ai`), so another provider
+can be added behind `TextModel`.
+
 ## D-042 — JARVIS on iPhone: Apple Shortcuts, JARVIS-only tokens
 **Status:** accepted (owner goal, 2026-10-24)
 The iPhone voice path is an Apple Shortcut: Dictate Text, then

@@ -127,6 +127,27 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-10-24 — Optional AI intent parsing (D-043)
+- **Core:** `jarvis::ai`:
+  - `TextModel` and `AiBudget` traits; `ParserThenModel` provider.
+  - Restricted `AiCommand` set with no ids; reply validation;
+    `is_free_model`.
+- **Worker:** `ai.rs`:
+  - OpenRouter chat completion (one model, temperature 0, 400 tokens).
+  - `DailyBudget` on the rate-limit table.
+  - Used by `/jarvis/plan` and `/jarvis/ask`.
+- **Config:** `OPENROUTER_API_KEY` (secret), `JARVIS_AI_MODEL`, and
+  `JARVIS_AI_DAILY`, documented in wrangler.toml, .dev.vars.example,
+  and docs/JARVIS_SHORTCUTS.md.
+- **Tests:**
+  - core 132 (free-model check; parser first; budget/model failure
+    fallback; reply validation drops ids and rejects bad dates, unknown
+    types, and too many steps);
+  - smoke runs with a paid model id configured and asserts AI stays off;
+  - verify ✅; browser e2e 32/32.
+- **Not verified:** a live OpenRouter call. It needs the owner's key, and
+  the request/response shape follows OpenRouter's chat-completions API.
+
 ### 2026-10-24 — JARVIS on iPhone: `/api/v1/jarvis/ask` + JARVIS-only tokens (D-042)
 - **Core:**
   - `jarvis::voice`: spoken answers for plans and errors, and strict

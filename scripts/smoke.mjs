@@ -925,6 +925,8 @@ async function local() {
       expect((await api.req("GET", `/api/v1/tasks/${tasks[0].id}`)).json.due_date === "2026-10-23", "cancelled: unchanged");
       const huh = await ask({ text: "dance a jig", today: "2026-10-21" });
       expect(huh.status === 200 && huh.json.status === "not_understood" && huh.json.speech.includes("dance a jig"), `unknown → ${huh.text}`);
+      // A paid model id leaves AI off (D-043): the parser's answer, and a warning in the log.
+      expect(server.logs().includes("JARVIS_AI_MODEL is not a :free model"), "paid model refused");
       const bad = await ask({ text: "list tasks", today: "nope" });
       expect(bad.json.status === "invalid", `bad date → ${bad.text}`);
       const wrong = await phone.req("POST", "/api/v1/jarvis/ask", { body: { text: "list tasks" }, headers: { Authorization: "Bearer dir_wrong" } });

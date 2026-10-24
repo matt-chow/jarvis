@@ -6,6 +6,7 @@
 //! anything that writes waits for approval and runs exactly once. Every
 //! command executes through the owning module's service as the caller.
 
+pub mod ai;
 pub mod parser;
 pub mod presets;
 pub mod voice;

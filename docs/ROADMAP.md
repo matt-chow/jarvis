@@ -46,7 +46,7 @@ part of every slice, not deferred to the end.
 | More commands: `find` ✅, projects ✅ (new, list, tasks `in project …`, also within one plan), agenda ✅, habit check-ins ✅, links ✅ | ✅ done |
 | Planner: explainable priorities and time-boxed suggestions; JARVIS `priorities`, `suggest`, task updates (D-041) | ✅ done |
 | iPhone via Apple Shortcuts: `/api/v1/jarvis/ask` with JARVIS-only tokens (D-042, docs/JARVIS_SHORTCUTS.md) | ✅ done locally; on-device check needs staging |
-| AI intent provider: optional OpenRouter free model, $0, parser first | in progress (owner sets the key) |
+| AI intent provider: optional OpenRouter free model, $0, parser first (D-043) | ✅ done; off until the owner sets a key (live call unverified) |
 
 - A command registry where modules expose typed, validated commands.
 - Text command input, then voice (Web Speech API).
