@@ -53,9 +53,13 @@ export interface PasskeyInfo {
   last_used_at: number | null;
 }
 
+/** `jarvis`: only `/api/v1/jarvis/ask` (Apple Shortcuts, D-042). */
+export type TokenScope = "full" | "jarvis";
+
 export interface DeviceToken {
   id: string;
   name: string;
+  scope: TokenScope;
   created_at: number;
   last_used_at: number | null;
 }
@@ -139,7 +143,8 @@ export class Api {
   addPasskeyVerify = (reg: RegistrationJson) => this.call<PasskeyInfo>("POST", "/api/v1/auth/passkeys/verify", reg);
   deletePasskey = (id: string) => this.call<void>("DELETE", `/api/v1/auth/passkeys/${encodeURIComponent(id)}`);
   tokens = async () => (await this.call<{ tokens: DeviceToken[] }>("GET", "/api/v1/auth/tokens")).tokens;
-  createToken = (name: string) => this.call<{ token: DeviceToken; secret: string }>("POST", "/api/v1/auth/tokens", { name });
+  createToken = (name: string, scope: TokenScope = "full") =>
+    this.call<{ token: DeviceToken; secret: string }>("POST", "/api/v1/auth/tokens", { name, scope });
   deleteToken = (id: string) => this.call<void>("DELETE", `/api/v1/auth/tokens/${encodeURIComponent(id)}`);
 
   // ---- Links ----

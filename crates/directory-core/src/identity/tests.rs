@@ -298,13 +298,22 @@ fn api_tokens_authenticate_and_revoke() {
         .unwrap()
         .unwrap();
 
-    let (token, secret) = block_on(svc.create_api_token(&p, Some("iPhone"))).unwrap();
+    let (token, secret) =
+        block_on(svc.create_api_token(&p, Some("iPhone"), TokenScope::Full)).unwrap();
     assert!(secret.starts_with(API_TOKEN_PREFIX));
     assert_ne!(token.token_hash, secret);
     let via_token = block_on(svc.authenticate_api_token(&secret))
         .unwrap()
         .unwrap();
     assert_eq!(via_token.method, AuthMethod::ApiToken);
+    // A JARVIS-only token authenticates as such, so routes can refuse it.
+    let (jt, jsecret) =
+        block_on(svc.create_api_token(&p, Some("Shortcut"), TokenScope::Jarvis)).unwrap();
+    assert_eq!(jt.scope, TokenScope::Jarvis);
+    let via_jarvis = block_on(svc.authenticate_api_token(&jsecret))
+        .unwrap()
+        .unwrap();
+    assert_eq!(via_jarvis.method, AuthMethod::JarvisToken);
     assert_eq!(
         block_on(svc.authenticate_api_token("dir_wrong")).unwrap(),
         None

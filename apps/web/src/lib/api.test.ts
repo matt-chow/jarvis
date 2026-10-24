@@ -47,7 +47,7 @@ describe("requests", () => {
     expect(init?.method).toBe("POST");
     expect(init?.credentials).toBe("same-origin");
     expect(new Headers(init?.headers).get("Content-Type")).toBe("application/json");
-    expect(JSON.parse(String(init?.body))).toEqual({ name: "Phone" });
+    expect(JSON.parse(String(init?.body))).toEqual({ name: "Phone", scope: "full" });
   });
 
   it("uses a bearer token when given (native clients)", async () => {

@@ -6,7 +6,7 @@ use crate::{bindings, entropy::WebCryptoEntropy, try_or_respond};
 use directory_core::identity::webauthn::RelyingParty;
 use directory_core::identity::{
     bearer_token, AssertionInput, AuthMethod, IdentityConfig, IdentityError, IdentityService,
-    IssuedSession, Principal, RegistrationInput,
+    IssuedSession, Principal, RegistrationInput, TokenScope,
 };
 use directory_core::rate_limit::{self, Decision, AUTH_POLICY};
 use serde::{Deserialize, Serialize};
@@ -143,7 +143,19 @@ pub async fn authenticate(
 }
 
 /// `authenticate` with identity built from the environment: the guard for data routes.
+/// JARVIS-only device tokens are refused here (403 `token_scope`, D-042).
 pub async fn principal(
+    req: &Request,
+    env: &Env,
+) -> Result<std::result::Result<Principal, Response>> {
+    Ok(match authenticate(req, &Identity::from_env(env)?).await? {
+        Ok(p) if p.method == AuthMethod::JarvisToken => Err(error(403, "token_scope")?),
+        other => other,
+    })
+}
+
+/// The guard for `/api/v1/jarvis/ask` only: also accepts JARVIS-only tokens.
+pub async fn jarvis_principal(
     req: &Request,
     env: &Env,
 ) -> Result<std::result::Result<Principal, Response>> {
@@ -198,7 +210,10 @@ macro_rules! throttled {
 /// Shared guard for auth-only routes.
 macro_rules! principal {
     ($req:expr, $identity:expr) => {
-        try_or_respond!(authenticate(&$req, &$identity).await?)
+        match try_or_respond!(authenticate(&$req, &$identity).await?) {
+            p if p.method == AuthMethod::JarvisToken => return error(403, "token_scope"),
+            p => p,
+        }
     };
 }
 
@@ -226,6 +241,7 @@ pub async fn session(req: Request, ctx: RouteContext<()>) -> Result<Response> {
         Err(e) => return identity_error(e),
     };
     let user = match authenticate(&req, &identity).await? {
+        Ok(p) if p.method == AuthMethod::JarvisToken => None,
         Ok(p) => match svc.current_user(&p).await {
             Ok(u) => Some(UserBody {
                 id: u.id,
@@ -387,6 +403,9 @@ pub async fn list_tokens(req: Request, ctx: RouteContext<()>) -> Result<Response
 struct NewTokenRequest {
     #[serde(default)]
     name: Option<String>,
+    /// `full` (default) or `jarvis` (only `/api/v1/jarvis/ask`).
+    #[serde(default)]
+    scope: TokenScope,
 }
 
 pub async fn create_token(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
@@ -398,7 +417,7 @@ pub async fn create_token(mut req: Request, ctx: RouteContext<()>) -> Result<Res
     let body: NewTokenRequest = try_or_respond!(read_json(&mut req).await?);
     match identity
         .service()
-        .create_api_token(&p, body.name.as_deref())
+        .create_api_token(&p, body.name.as_deref(), body.scope)
         .await
     {
         Ok((token, secret)) => json(

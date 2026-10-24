@@ -4,7 +4,7 @@ import { deviceLabel } from "../components/AuthScreen";
 import { Button, Panel } from "../components/ui";
 import { reportIfUnauthorized } from "../hooks/useSession";
 import { localDb } from "../lib/db";
-import { api, ApiError, isNetworkError, type DeviceToken, type PasskeyInfo } from "../lib/api";
+import { api, ApiError, isNetworkError, type DeviceToken, type PasskeyInfo, type TokenScope } from "../lib/api";
 import { KINDS, KIND_LABELS, planImport, type ExportPlan, type ImportKind, type ImportReport } from "../lib/backup";
 import type { ClientError } from "../lib/errors";
 import { formatDate } from "../lib/format";
@@ -26,6 +26,7 @@ function describe(e: unknown): string {
 export function Settings({ online, session }: ModuleProps) {
   const [passkeys, setPasskeys] = useState<PasskeyInfo[]>();
   const [tokens, setTokens] = useState<DeviceToken[]>();
+  const [tokenScope, setTokenScope] = useState<TokenScope>("full");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [tokenName, setTokenName] = useState("");
@@ -77,7 +78,7 @@ export function Settings({ online, session }: ModuleProps) {
     e.preventDefault();
     void run(async () => {
       const name = tokenName.trim() || "Device";
-      const { token, secret } = await api.createToken(name);
+      const { token, secret } = await api.createToken(name, tokenScope);
       setTokens((ts) => [...(ts ?? []), token]);
       setNewSecret({ name: token.name, secret });
       setTokenName("");
@@ -156,8 +157,11 @@ export function Settings({ online, session }: ModuleProps) {
       </Panel>
 
       <Panel title={`device tokens${tokens ? ` · ${tokens.length}` : ""}`}>
-        <p className="text-sm text-muted">For native apps and scripts. A token can read and write data but can't manage credentials.</p>
-        <form onSubmit={createToken} className="mt-3 flex gap-2">
+        <p className="text-sm text-muted">
+          For native apps and scripts. A full token can read and write data but can't manage credentials. A JARVIS-only token can only talk to
+          JARVIS (the iPhone Shortcut in docs/JARVIS_SHORTCUTS.md), and changes still need a spoken "yes".
+        </p>
+        <form onSubmit={createToken} className="mt-3 flex flex-wrap gap-2">
           <input
             value={tokenName}
             onChange={(e) => setTokenName(e.target.value)}
@@ -166,6 +170,15 @@ export function Settings({ online, session }: ModuleProps) {
             maxLength={64}
             className="min-h-9 min-w-0 flex-1 rounded-sm border border-line bg-sunken/40 px-3 text-sm focus:border-accent"
           />
+          <select
+            value={tokenScope}
+            onChange={(e) => setTokenScope(e.target.value as TokenScope)}
+            aria-label="Token access"
+            className="min-h-9 rounded-sm border border-line bg-sunken/40 px-2 text-sm focus:border-accent"
+          >
+            <option value="full">Full access</option>
+            <option value="jarvis">JARVIS only (Shortcuts)</option>
+          </select>
           <Button type="submit" disabled={busy || !online}>
             create
           </Button>
@@ -194,7 +207,7 @@ export function Settings({ online, session }: ModuleProps) {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm">{t.name}</span>
                   <span className="font-mono text-[11px] text-muted">
-                    created {formatDate(t.created_at)}
+                    {t.scope === "jarvis" ? "JARVIS only · " : ""}created {formatDate(t.created_at)}
                     {t.last_used_at ? ` · used ${formatDate(t.last_used_at)}` : " · never used"}
                   </span>
                 </span>

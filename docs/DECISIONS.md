@@ -136,6 +136,38 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-042 — JARVIS on iPhone: Apple Shortcuts, JARVIS-only tokens
+**Status:** accepted (owner goal, 2026-10-24)
+The iPhone voice path is an Apple Shortcut: Dictate Text, then
+`POST /api/v1/jarvis/ask`, then Speak Text. Speech recognition and
+synthesis stay on Apple's side. Directory receives only the transcript, and
+has no custom speech recognition, voice synthesis, or wake word.
+
+`ask` is a thin layer (`jarvis::voice`) over the existing command layer
+(D-016): the same parser, resolution, approval, and once-only execution.
+Each reply has a `speech` line.
+- Writes come back `pending` with "Say yes to confirm".
+- The Shortcut dictates the answer and posts it back with `confirm: plan_id`.
+- Only a clear, short yes or no counts. Anything mixed or unclear asks
+  again.
+- A repeated yes answers "That was already done": the plan claim prevents
+  duplicates.
+- Understanding problems are HTTP 200 with `speech`, so the Shortcut
+  always has something to say. Auth problems stay 401/403.
+
+Device tokens gain a **scope** (migration 0022):
+- `full` (the default, as before) or `jarvis`.
+- A `jarvis` token authenticates as `AuthMethod::JarvisToken`. The guard
+  every data route uses (`http::auth::principal`), and the auth-route
+  guard, both refuse it with `403 token_scope`.
+- Only `/api/v1/jarvis/ask` uses `jarvis_principal`, which accepts it.
+- `/auth/session` treats it as signed out.
+- An unknown stored scope reads as `jarvis`, the narrowest.
+
+This narrows what a token on a phone can do: it can't list, export, or
+download data wholesale. It loosens nothing: existing tokens and sessions
+behave exactly as before.
+
 ## D-041 — A deterministic, explainable planner that only proposes
 **Status:** accepted (owner goal, 2026-10-24)
 `directory-core::planner` scores open tasks with fixed, documented points.

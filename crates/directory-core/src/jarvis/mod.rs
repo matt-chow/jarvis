@@ -8,6 +8,7 @@
 
 pub mod parser;
 pub mod presets;
+pub mod voice;
 
 use crate::calendar::{CalendarService, EventRepository, Occurrence};
 use crate::entropy::{is_id, new_id, Entropy};

@@ -41,6 +41,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .post_async("/api/v1/auth/tokens", auth::create_token)
         .delete_async("/api/v1/auth/tokens/:id", auth::delete_token)
         // JARVIS
+        .post_async("/api/v1/jarvis/ask", jarvis::ask)
         .post_async("/api/v1/jarvis/plan", jarvis::plan)
         .post_async("/api/v1/jarvis/plans/:id/execute", jarvis::execute)
         .post_async("/api/v1/jarvis/plans/:id/cancel", jarvis::cancel)

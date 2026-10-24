@@ -3,7 +3,7 @@
 use super::{changes, err, int, opt_int, opt_text, stmt, text};
 use directory_core::encoding::{b64url_decode, b64url_encode};
 use directory_core::identity::{
-    ApiToken, Challenge, ChallengePurpose, IdentityRepository, Passkey, Session, User,
+    ApiToken, Challenge, ChallengePurpose, IdentityRepository, Passkey, Session, TokenScope, User,
 };
 use serde::Deserialize;
 use worker::D1Database;
@@ -126,6 +126,7 @@ struct ApiTokenRow {
     user_id: String,
     name: String,
     token_hash: String,
+    scope: String,
     created_at: f64,
     last_used_at: Option<f64>,
 }
@@ -137,6 +138,8 @@ impl From<ApiTokenRow> for ApiToken {
             user_id: r.user_id,
             name: r.name,
             token_hash: r.token_hash,
+            // An unknown scope (newer schema) gets the narrowest access.
+            scope: TokenScope::parse(&r.scope).unwrap_or(TokenScope::Jarvis),
             created_at: r.created_at as i64,
             last_used_at: r.last_used_at.map(|t| t as i64),
         }
@@ -372,8 +375,8 @@ impl IdentityRepository for D1IdentityRepository {
     async fn create_api_token(&self, t: &ApiToken) -> Result<(), String> {
         stmt(
             &self.db,
-            "INSERT INTO api_tokens (id, user_id, name, token_hash, created_at, last_used_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            &[text(&t.id), text(&t.user_id), text(&t.name), text(&t.token_hash), int(t.created_at), opt_int(t.last_used_at)],
+            "INSERT INTO api_tokens (id, user_id, name, token_hash, created_at, last_used_at, scope) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            &[text(&t.id), text(&t.user_id), text(&t.name), text(&t.token_hash), int(t.created_at), opt_int(t.last_used_at), text(t.scope.as_str())],
         )?
         .run()
         .await
@@ -384,7 +387,7 @@ impl IdentityRepository for D1IdentityRepository {
     async fn find_api_token(&self, token_hash: &str) -> Result<Option<ApiToken>, String> {
         let row = stmt(
             &self.db,
-            "SELECT id, user_id, name, token_hash, created_at, last_used_at FROM api_tokens WHERE token_hash = ?1",
+            "SELECT id, user_id, name, token_hash, created_at, last_used_at, scope FROM api_tokens WHERE token_hash = ?1",
             &[text(token_hash)],
         )?
         .first::<ApiTokenRow>(None)
@@ -408,7 +411,7 @@ impl IdentityRepository for D1IdentityRepository {
     async fn list_api_tokens(&self, user_id: &str) -> Result<Vec<ApiToken>, String> {
         Ok(stmt(
             &self.db,
-            "SELECT id, user_id, name, token_hash, created_at, last_used_at FROM api_tokens WHERE user_id = ?1 ORDER BY created_at",
+            "SELECT id, user_id, name, token_hash, created_at, last_used_at, scope FROM api_tokens WHERE user_id = ?1 ORDER BY created_at",
             &[text(user_id)],
         )?
         .all()

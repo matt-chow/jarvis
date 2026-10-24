@@ -23,7 +23,9 @@ approval (AGENTS.md).
 - **Device tokens** (`dir_…` bearer) are for native clients and scripts.
   They're hashed at rest and shown once. They can read and write data but
   can't manage credentials (`403 session_required`), so a leaked token can't
-  mint more access.
+  mint more access. A **JARVIS-only** token (for the iPhone Shortcut, D-042)
+  is refused by every route except `/api/v1/jarvis/ask` (`403 token_scope`).
+  Even there, changes need a spoken "yes".
 - **Rate limiting:** sign-in and setup endpoints allow 30 requests per 10
   minutes per client IP (`429` + `Retry-After`).
 - **Files** live in a private R2 bucket (no public URL). Content is served
@@ -58,7 +60,8 @@ approval (AGENTS.md).
   routes are covered without editing the test.
 - Credential routes refuse device tokens; setup closes after first use;
   sign-in is rate limited; export holds no secrets; R2 content is sandboxed;
-  JARVIS plans run once; automations can't be injected.
+  JARVIS plans run once; automations can't be injected; JARVIS-only tokens
+  are refused by data and credential routes.
 - The browser e2e plays a saved track from a `blob:` URL, which catches CSP
   regressions in media playback.
 

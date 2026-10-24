@@ -81,8 +81,37 @@ pub struct ApiToken {
     pub name: String,
     #[serde(skip)]
     pub token_hash: String,
+    pub scope: TokenScope,
     pub created_at: i64,
     pub last_used_at: Option<i64>,
+}
+
+/// What a device token may do (DECISIONS D-042).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TokenScope {
+    /// Every data route, like a session (but never credential management).
+    #[default]
+    Full,
+    /// Only the JARVIS ask endpoint (Apple Shortcuts): a leaked token can't read data wholesale.
+    Jarvis,
+}
+
+impl TokenScope {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Jarvis => "jarvis",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "full" => Some(Self::Full),
+            "jarvis" => Some(Self::Jarvis),
+            _ => None,
+        }
+    }
 }
 
 /// Persistence for identity data. Errors are backend descriptions (logged, never shown).
@@ -146,6 +175,8 @@ fn backend(e: String) -> IdentityError {
 pub enum AuthMethod {
     Session,
     ApiToken,
+    /// A JARVIS-only device token (`TokenScope::Jarvis`).
+    JarvisToken,
 }
 
 /// The authenticated caller. Every private handler requires one.
@@ -717,6 +748,7 @@ impl<'a, R: IdentityRepository, E: Entropy> IdentityService<'a, R, E> {
         &self,
         principal: &Principal,
         name: Option<&str>,
+        scope: TokenScope,
     ) -> Result<(ApiToken, String), IdentityError> {
         let secret = format!("{API_TOKEN_PREFIX}{}", b64url_encode(&self.random(32)));
         let token = ApiToken {
@@ -724,6 +756,7 @@ impl<'a, R: IdentityRepository, E: Entropy> IdentityService<'a, R, E> {
             user_id: principal.user_id.clone(),
             name: clean_name(name, "Device")?,
             token_hash: sha256_hex(secret.as_bytes()),
+            scope,
             created_at: self.now,
             last_used_at: None,
         };
@@ -757,7 +790,10 @@ impl<'a, R: IdentityRepository, E: Entropy> IdentityService<'a, R, E> {
         }
         Ok(Some(Principal {
             user_id: token.user_id,
-            method: AuthMethod::ApiToken,
+            method: match token.scope {
+                TokenScope::Full => AuthMethod::ApiToken,
+                TokenScope::Jarvis => AuthMethod::JarvisToken,
+            },
         }))
     }
 

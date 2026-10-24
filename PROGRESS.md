@@ -127,6 +127,35 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-10-24 — JARVIS on iPhone: `/api/v1/jarvis/ask` + JARVIS-only tokens (D-042)
+- **Core:**
+  - `jarvis::voice`: spoken answers for plans and errors, and strict
+    dictated yes/no.
+  - Identity: `TokenScope` (`full`/`jarvis`) and
+    `AuthMethod::JarvisToken`.
+- **Worker:**
+  - `POST /api/v1/jarvis/ask` (preview → "Say yes to confirm" → confirm
+    or cancel once).
+  - The data-route and auth-route guards refuse JARVIS-only tokens (403
+    `token_scope`).
+  - Migration 0022; schema v22.
+- **Web:** Settings › device tokens has an access choice (Full / JARVIS
+  only), shown in the list.
+- **Docs:** docs/JARVIS_SHORTCUTS.md, a step-by-step Shortcut build (Dictate
+  Text → Get Contents of URL → Speak Text, with the confirm loop; Siri,
+  Lock Screen control, Action button).
+- **Tests:**
+  - core 129 (voice 3, identity scope);
+  - web 96;
+  - smoke: new "jarvis ask" check (scope denial on 5 routes, preview,
+    unclear answer, yes once, repeat-safe, no cancels, not understood,
+    revoke), all passed;
+  - verify ✅; browser e2e 32/32.
+- **Not verified on a real iPhone:** that needs a staging deploy (owner
+  steps in docs/STAGING.md).
+- **Known limit:** automations fired by a voice completion use the
+  server's UTC date, not the phone's.
+
 ### 2026-10-24 — Planner and JARVIS task commands (D-041)
 - **Core:**
   - `planner.rs`: scoring with reasons, subtask dependencies, and a time

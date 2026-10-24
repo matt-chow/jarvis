@@ -891,6 +891,50 @@ async function local() {
       expect(wrong.status === 401, `wrong bearer → ${wrong.status}`);
     });
 
+    await check("jarvis ask (D-042): JARVIS-only token, spoken preview, yes runs once, no cancels, other routes refused", async () => {
+      const made = await api.req("POST", "/api/v1/auth/tokens", { body: { name: "Shortcut", scope: "jarvis" } });
+      expect(made.status === 201 && made.json.token.scope === "jarvis", `create → ${made.text}`);
+      const auth = { Authorization: `Bearer ${made.json.secret}` };
+      const phone = new Client(baseUrl);
+      const ask = (body) => phone.req("POST", "/api/v1/jarvis/ask", { body, headers: auth });
+      // Default deny: every other route refuses this token.
+      for (const [method, path] of [["GET", "/api/v1/tasks"], ["GET", "/api/v1/export"], ["GET", "/api/v1/files"], ["POST", "/api/v1/jarvis/plan"], ["GET", "/api/v1/auth/tokens"]]) {
+        const r = await phone.req(method, path, { body: method === "POST" ? { input: "list tasks", today: "2026-10-21" } : undefined, headers: auth });
+        expect(r.status === 403 && r.json.error === "token_scope", `${method} ${path} → ${r.status}`);
+      }
+      const who = await phone.req("GET", "/api/v1/auth/session", { headers: auth });
+      expect(who.json.authenticated === false, "session status doesn't reveal the owner");
+
+      const preview = await ask({ text: "Add task smoke voice task high priority due Friday.", today: "2026-10-21" });
+      expect(preview.status === 200 && preview.json.status === "pending" && preview.json.needs_confirmation, `preview → ${preview.text}`);
+      expect(preview.json.speech === "Create task “smoke voice task” due 2026-10-23, high priority. Say yes to confirm.", preview.json.speech);
+      const unclear = await ask({ text: "hmm", confirm: preview.json.plan_id });
+      expect(unclear.json.speech === "Please say yes or no." && unclear.json.needs_confirmation, `unclear → ${unclear.text}`);
+      const yes = await ask({ text: "Yes, do it.", confirm: preview.json.plan_id });
+      expect(yes.json.status === "executed" && yes.json.speech === "Created task “smoke voice task”.", `yes → ${yes.text}`);
+      const again = await ask({ text: "yes", confirm: preview.json.plan_id });
+      expect(again.json.speech === "That was already done.", `repeat → ${again.text}`);
+      const tasks = (await api.req("GET", "/api/v1/tasks?status=open")).json.tasks.filter((t) => t.title === "smoke voice task");
+      expect(tasks.length === 1 && tasks[0].priority === "high" && tasks[0].due_date === "2026-10-23", `created once → ${JSON.stringify(tasks)}`);
+
+      const top = await ask({ text: "What should I do today?", today: "2026-10-21" });
+      expect(top.json.status === "executed" && top.json.speech.startsWith("Top ") && top.json.speech.includes("smoke voice task"), `priorities → ${top.text}`);
+      const move = await ask({ text: "move smoke voice task to monday", today: "2026-10-21" });
+      const no = await ask({ text: "No.", confirm: move.json.plan_id });
+      expect(no.json.status === "cancelled", `no → ${no.text}`);
+      expect((await api.req("GET", `/api/v1/tasks/${tasks[0].id}`)).json.due_date === "2026-10-23", "cancelled: unchanged");
+      const huh = await ask({ text: "dance a jig", today: "2026-10-21" });
+      expect(huh.status === 200 && huh.json.status === "not_understood" && huh.json.speech.includes("dance a jig"), `unknown → ${huh.text}`);
+      const bad = await ask({ text: "list tasks", today: "nope" });
+      expect(bad.json.status === "invalid", `bad date → ${bad.text}`);
+      const wrong = await phone.req("POST", "/api/v1/jarvis/ask", { body: { text: "list tasks" }, headers: { Authorization: "Bearer dir_wrong" } });
+      expect(wrong.status === 401, `wrong token → ${wrong.status}`);
+
+      await api.req("DELETE", `/api/v1/tasks/${tasks[0].id}`);
+      expect((await api.req("DELETE", `/api/v1/auth/tokens/${made.json.token.id}`)).status === 204, "revoke");
+      expect((await ask({ text: "list tasks" })).status === 401, "revoked → 401");
+    });
+
     const oldCookie = api.cookie;
     await check("logout clears the cookie and revokes the session server-side", async () => {
       const r = await api.req("POST", "/api/v1/auth/logout");

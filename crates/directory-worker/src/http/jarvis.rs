@@ -1,6 +1,6 @@
 //! JARVIS routes: plan (preview), execute (approve), cancel, history.
 
-use super::auth::principal;
+use super::auth::{jarvis_principal, principal};
 use super::{error, error_with, json, no_content, read_json};
 use crate::d1::{
     D1EventRepository, D1HabitRepository, D1InboxRepository, D1JarvisRepository,
@@ -13,7 +13,8 @@ use directory_core::identity::Principal;
 use directory_core::jarvis::parser::{ParseError, EXAMPLES};
 use directory_core::jarvis::presets::{NewPreset, PresetError, PresetService};
 use directory_core::jarvis::{
-    Command, CommandTargets, DeterministicParser, JarvisError, JarvisService, Plan, PlanRequest,
+    voice, Command, CommandTargets, DeterministicParser, JarvisError, JarvisService, Plan,
+    PlanRequest,
 };
 use directory_core::tasks::TaskRepository;
 use serde_json::json as body;
@@ -283,4 +284,60 @@ pub async fn delete_preset(req: Request, rc: RouteContext<()>) -> Result<Respons
         Ok(()) => no_content(),
         Err(e) => preset_error(e),
     }
+}
+
+#[derive(serde::Deserialize)]
+struct AskRequest {
+    text: String,
+    /// The phone's local date; the server's UTC date if missing.
+    #[serde(default)]
+    today: Option<String>,
+    /// Answering "Say yes to confirm" for this pending plan.
+    #[serde(default)]
+    confirm: Option<String>,
+}
+
+/// `POST /api/v1/jarvis/ask`: one spoken turn for Apple Shortcuts (D-042,
+/// docs/JARVIS_SHORTCUTS.md). Same parser, approval, and once-only execution
+/// as the app; the reply carries a `speech` line. Accepts JARVIS-only tokens.
+pub async fn ask(mut req: Request, rc: RouteContext<()>) -> Result<Response> {
+    let p = try_or_respond!(jarvis_principal(&req, &rc.env).await?);
+    let body: AskRequest = try_or_respond!(read_json(&mut req).await?);
+    let c = Ctx {
+        repo: D1JarvisRepository::new(rc.env.d1(bindings::DB)?),
+        principal: p,
+    };
+    let targets = Targets::from_env(&rc.env)?;
+    let svc = c.service();
+    let spoken = |r: std::result::Result<Plan, JarvisError>| match r {
+        Ok(plan) => json(200, &voice::from_plan(&plan)),
+        Err(e) => match voice::from_error(&e) {
+            Some(answer) => json(200, &answer),
+            None => jarvis_error(e),
+        },
+    };
+    if let Some(id) = body.confirm {
+        return match voice::yes_or_no(&body.text) {
+            Some(true) => {
+                let result = svc.execute(&c.principal, &id, &targets).await;
+                if let Ok(plan) = &result {
+                    fire_automations(&req, &rc.env, &c.principal, plan, &targets).await;
+                }
+                spoken(result)
+            }
+            Some(false) => spoken(svc.cancel(&c.principal, &id).await),
+            None => json(200, &voice::ask_again(&id)),
+        };
+    }
+    let today = body
+        .today
+        .unwrap_or_else(|| super::automations::local_date(&req));
+    let input = PlanRequest {
+        input: body.text,
+        today,
+    };
+    spoken(
+        svc.plan(&c.principal, &DeterministicParser, input, &targets)
+            .await,
+    )
 }

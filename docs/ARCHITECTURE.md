@@ -81,8 +81,9 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | POST | `/api/v1/auth/logout` | session | Revokes the session and clears the cookie |
 | GET / POST | `/api/v1/auth/passkeys`, `/passkeys/options`, `/passkeys/verify` | session only | List / add passkeys |
 | DELETE | `/api/v1/auth/passkeys/{id}` | session only | `409 last_passkey` for the final one |
-| GET / POST | `/api/v1/auth/tokens` | session only | List / create device token (secret returned once) |
+| GET / POST | `/api/v1/auth/tokens` | session only | List / create device token (secret returned once). Create takes `{ name, scope? }`; `scope` is `full` (default) or `jarvis` (only `/jarvis/ask`, D-042). |
 | DELETE | `/api/v1/auth/tokens/{id}` | session only | Revoke |
+| POST | `/api/v1/jarvis/ask` | session, token, or JARVIS-only token | Apple Shortcuts (D-042, docs/JARVIS_SHORTCUTS.md). `{ text, today?, confirm? }` → `{ speech, status, needs_confirmation, plan_id? }`. Same approval as `plan`; a `confirm` answer runs or cancels the plan once. Understanding errors are 200 with `speech`. |
 | POST | `/api/v1/jarvis/plan` | session or token | `{ input, today }` → plan with typed actions. Read-only plans come back `executed`; writes are `pending` (10-minute expiry). Errors: `400 not_understood { message, examples }`, `422 unresolved`. |
 | POST | `/api/v1/jarvis/plans/{id}/execute` | session or token | Approve: atomic `pending → running` claim, so a plan runs at most once (`409 not_pending`). |
 | POST | `/api/v1/jarvis/plans/{id}/cancel` | session or token | |
@@ -168,6 +169,7 @@ JSON bodies are capped at 64 KiB.
   - `0019`: `client_errors` (bounded per owner).
   - `0020`: `blob_orphans` (R2 deletes to retry, D-033).
   - `0021`: `tasks.estimate_minutes` (planner, D-041).
+  - `0022`: `api_tokens.scope` (`full`/`jarvis`, D-042).
 - IndexedDB v3 adds a `media` store: tracks the owner chose to save for
   offline playback (blobs, explicit download; the service worker still never
   caches `/api/*`).
