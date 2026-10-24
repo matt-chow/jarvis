@@ -1,6 +1,6 @@
 # Handover
 
-Base commit: 60dafec
+Base commit: 08c9b12
 From: claude → To: (either; no handoff in progress)
 Updated: 2026-10-24
 
@@ -21,22 +21,32 @@ Order of work:
 4. JARVIS Alpha:
    - Shortcuts endpoint + JARVIS-only tokens ✅ (60dafec, D-042).
    - Task commands ✅ (29adfc2).
-   - Optional OpenRouter free model: next.
-5. Deterministic planner ✅ (29adfc2, D-041).
-6. Mail: feasibility first (docs/MAIL_FEASIBILITY.md).
+   - Optional OpenRouter free model ✅ (22714ab, D-043). Off until the
+     owner sets a key; the live call is unverified.
+   - Voice automations use the phone's date (64197f2).
+   - Settings shows the Shortcut URL (a44d687).
+5. Deterministic planner ✅ (29adfc2, D-041), with a project constraint
+   (08c9b12).
+6. Mail: feasibility research ✅ (docs/MAIL_FEASIBILITY.md). The OAuth
+   test is **blocked on the owner** (Google/Microsoft clients and consent,
+   plus a staging host for the redirect URI). No mail code until access is
+   confirmed (owner rule: "verify access first").
+
+Gate at 08c9b12: verify ✅ (core 133, web 96, handoff 50), smoke ✅, browser
+e2e 32/32 ✅.
 
 ## In progress
 See "Next steps"; this file is updated at each milestone.
 
 ## Next steps
-1. OpenRouter free-model `IntentProvider`:
-   - Used only when the parser fails.
-   - Model id must end in `:free`; no fallback model.
-   - Secret `OPENROUTER_API_KEY`; daily cap `JARVIS_AI_DAILY`.
-   - Commands are validated like typed input; ids are stripped.
-2. Mail: feasibility only (docs/MAIL_FEASIBILITY.md). OAuth tests need the
-   owner's Google/Microsoft accounts and a staging host.
-3. Owner-gated items: see PROGRESS.md › Unresolved decisions (staging
+1. Owner: deploy staging (docs/STAGING.md), then build the iPhone Shortcut
+   (docs/JARVIS_SHORTCUTS.md) and run the on-device checks. Misheard or
+   unsupported phrases become parser tests.
+2. Owner: optionally set `OPENROUTER_API_KEY` and a `:free`
+   `JARVIS_AI_MODEL` on staging. Then check one unknown phrase end to end.
+3. Owner: mail OAuth clients and consent test. Then implement the
+   read-only inbox per the constraints in docs/MAIL_FEASIBILITY.md.
+4. Owner-gated items: see PROGRESS.md › Unresolved decisions (staging
    deploy and on-iPhone check, OpenRouter key, mail OAuth clients, deleting
    the OneDrive copy).
 
