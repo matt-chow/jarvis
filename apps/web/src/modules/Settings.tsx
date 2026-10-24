@@ -30,7 +30,7 @@ export function Settings({ online, session }: ModuleProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [tokenName, setTokenName] = useState("");
-  const [newSecret, setNewSecret] = useState<{ name: string; secret: string }>();
+  const [newSecret, setNewSecret] = useState<{ name: string; secret: string; scope: TokenScope }>();
 
   const run = useCallback(async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -80,7 +80,7 @@ export function Settings({ online, session }: ModuleProps) {
       const name = tokenName.trim() || "Device";
       const { token, secret } = await api.createToken(name, tokenScope);
       setTokens((ts) => [...(ts ?? []), token]);
-      setNewSecret({ name: token.name, secret });
+      setNewSecret({ name: token.name, secret, scope: token.scope });
       setTokenName("");
     });
   };
@@ -189,6 +189,14 @@ export function Settings({ online, session }: ModuleProps) {
               Copy the token for <span className="font-medium">{newSecret.name}</span> now. It won't be shown again.
             </p>
             <code className="mt-2 block font-mono text-xs break-all select-all">{newSecret.secret}</code>
+            {newSecret.scope === "jarvis" && (
+              <p className="mt-2 text-sm text-muted">
+                In the iPhone Shortcut, POST JSON <span className="font-mono text-xs">{"{ text, today }"}</span> to{" "}
+                <span className="font-mono text-xs break-all">{`${location.origin}/api/v1/jarvis/ask`}</span> with the header{" "}
+                <span className="font-mono text-xs">Authorization: Bearer</span> and this token, then speak the reply's{" "}
+                <span className="font-mono text-xs">speech</span>. Full steps: docs/JARVIS_SHORTCUTS.md.
+              </p>
+            )}
             <div className="mt-2 flex gap-2">
               <Button className={small} onClick={() => void navigator.clipboard?.writeText(newSecret.secret)}>
                 copy

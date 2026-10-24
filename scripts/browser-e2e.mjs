@@ -744,6 +744,29 @@ try {
     const r = await fetch(`${server.origin}/api/v1/files?folder=uploads`, { headers: { Authorization: `Bearer ${secret}` } });
     const body = await r.json();
     if (!body.files?.some((f) => f.name === "hello e2e.txt")) throw new Error(`token list: ${JSON.stringify(body)}`);
+
+    // A JARVIS-only token (D-042): Settings shows the Shortcut URL; the token
+    // works for /jarvis/ask and nothing else.
+    await page.click("done");
+    await page.fill("Token name", "E2E Shortcut");
+    await page.evaluate(`(() => {
+      const el = document.querySelector('select[aria-label="Token access"]');
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(el, "jarvis");
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    })()`);
+    await page.click("create");
+    await page.waitForText("/api/v1/jarvis/ask");
+    const jarvisSecret = await page.evaluate(`document.querySelector("code.select-all")?.innerText`);
+    const asked = await fetch(`${server.origin}/api/v1/jarvis/ask`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${jarvisSecret}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "list tasks", today: "2026-10-21" }),
+    });
+    const spoken = await asked.json();
+    if (spoken.status !== "executed" || typeof spoken.speech !== "string") throw new Error(`ask: ${JSON.stringify(spoken)}`);
+    const refused = await fetch(`${server.origin}/api/v1/files?folder=uploads`, { headers: { Authorization: `Bearer ${jarvisSecret}` } });
+    if (refused.status !== 403) throw new Error(`JARVIS-only token on files → ${refused.status}`);
+    await page.waitForText("JARVIS only · created");
   });
 
   await step("sign out and forget this device: asks first, then deletes the browser's copy", async () => {
