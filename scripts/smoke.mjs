@@ -932,6 +932,15 @@ async function local() {
       const wrong = await phone.req("POST", "/api/v1/jarvis/ask", { body: { text: "list tasks" }, headers: { Authorization: "Bearer dir_wrong" } });
       expect(wrong.status === 401, `wrong token → ${wrong.status}`);
 
+      // A voice completion fires automations with the phone's date, not the server's.
+      const rule = (await api.req("POST", "/api/v1/automations", { body: { name: "Voice log", trigger: { kind: "task_completed" }, command: "capture voice done {title} on {date}" } })).json;
+      const finish = await ask({ text: "done smoke voice task", today: "2026-10-21" });
+      expect((await ask({ text: "yes", confirm: finish.json.plan_id, today: "2026-10-21" })).json.status === "executed", "voice completion");
+      const inbox = (await api.req("GET", "/api/v1/inbox")).json.items;
+      expect(inbox.some((i) => i.text === "voice done smoke voice task on 2026-10-21"), `automation date → ${JSON.stringify(inbox.map((i) => i.text))}`);
+      await api.req("DELETE", `/api/v1/automations/${rule.id}`);
+      for (const i of inbox) await api.req("DELETE", `/api/v1/inbox/${i.id}`);
+
       await api.req("DELETE", `/api/v1/tasks/${tasks[0].id}`);
       expect((await api.req("DELETE", `/api/v1/auth/tokens/${made.json.token.id}`)).status === 204, "revoke");
       expect((await ask({ text: "list tasks" })).status === 401, "revoked → 401");

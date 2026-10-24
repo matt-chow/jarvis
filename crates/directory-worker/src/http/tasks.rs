@@ -113,7 +113,7 @@ pub async fn update(mut req: Request, rc: RouteContext<()>) -> Result<Response> 
     match c.service().update(&c.principal, &id, patch).await {
         Ok(task) => {
             if was_open && task.status == Status::Done {
-                completed(&req, &rc.env, &c.principal, &task).await;
+                completed(&automations::local_date(&req), &rc.env, &c.principal, &task).await;
             }
             json(200, &task)
         }
@@ -122,7 +122,8 @@ pub async fn update(mut req: Request, rc: RouteContext<()>) -> Result<Response> 
 }
 
 /// Fire "task completed" automations (D-024).
-pub(crate) async fn completed(req: &Request, env: &Env, p: &Principal, task: &Task) {
+/// `date` is the caller's local date (the day the automation records).
+pub(crate) async fn completed(date: &str, env: &Env, p: &Principal, task: &Task) {
     let project_name = match (&task.project_id, env.d1(bindings::DB)) {
         (Some(id), Ok(db)) => D1ProjectRepository::new(db)
             .get(&p.user_id, id)
@@ -136,7 +137,7 @@ pub(crate) async fn completed(req: &Request, env: &Env, p: &Principal, task: &Ta
         title: task.title.clone(),
         project_id: task.project_id.clone(),
         project_name,
-        date: automations::local_date(req),
+        date: date.to_owned(),
     };
     automations::fire(env, p, event).await;
 }

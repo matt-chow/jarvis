@@ -3,18 +3,20 @@
 Canonical implementation tracker. Newest entries first. Milestones are defined in
 [docs/ROADMAP.md](docs/ROADMAP.md).
 
-## Current state (2026-10-22)
+## Current state (2026-10-24)
 
 - **Milestone:** M1 Private Alpha is **feature-complete locally**. All M1
   slices are done and `npm run ci` is green. The first deploy is **blocked on
   owner approval** (see the readiness checklist in docs/ARCHITECTURE.md ›
   Deployment). **M2 JARVIS Alpha:** command layer ✅, presets ✅, `find` ✅,
-  project commands ✅.
-  Voice is blocked on owner approval. **M3:** search ✅ (offline too), files ✅ (read-only offline), library ✅ (offline too),
+  project commands ✅, planner `priorities`/`suggest` and task updates ✅
+  (D-041), iPhone via Apple Shortcuts `/jarvis/ask` + JARVIS-only tokens ✅
+  (D-042, on-device check needs staging), optional free OpenRouter AI ✅ (D-043,
+  off until a key is set). Staging config ✅ (deploy is the owner's step). **M3:** search ✅ (offline too), files ✅ (read-only offline), library ✅ (offline too),
   offline editing ✅, wiki ✅. **M4:** habits ✅, calendar ✅, dashboard ✅, automations ✅, music ✅.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
-  - Device tokens for native clients and scripts.
+  - Device tokens for native clients and scripts, full or JARVIS-only.
   - Settings: passkeys and tokens.
   - Tasks with one level of subtasks: status, priority, due date, notes,
     Open/Done/All filters, and a project filter.
@@ -95,33 +97,36 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   Projects, Notes, Journal, Inbox, and Settings.
 
 ### Unresolved decisions (need the owner)
-- **Blocker for the M1 release:** approve the first Cloudflare deploy. This
-  needs `wrangler login`, R2 activation (asks for a payment method; free
-  within limits), and the production hostname for
-  `DIRECTORY_RP_ID`/`DIRECTORY_ORIGINS`.
-- **M2:** which AI provider (if any) JARVIS may call, and its budget. Until
-  then, JARVIS uses a deterministic command parser only.
-- **M2 voice:** may JARVIS use the browser's speech recognition? In
-  Chrome/Edge it sends audio to the vendor's cloud. It would be off by
-  default, opt-in per device, and need `Permissions-Policy: microphone=(self)`.
+- **Staging deploy:** `wrangler login`, R2 activation (asks for a payment
+  method; free within limits), `d1 create directory-db-staging`, and the
+  staging hostname vars. Then run the on-iPhone checks in docs/STAGING.md ›
+  Verify. Everything else for staging is ready (005250e).
+- **Production deploy:** separate approval, after staging passes.
+- **AI key (optional):** create a $0 OpenRouter key, then set
+  `OPENROUTER_API_KEY` and a `:free` `JARVIS_AI_MODEL` (D-043).
+  JARVIS works without it.
+- **Mail feasibility** (docs/MAIL_FEASIBILITY.md): create the Google OAuth
+  client (Testing → In production, unverified), and try consent on the
+  school Microsoft account. Both need a staging host for the redirect URI.
+- **Browser voice in the web app** (Web Speech API sends audio to the
+  browser vendor): still not approved. iPhone voice goes through Apple
+  Shortcuts instead (D-042).
 - **M4 time-based automations:** these need a Workers Cron Trigger (free
   tier) that runs saved commands with no signed-in request behind them.
   That is a new way of acting as the owner, so it is a security-policy
   change (AGENTS.md). Also needed: per-owner time zones (the client can
   report its IANA zone, converted with `Intl` in the Worker).
+- **In-app PDF reader:** pdf.js, or serving PDFs inline (CSP change).
 - Whether to delete the retired OneDrive copy of the repo (D-040).
 
 ### Next task
-1. Watch item: the intermittent "Offline edits" failure (task queued but
-   not listed). Its likely cause is fixed (D-039): a list reload in flight
-   could overwrite an offline edit. It isn't proven, because the failure
-   was never caught with diagnostics. No failures in the 3 back-to-back
-   runs since.
-2. Deploy readiness: everything blocking M1 is the owner's call (see
-   below).
-3. Measure Worker CPU after the first deploy (owner approval needed).
-4. Remaining owner decisions: deploy approval, voice, AI provider, PDF
-   reader (pdf.js or a CSP change).
+1. Owner: staging deploy, then the iPhone Shortcut check
+   (docs/JARVIS_SHORTCUTS.md). Report any phrase JARVIS misunderstands;
+   it becomes a parser test.
+2. Mail OAuth feasibility, once the owner has created the clients.
+3. Watch item: the intermittent "Offline edits" failure. Its likely cause
+   is fixed (D-039); not proven.
+4. Measure Worker CPU on staging (`/auth/login/verify`).
 
 ---
 
@@ -174,8 +179,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   - verify ✅; browser e2e 32/32.
 - **Not verified on a real iPhone:** that needs a staging deploy (owner
   steps in docs/STAGING.md).
-- **Known limit:** automations fired by a voice completion use the
-  server's UTC date, not the phone's.
+- Automations fired by voice use the phone's date (`today`), which the
+  smoke test checks.
 
 ### 2026-10-24 — Planner and JARVIS task commands (D-041)
 - **Core:**

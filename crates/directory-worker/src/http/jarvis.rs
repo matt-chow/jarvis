@@ -176,7 +176,8 @@ pub async fn execute(req: Request, rc: RouteContext<()>) -> Result<Response> {
         .await
     {
         Ok(plan) => {
-            fire_automations(&req, &rc.env, &c.principal, &plan, &targets).await;
+            let today = super::automations::local_date(&req);
+            fire_automations(&today, &rc.env, &c.principal, &plan, &targets).await;
             json(200, &plan)
         }
         Err(e) => jarvis_error(e),
@@ -185,7 +186,8 @@ pub async fn execute(req: Request, rc: RouteContext<()>) -> Result<Response> {
 
 /// Completions and check-ins made through JARVIS fire automations like the
 /// Tasks and Habits screens do (D-024). Automation actions never do.
-async fn fire_automations(req: &Request, env: &Env, p: &Principal, plan: &Plan, t: &Targets) {
+/// `today` is the caller's local date.
+async fn fire_automations(today: &str, env: &Env, p: &Principal, plan: &Plan, t: &Targets) {
     for (action, result) in plan.actions.iter().zip(&plan.results) {
         if !result.changed {
             continue;
@@ -195,7 +197,7 @@ async fn fire_automations(req: &Request, env: &Env, p: &Principal, plan: &Plan, 
                 task_id: Some(id), ..
             } => {
                 if let Ok(Some(task)) = t.tasks.get(&p.user_id, id).await {
-                    super::tasks::completed(req, env, p, &task).await;
+                    super::tasks::completed(today, env, p, &task).await;
                 }
             }
             Command::CheckHabit {
@@ -314,6 +316,11 @@ pub async fn ask(mut req: Request, rc: RouteContext<()>) -> Result<Response> {
         principal: p,
     };
     let targets = Targets::from_env(&rc.env)?;
+    // The phone's date, for "today" in commands and for automations it fires.
+    let today = body
+        .today
+        .clone()
+        .unwrap_or_else(|| super::automations::local_date(&req));
     let svc = c.service();
     let spoken = |r: std::result::Result<Plan, JarvisError>| match r {
         Ok(plan) => json(200, &voice::from_plan(&plan)),
@@ -327,7 +334,7 @@ pub async fn ask(mut req: Request, rc: RouteContext<()>) -> Result<Response> {
             Some(true) => {
                 let result = svc.execute(&c.principal, &id, &targets).await;
                 if let Ok(plan) = &result {
-                    fire_automations(&req, &rc.env, &c.principal, plan, &targets).await;
+                    fire_automations(&today, &rc.env, &c.principal, plan, &targets).await;
                 }
                 spoken(result)
             }
@@ -335,9 +342,6 @@ pub async fn ask(mut req: Request, rc: RouteContext<()>) -> Result<Response> {
             None => json(200, &voice::ask_again(&id)),
         };
     }
-    let today = body
-        .today
-        .unwrap_or_else(|| super::automations::local_date(&req));
     let input = PlanRequest {
         input: body.text,
         today,
