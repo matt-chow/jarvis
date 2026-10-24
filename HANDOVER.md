@@ -1,6 +1,6 @@
 # Handover
 
-Base commit: 9b9d978
+Base commit: 60dafec
 From: claude → To: (either; no handoff in progress)
 Updated: 2026-10-24
 
@@ -16,21 +16,29 @@ Goal (owner, 2026-10-24): a $0/month MVP centred on JARVIS on iPhone.
 Order of work:
 1. Repo migration ✅
 2. Continuity ✅
-3. Cloudflare staging: config and steps; the deploy needs the owner.
-4. JARVIS Alpha: Shortcuts endpoint, task commands, optional OpenRouter
-   free model.
-5. Deterministic planner.
+3. Cloudflare staging: config ✅ (005250e). The deploy needs the owner
+   (docs/STAGING.md).
+4. JARVIS Alpha:
+   - Shortcuts endpoint + JARVIS-only tokens ✅ (60dafec, D-042).
+   - Task commands ✅ (29adfc2).
+   - Optional OpenRouter free model: next.
+5. Deterministic planner ✅ (29adfc2, D-041).
 6. Mail: feasibility first (docs/MAIL_FEASIBILITY.md).
 
 ## In progress
 See "Next steps"; this file is updated at each milestone.
 
 ## Next steps
-1. Planner core (`crates/directory-core/src/planner.rs`), then JARVIS
-   commands `priorities` / `suggest` / task updates, then the Shortcuts
-   endpoint `/api/v1/jarvis/ask` with JARVIS-only device tokens.
-2. Staging config (`[env.staging]`, separate D1/R2) and docs/STAGING.md.
-3. Owner-gated items: see PROGRESS.md › Unresolved decisions.
+1. OpenRouter free-model `IntentProvider`:
+   - Used only when the parser fails.
+   - Model id must end in `:free`; no fallback model.
+   - Secret `OPENROUTER_API_KEY`; daily cap `JARVIS_AI_DAILY`.
+   - Commands are validated like typed input; ids are stripped.
+2. Mail: feasibility only (docs/MAIL_FEASIBILITY.md). OAuth tests need the
+   owner's Google/Microsoft accounts and a staging host.
+3. Owner-gated items: see PROGRESS.md › Unresolved decisions (staging
+   deploy and on-iPhone check, OpenRouter key, mail OAuth clients, deleting
+   the OneDrive copy).
 
 ## Working tree
 Clean after each commit. No stashes.
