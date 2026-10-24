@@ -15,6 +15,7 @@
     "build:worker": "wrangler deploy --dry-run --outdir .wrangler/dry-run",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "db:migrate:staging": "wrangler d1 migrations apply DB --remote --env staging",
     "lint": "cargo fmt --all --check && cargo clippy -p directory-core --all-targets -- -D warnings && cargo clippy -p directory-worker --target wasm32-unknown-unknown -- -D warnings && npm run typecheck -w @directory/web",
     "test": "npm run test:rust && npm run test:web",
     "test:rust": "cargo test -p directory-core",
@@ -23,6 +24,7 @@
     "verify": "npm run lint && npm test && npm run test:handoff && npm run build && npm run build:worker",
     "test:handoff": "bash scripts/test-handoff.sh",
     "deploy": "npm run build && wrangler deploy",
+    "deploy:staging": "npm run build && wrangler deploy --env staging",
     "test:browser": "node scripts/browser-e2e.mjs",
     "ci": "npm run verify && npm run smoke && npm run test:browser"
   },

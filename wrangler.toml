@@ -44,3 +44,33 @@ DIRECTORY_ORIGINS = ""
 
 # Secrets (not stored here):
 #   DIRECTORY_SETUP_TOKEN — `npx wrangler secret put DIRECTORY_SETUP_TOKEN`; locally via .dev.vars
+
+# ---------------------------------------------------------------------------
+# Staging (docs/STAGING.md): a separate Worker, D1 database, and private R2
+# bucket, so tests never touch production data. Deploy with
+#   npm run deploy:staging
+# Bindings and vars are not inherited from the top level; repeat them here.
+[env.staging]
+name = "directory-staging"
+workers_dev = true
+preview_urls = false
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "directory-db-staging"
+# Replace with the id printed by `npx wrangler d1 create directory-db-staging`.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[[env.staging.r2_buckets]]
+binding = "FILES"
+# Private bucket: never enable r2.dev public access or a custom domain on it.
+bucket_name = "directory-files-staging"
+
+[env.staging.vars]
+# Set to the staging hostname before deploying, e.g.
+#   DIRECTORY_RP_ID = "directory-staging.<subdomain>.workers.dev"
+#   DIRECTORY_ORIGINS = "https://directory-staging.<subdomain>.workers.dev"
+# Left empty, sign-in fails closed (503 auth_not_configured).
+DIRECTORY_RP_ID = ""
+DIRECTORY_ORIGINS = ""
