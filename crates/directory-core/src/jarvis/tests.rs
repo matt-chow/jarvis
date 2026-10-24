@@ -714,3 +714,39 @@ fn task_details_updates_and_planner_commands() {
         Err(JarvisError::Unresolved(_))
     ));
 }
+
+#[test]
+fn planning_can_be_limited_to_one_project() {
+    let f = F::default();
+    f.execute(&f.plan("new project Garden").unwrap().id, 1_050)
+        .unwrap();
+    for pr in f.projects.0.borrow().iter() {
+        f.tasks
+            .1
+            .borrow_mut()
+            .push((pr.owner_id.clone(), pr.id.clone()));
+    }
+    let setup = f
+        .plan("add task plant tomatoes in project garden takes 20 minutes; add task file taxes high priority")
+        .unwrap();
+    f.execute(&setup.id, 1_100).unwrap();
+
+    let top = f.plan("What should I do for project garden?").unwrap();
+    assert_eq!(
+        top.actions[0].summary,
+        "Show top priorities in “Garden” for 2026-10-21"
+    );
+    assert_eq!(
+        top.results[0].message,
+        "Top 1 in “Garden” for Wednesday 2026-10-21: 1. plant tomatoes."
+    );
+    let fit = f.plan("I have 30 minutes in project Garden").unwrap();
+    assert_eq!(
+        fit.results[0].message,
+        "For 30 min in “Garden” on Wednesday 2026-10-21: 1. plant tomatoes (20 min). That's 20 min in all."
+    );
+    match f.plan("priorities for project shed") {
+        Err(JarvisError::Unresolved(m)) => assert!(m.contains("No active project matches"), "{m}"),
+        other => panic!("{other:?}"),
+    }
+}

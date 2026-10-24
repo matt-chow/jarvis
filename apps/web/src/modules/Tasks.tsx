@@ -184,6 +184,7 @@ export function Tasks({ online }: ModuleProps) {
           online={online}
           today={today}
           tasks={state.tasks}
+          project={project && project !== NO_PROJECT ? { id: project, name: projectName.get(project) ?? "this project" } : undefined}
           onSelect={(id) => {
             const t = state.tasks?.find((x) => x.id === id);
             setFilter("open");
@@ -209,8 +210,15 @@ export function Tasks({ online }: ModuleProps) {
  * The deterministic planner (D-041): what to do today, or what fits in the
  * time available, with the reasons for each pick. It only proposes.
  */
-function PlanPanel(props: { online: boolean; today: string; tasks: Task[] | undefined; onSelect: (id: string) => void }) {
-  const { online, today, tasks, onSelect } = props;
+function PlanPanel(props: {
+  online: boolean;
+  today: string;
+  tasks: Task[] | undefined;
+  /** The project filter, when one is chosen: plans stay within it. */
+  project?: { id: string; name: string };
+  onSelect: (id: string) => void;
+}) {
+  const { online, today, tasks, project, onSelect } = props;
   const [minutes, setMinutes] = useState("");
   const [plan, setPlan] = useState<PlanProposal>();
   const [busy, setBusy] = useState(false);
@@ -224,7 +232,7 @@ function PlanPanel(props: { online: boolean; today: string; tasks: Task[] | unde
     setBusy(true);
     setError(undefined);
     try {
-      setPlan(await api.planTasks(today, budget));
+      setPlan(await api.planTasks(today, budget, project?.id));
     } catch (err) {
       reportIfUnauthorized(err);
       setError(describeError(err, "plan"));
@@ -233,14 +241,14 @@ function PlanPanel(props: { online: boolean; today: string; tasks: Task[] | unde
     }
   };
 
-  // Keep a shown plan current as tasks change (completed, re-dated, …).
+  // Keep a shown plan current as tasks or the project filter change.
   const shown = plan !== undefined;
   useEffect(() => {
     if (shown && online) void run();
-  }, [tasks]);
+  }, [tasks, project?.id]);
 
   return (
-    <Panel title="plan">
+    <Panel title={project ? `plan · ${project.name}` : "plan"}>
       <form onSubmit={run} className="flex items-end gap-2">
         <label className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="label">minutes free (optional)</span>

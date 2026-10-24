@@ -16,6 +16,7 @@
 //!   link <kind> <name> to|with <kind> <name>   · kinds: task, note, project, journal (a date)
 //!   what should I do [today|tomorrow]  · also: priorities, what are my priorities
 //!   I have <duration>                  · also: what can I do in, suggest work for
+//!     (either can add "for|in|on project <name>" to stay within one project)
 //!   move|reschedule <task> to <date>   · also: set due date of, clear due date of
 //!   set priority of <task> to <p>      · also: make <task> high priority, prioritize
 //!   estimate <task> at <duration>
@@ -23,7 +24,7 @@
 //! Steps are separated by `;` or ` then `. Dates: today, tomorrow, a weekday
 //! (next occurrence), or YYYY-MM-DD.
 
-use super::{Command, LinkTarget, TaskChange};
+use super::{Command, LinkTarget, ProjectScope, TaskChange};
 use crate::links::EntityKind;
 use crate::tasks::Priority;
 use crate::validate;
@@ -297,9 +298,61 @@ fn leading_minutes<'a>(words: &'a [&'a str]) -> Option<(u32, &'a [&'a str])> {
         .find_map(|j| parse_minutes(&words[..j]).map(|m| (m, &words[j..])))
 }
 
+/// Planning requests, optionally limited to one project: "what should I do
+/// for project garden", "I have 30 minutes in project work".
+fn parse_planning(step: &str, lower: &str, today: &str) -> Option<Command> {
+    let words: Vec<&str> = step.split_whitespace().collect();
+    let at = (1..words.len().saturating_sub(2)).find(|&i| {
+        ["for", "in", "on"]
+            .iter()
+            .any(|k| words[i].eq_ignore_ascii_case(k))
+            && words[i + 1].eq_ignore_ascii_case("project")
+    });
+    let Some(i) = at else {
+        return parse_planning_plain(step, lower, today);
+    };
+    let mut name = words[i + 2..].to_vec();
+    // "… for project garden tomorrow": the day belongs to the request.
+    let mut day = "";
+    if name.len() > 1 {
+        match name[name.len() - 1]
+            .trim_end_matches(['.', '?', '!'])
+            .to_lowercase()
+            .as_str()
+        {
+            "today" => day = " today",
+            "tomorrow" => day = " tomorrow",
+            _ => {}
+        }
+        if !day.is_empty() {
+            name.pop();
+        }
+    }
+    let name = name.join(" ");
+    let name = name.trim_end_matches(['.', '?', '!', ',']).trim();
+    if name.is_empty() {
+        return None;
+    }
+    let rest = format!("{}{day}", words[..i].join(" "));
+    let rest_lower = rest.to_lowercase();
+    let scope = Some(ProjectScope::new(name));
+    match parse_planning_plain(&rest, rest_lower.trim_end_matches(['.', '?', '!']), today)? {
+        Command::Priorities { date, .. } => Some(Command::Priorities {
+            date,
+            project: scope,
+        }),
+        Command::Suggest { date, minutes, .. } => Some(Command::Suggest {
+            date,
+            minutes,
+            project: scope,
+        }),
+        _ => None,
+    }
+}
+
 /// "what are my priorities [today|tomorrow]", "what should I do", and
 /// "I have 30 minutes", "what can I do in an hour", "suggest work for 45 min".
-fn parse_planning(step: &str, lower: &str, today: &str) -> Option<Command> {
+fn parse_planning_plain(step: &str, lower: &str, today: &str) -> Option<Command> {
     let budget = strip(
         step,
         &[
@@ -330,6 +383,7 @@ fn parse_planning(step: &str, lower: &str, today: &str) -> Option<Command> {
             return Some(Command::Suggest {
                 date: today.to_owned(),
                 minutes,
+                project: None,
             });
         }
     }
@@ -364,6 +418,7 @@ fn parse_planning(step: &str, lower: &str, today: &str) -> Option<Command> {
     )
     .then(|| Command::Priorities {
         date: validate::add_days(today, date),
+        project: None,
     })
 }
 
@@ -1083,6 +1138,7 @@ mod link_tests {
         let suggest = |minutes| Command::Suggest {
             date: TODAY.into(),
             minutes,
+            project: None,
         };
         assert_eq!(one("I have 30 minutes"), suggest(30));
         assert_eq!(
@@ -1091,11 +1147,32 @@ mod link_tests {
         );
         assert_eq!(one("what can I do in 45 min?"), suggest(45));
         assert_eq!(one("suggest work for 2 hours"), suggest(120));
-        let top = |date: &str| Command::Priorities { date: date.into() };
+        let top = |date: &str| Command::Priorities {
+            date: date.into(),
+            project: None,
+        };
         assert_eq!(one("What should I do today?"), top(TODAY));
         assert_eq!(one("what are my priorities"), top(TODAY));
         assert_eq!(one("priorities for tomorrow"), top("2026-10-22"));
         assert_eq!(one("Today's priorities."), top(TODAY));
+        let scoped = |s: &str| match one(s) {
+            Command::Priorities { date, project } => (date, project.map(|p| p.query)),
+            Command::Suggest { date, project, .. } => (date, project.map(|p| p.query)),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(
+            scoped("what should I do for project Home renovation tomorrow?"),
+            ("2026-10-22".into(), Some("Home renovation".into()))
+        );
+        assert_eq!(
+            scoped("I have 30 minutes in project work."),
+            (TODAY.into(), Some("work".into()))
+        );
+        // A project clause on other commands is left to them.
+        assert!(matches!(
+            one("add task paint for project shed"),
+            Command::CreateTask { .. }
+        ));
 
         let up = |q: &str, change: TaskChange| Command::UpdateTask {
             query: q.into(),

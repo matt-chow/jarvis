@@ -120,6 +120,7 @@ the header value first.
 | --- | --- |
 | "What should I do today?" / "What are my priorities?" | Top 5 open tasks by the planner, with reasons |
 | "I have 45 minutes" / "What can I do in an hour?" | What fits, in priority order |
+| "What should I do for project Garden?" / "I have 30 minutes in project Work" | The same, within one active project |
 | "Add task file taxes high priority due Friday" | Creates the task after you confirm |
 | "Add task stretch takes 10 minutes" | Task with an estimate |
 | "Move file taxes to Monday" / "Clear the due date of taxes" | Re-dates after you confirm |

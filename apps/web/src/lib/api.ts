@@ -245,10 +245,10 @@ export class Api {
   updateTask = (id: string, patch: TaskPatch) =>
     this.call<Task>("PATCH", `/api/v1/tasks/${encodeURIComponent(id)}?today=${localDate()}`, patch);
   deleteTask = (id: string) => this.call<void>("DELETE", `/api/v1/tasks/${encodeURIComponent(id)}`);
-  planTasks = (date: string, minutes?: number) =>
+  planTasks = (date: string, minutes?: number, projectId?: string) =>
     this.call<PlanProposal>(
       "GET",
-      `/api/v1/tasks/plan?date=${date}${minutes ? `&minutes=${minutes}` : ""}`,
+      `/api/v1/tasks/plan?date=${date}${minutes ? `&minutes=${minutes}` : ""}${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ""}`,
     );
 
   // ---- JARVIS ----

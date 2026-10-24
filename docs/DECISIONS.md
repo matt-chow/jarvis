@@ -234,6 +234,10 @@ re-prioritising goes through `update task` commands, which need approval.
 AI may only phrase a request (minutes, which task). It never computes
 scores.
 
+Constraints: a time budget, and one project. The project is a `project_id`
+on the API, or "… for project <name>" for JARVIS, resolved to an active
+project by name. The Tasks plan panel follows the project filter.
+
 Explicit task-to-task dependencies (beyond subtasks), calendar-aware free
 time, and Jev as an optional classifier are future work. None is an MVP
 dependency.

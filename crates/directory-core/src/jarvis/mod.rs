@@ -61,14 +61,18 @@ pub enum Command {
         #[serde(default)]
         title: Option<String>,
     },
-    /// The planner's top tasks for `date` (D-041).
+    /// The planner's top tasks for `date` (D-041), optionally in one project.
     Priorities {
         date: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<ProjectScope>,
     },
     /// What fits in `minutes` of free time, by the planner's ranking.
     Suggest {
         date: String,
         minutes: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<ProjectScope>,
     },
     CreateProject {
         name: String,
@@ -110,6 +114,31 @@ pub enum Command {
     Find {
         query: String,
     },
+}
+
+/// A planning request limited to one project: the name the user said, and
+/// the active project it resolved to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectScope {
+    pub query: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+impl ProjectScope {
+    pub fn new(query: impl Into<String>) -> Self {
+        Self {
+            query: query.into(),
+            id: None,
+            name: None,
+        }
+    }
+
+    fn label(&self) -> &str {
+        self.name.as_deref().unwrap_or(&self.query)
+    }
 }
 
 /// What an `UpdateTask` changes. `due_date: Some(None)` clears the deadline.
@@ -248,10 +277,23 @@ impl Command {
                 quote(title.as_deref().unwrap_or(query), 80),
                 change.describe()
             ),
-            Self::Priorities { date } => format!("Show top priorities for {date}"),
-            Self::Suggest { minutes, .. } => {
-                format!("Suggest work for {}", planner::duration(*minutes))
-            }
+            Self::Priorities { date, project } => match project {
+                Some(pr) => format!(
+                    "Show top priorities in {} for {date}",
+                    quote(pr.label(), 60)
+                ),
+                None => format!("Show top priorities for {date}"),
+            },
+            Self::Suggest {
+                minutes, project, ..
+            } => match project {
+                Some(pr) => format!(
+                    "Suggest work in {} for {}",
+                    quote(pr.label(), 60),
+                    planner::duration(*minutes)
+                ),
+                None => format!("Suggest work for {}", planner::duration(*minutes)),
+            },
             Self::CreateProject { name } => format!("Create project {}", quote(name, 80)),
             Self::ListProjects => "List active projects".into(),
             Self::Agenda { date } => format!("Show the agenda for {date}"),
@@ -553,19 +595,21 @@ fn agenda_message(
 
 /// "Top 2 for Friday 2026-10-23: 1. Pay rent (overdue by 2 days, high
 /// priority). 2. Read." or, with a time budget, "For 45 min: …".
-fn plan_message(p: &planner::Proposal) -> String {
+fn plan_message(p: &planner::Proposal, project: Option<&str>) -> String {
     let day = format!(
         "{} {}",
         WEEKDAY_NAMES[validate::weekday(&p.date) as usize],
         p.date
     );
+    let within = project.map(|n| format!(" in “{n}”")).unwrap_or_default();
     if p.picks.is_empty() {
         return match (p.minutes, p.too_long) {
             (Some(m), n) if n > 0 => format!(
-                "Nothing open fits in {}; the shortest takes longer.",
+                "Nothing open{within} fits in {}; the shortest takes longer.",
                 planner::duration(m)
             ),
             _ if p.blocked > 0 => "Only tasks waiting on their subtasks are open.".into(),
+            _ if project.is_some() => format!("Nothing open{within}."),
             _ => "Nothing open. Nice.".into(),
         };
     }
@@ -595,12 +639,16 @@ fn plan_message(p: &planner::Proposal) -> String {
         .collect();
     match p.minutes {
         Some(m) => format!(
-            "For {} on {day}: {}. That's {} in all.",
+            "For {}{within} on {day}: {}. That's {} in all.",
             planner::duration(m),
             items.join(". "),
             planner::duration(p.total_minutes)
         ),
-        None => format!("Top {} for {day}: {}.", p.picks.len(), items.join(". ")),
+        None => format!(
+            "Top {}{within} for {day}: {}.",
+            p.picks.len(),
+            items.join(". ")
+        ),
     }
 }
 
@@ -863,8 +911,48 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     Err(m) => Err(ambiguity(&query, "active project", &m, |x| &x.name)),
                 }
             }
+            // Any id already present is ignored: the name is always resolved here.
+            Command::Priorities {
+                date,
+                project: Some(scope),
+            } => Ok(Command::Priorities {
+                date,
+                project: Some(self.resolve_scope(p, scope, t).await?),
+            }),
+            Command::Suggest {
+                date,
+                minutes,
+                project: Some(scope),
+            } => Ok(Command::Suggest {
+                date,
+                minutes,
+                project: Some(self.resolve_scope(p, scope, t).await?),
+            }),
             other => Ok(other),
         }
+    }
+
+    /// The one active project matching a planning request's project name.
+    async fn resolve_scope<C: CommandTargets>(
+        &self,
+        p: &Principal,
+        scope: ProjectScope,
+        t: &C,
+    ) -> Result<ProjectScope, JarvisError> {
+        let active = ProjectService::new(t.projects(), self.entropy, self.now)
+            .list(p, false)
+            .await
+            .map_err(|e| match e {
+                ProjectError::Backend(b) => JarvisError::Backend(b),
+                _ => JarvisError::Unresolved("Couldn't read your projects.".into()),
+            })?;
+        let pr = pick(&active, |x| &x.name, &scope.query)
+            .map_err(|m| ambiguity(&scope.query, "active project", &m, |x| &x.name))?;
+        Ok(ProjectScope {
+            id: Some(pr.id.clone()),
+            name: Some(pr.name.clone()),
+            query: scope.query,
+        })
     }
 
     /// The one open task whose title matches `query`.
@@ -1016,7 +1104,13 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         t: &C,
         date: &str,
         minutes: Option<u32>,
+        project: Option<&ProjectScope>,
     ) -> ActionResult {
+        let project_id = match project {
+            Some(ProjectScope { id: Some(id), .. }) => Some(id.clone()),
+            Some(pr) => return failure(format!("No project was resolved for “{}”.", pr.query)),
+            None => None,
+        };
         let open = match TaskService::new(t.tasks(), self.entropy, self.now)
             .list(p, Filter::Open)
             .await
@@ -1031,7 +1125,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
             } else {
                 planner::TOP
             }),
-            ..Default::default()
+            project_id,
         };
         let proposal = match planner::propose(&open, date, self.now, &c) {
             Ok(proposal) => proposal,
@@ -1039,7 +1133,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         };
         ActionResult {
             ok: true,
-            message: plan_message(&proposal),
+            message: plan_message(&proposal, project.map(ProjectScope::label)),
             entity: proposal.picks.first().map(|s| EntityRef {
                 kind: EntityKind::Task,
                 id: s.task_id.clone(),
@@ -1403,8 +1497,17 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                 query,
                 ..
             } => failure(format!("No task was resolved for “{query}”.")),
-            Command::Priorities { date } => self.plan_work(p, t, date, None).await,
-            Command::Suggest { date, minutes } => self.plan_work(p, t, date, Some(*minutes)).await,
+            Command::Priorities { date, project } => {
+                self.plan_work(p, t, date, None, project.as_ref()).await
+            }
+            Command::Suggest {
+                date,
+                minutes,
+                project,
+            } => {
+                self.plan_work(p, t, date, Some(*minutes), project.as_ref())
+                    .await
+            }
             Command::ListTasks => match tasks.list(p, Filter::Open).await {
                 Ok(open) => {
                     let mut top: Vec<&tasks::Task> =

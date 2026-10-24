@@ -751,6 +751,15 @@ async function local() {
       expect((await api.req("GET", `/api/v1/tasks/${quick.id}`)).json.priority === "high", "re-prioritized");
       const cleared = await api.req("PATCH", `/api/v1/tasks/${long.id}`, { body: { estimate_minutes: null } });
       expect(cleared.json.estimate_minutes === null, "estimate cleared");
+      // Constraint: one project (API and JARVIS).
+      const proj = (await api.req("POST", "/api/v1/projects", { body: { name: "Planner garden" } })).json;
+      const inProj = (await api.req("POST", "/api/v1/tasks", { body: { title: "Planner weed beds", project_id: proj.id } })).json;
+      const scoped = await api.req("GET", `/api/v1/tasks/plan?date=${today}&project_id=${proj.id}`);
+      expect(scoped.json.picks.length === 1 && scoped.json.picks[0].task_id === inProj.id, `project plan → ${scoped.text}`);
+      const said = await say("what should I do for project planner garden?");
+      expect(said.json.results[0].message === "Top 1 in “Planner garden” for Wednesday 2026-10-21: 1. Planner weed beds.", `jarvis project → ${said.text}`);
+      await api.req("DELETE", `/api/v1/tasks/${inProj.id}`);
+      await api.req("DELETE", `/api/v1/projects/${proj.id}`);
       for (const t of [urgent, quick, long]) await api.req("DELETE", `/api/v1/tasks/${t.id}`);
     });
 

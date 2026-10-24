@@ -132,6 +132,16 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-10-24 — Planner: plans can stay within one project (D-041)
+- **JARVIS:**
+  - `priorities` and `suggest` take "for|in|on project <name>",
+    resolved to an active project (or a clear "no project matches").
+  - The spoken answer says "in “Garden”".
+  - The AI command set may name a project too, resolved the same way.
+- **Web:** the Tasks plan panel follows the project filter.
+- **Tests:** verify ✅, smoke (project plan via API and JARVIS) ✅, e2e 32/32; core 133 (parser clauses, service flow with resolution and
+  ambiguity).
+
 ### 2026-10-24 — Optional AI intent parsing (D-043)
 - **Core:** `jarvis::ai`:
   - `TextModel` and `AiBudget` traits; `ParserThenModel` provider.

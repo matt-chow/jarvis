@@ -8,7 +8,7 @@
 //! parsed input. Any model failure falls back to the parser's own error.
 
 use super::parser::{self, ParseError, MAX_STEPS};
-use super::{Command, IntentProvider, JarvisError, TaskChange, MAX_INPUT};
+use super::{Command, IntentProvider, JarvisError, ProjectScope, TaskChange, MAX_INPUT};
 use crate::tasks::Priority;
 use crate::validate;
 use serde::Deserialize;
@@ -68,9 +68,13 @@ pub enum AiCommand {
     Priorities {
         #[serde(default)]
         date: Option<String>,
+        #[serde(default)]
+        project: Option<String>,
     },
     Suggest {
         minutes: u32,
+        #[serde(default)]
+        project: Option<String>,
     },
     ListTasks,
     Agenda {
@@ -90,8 +94,8 @@ Reply with ONLY a JSON array (no prose, no code fences). Each element is one of:
 {"type":"create_task","title":"…","due_date":"YYYY-MM-DD"?,"priority":"high|medium|low"?,"estimate_minutes":N?,"project":"name"?}
 {"type":"update_task","task":"words from the task's title","due_date":"YYYY-MM-DD"?,"clear_due_date":true?,"priority":"high|medium|low|none"?,"estimate_minutes":N?}
 {"type":"complete_task","task":"words from the task's title"}
-{"type":"priorities","date":"YYYY-MM-DD"?}   (what to do / focus on)
-{"type":"suggest","minutes":N}                (what fits in N free minutes)
+{"type":"priorities","date":"YYYY-MM-DD"?,"project":"name"?}   (what to do / focus on)
+{"type":"suggest","minutes":N,"project":"name"?}            (what fits in N free minutes)
 {"type":"list_tasks"}
 {"type":"agenda","date":"YYYY-MM-DD"?}        (schedule / calendar for a day)
 {"type":"capture","text":"…"}                 (anything else worth remembering)
@@ -147,6 +151,10 @@ pub fn commands_from_reply(reply: &str, today: &str) -> Result<Vec<Command>, Jar
     if raw.len() > MAX_STEPS {
         return Err(JarvisError::Parse(ParseError::TooManySteps));
     }
+    let scope = |p: Option<String>| -> Result<Option<ProjectScope>, JarvisError> {
+        p.map(|p| text(p, "project").map(ProjectScope::new))
+            .transpose()
+    };
     let minutes = |m: Option<u32>| match m {
         Some(m) if m == 0 || m > crate::tasks::MAX_ESTIMATE => Err(JarvisError::Invalid(
             "estimate_minutes",
@@ -196,16 +204,18 @@ pub fn commands_from_reply(reply: &str, today: &str) -> Result<Vec<Command>, Jar
                     task_id: None,
                     title: None,
                 },
-                AiCommand::Priorities { date } => Command::Priorities {
+                AiCommand::Priorities { date, project } => Command::Priorities {
                     date: date_or(today, date)?,
+                    project: scope(project)?,
                 },
-                AiCommand::Suggest { minutes } => {
+                AiCommand::Suggest { minutes, project } => {
                     if minutes == 0 || minutes > crate::planner::MAX_AVAILABLE {
                         return Err(JarvisError::Invalid("minutes", "must be 1 to 960"));
                     }
                     Command::Suggest {
                         date: today.to_owned(),
                         minutes,
+                        project: scope(project)?,
                     }
                 }
                 AiCommand::ListTasks => Command::ListTasks,
@@ -360,7 +370,8 @@ mod tests {
             got[2],
             Command::Suggest {
                 date: TODAY.into(),
-                minutes: 45
+                minutes: 45,
+                project: None
             }
         );
         let bad = |r: &str| commands_from_reply(r, TODAY).is_err();
