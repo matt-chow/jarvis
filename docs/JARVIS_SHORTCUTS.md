@@ -46,12 +46,15 @@ The response is always JSON with a `speech` line to read aloud:
 | `pending` | A change awaits confirmation (`needs_confirmation: true`). Nothing has changed yet. |
 | `failed` | It ran, but a step failed; `speech` says which. |
 | `cancelled` | You said no. |
-| `not_understood` / `unresolved` / `invalid` | Nothing ran; `speech` explains and suggests a phrasing. |
+| `expired` / `running` | The plan is over 10 minutes old, or is executing right now. |
+| `not_understood` / `unresolved` / `invalid` / `not_found` | Nothing ran; `speech` explains and suggests a phrasing. |
 
-Understanding problems come back as HTTP 200 with a `speech` line, so the
-Shortcut always has something to say. Auth failures are 401 (bad or revoked
-token) or 403 (wrong token type). HTTP 409 can't happen on `ask`: a repeated
-confirmation answers "That was already done."
+Understanding problems come back as HTTP 200 with a `speech` line. Other
+failures have no `speech`: 400 `invalid_json`, 401 (bad or revoked token),
+413 `too_large`, 502, and 503. Any device token is accepted on `ask`; a
+JARVIS-only token gets 403 `token_scope` on every other route. HTTP 409
+can't happen on `ask`: a repeated confirmation answers "That was already
+done." The full contract is in docs/IPHONE_SHORTCUT.md › API contract.
 
 ## Safety
 
@@ -73,36 +76,13 @@ confirmation answers "That was already done."
 - **AI is optional** (see below). Without it, JARVIS uses the
   deterministic parser, and everything here works.
 
-## Build the Shortcut (about 5 minutes)
+## Build the Shortcut
 
-First, in Directory → Settings → Device tokens, create a **JARVIS only**
-token named "iPhone Shortcut". Copy the `dir_…` secret; it's shown once.
-
-In the Shortcuts app, create a new shortcut named **JARVIS**:
-
-1. **Dictate Text**. Language: yours. Stop Listening: *After Pause*.
-2. **Format Date**: Current Date, Custom format `yyyy-MM-dd`.
-3. **Get Contents of URL**:
-   - URL: `https://<your host>/api/v1/jarvis/ask`
-   - Method: **POST**
-   - Headers: `Authorization` = `Bearer dir_…` (your token), and
-     `Content-Type` = `application/json`
-   - Request Body: **JSON**, with `text` = *Dictated Text* and `today` =
-     *Formatted Date*
-4. **Get Dictionary Value**: `speech` from *Contents of URL*.
-5. **Speak Text**: *Dictionary Value*.
-6. **Get Dictionary Value**: `needs_confirmation` from *Contents of URL*.
-7. **If** *Dictionary Value* **is** `1` (Shortcuts shows booleans as 1/0):
-   1. **Dictate Text** (for the yes/no answer).
-   2. **Get Dictionary Value**: `plan_id` from *Contents of URL*.
-   3. **Get Contents of URL**: the same URL, method, and headers. JSON body:
-      `text` = the new *Dictated Text*, `today` = *Formatted Date*,
-      `confirm` = *plan_id*.
-   4. **Get Dictionary Value**: `speech`, then **Speak Text**.
-8. **End If**.
-
-Keep the token out of shared shortcuts. If you share the shortcut, remove
-the header value first.
+Step-by-step instructions, with token handling and the full API contract,
+are in **docs/IPHONE_SHORTCUT.md**. In short: Dictate Text → Format Date
+(`yyyy-MM-dd`) → Get Contents of URL (POST JSON `{ text, today }`, Bearer
+JARVIS-only token) → Speak `speech` → if `status` is `pending`, dictate
+yes/no and POST again with `confirm` = `plan_id`.
 
 ## Activate it
 

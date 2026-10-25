@@ -62,8 +62,7 @@ preview_urls = false
 [[env.staging.d1_databases]]
 binding = "DB"
 database_name = "directory-db-staging"
-# Replace with the id printed by `npx wrangler d1 create directory-db-staging`.
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "8c5195a1-cd40-48d2-a30f-b0d9c5cd3832"
 migrations_dir = "migrations"
 
 [[env.staging.r2_buckets]]
@@ -72,9 +71,8 @@ binding = "FILES"
 bucket_name = "directory-files-staging"
 
 [env.staging.vars]
-# Set to the staging hostname before deploying, e.g.
-#   DIRECTORY_RP_ID = "directory-staging.<subdomain>.workers.dev"
-#   DIRECTORY_ORIGINS = "https://directory-staging.<subdomain>.workers.dev"
-# Left empty, sign-in fails closed (503 auth_not_configured).
-DIRECTORY_RP_ID = ""
-DIRECTORY_ORIGINS = ""
+# The staging hostname. Left empty, sign-in fails closed (503 auth_not_configured).
+DIRECTORY_RP_ID = "directory-staging.mchowcl.workers.dev"
+DIRECTORY_ORIGINS = "https://directory-staging.mchowcl.workers.dev"
+# Cap file storage per owner at 100 MB (default 1 GiB), far under R2's free 10 GB.
+DIRECTORY_QUOTA_BYTES = "104857600"

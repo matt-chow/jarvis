@@ -12,7 +12,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   project commands ✅, planner `priorities`/`suggest` and task updates ✅
   (D-041), iPhone via Apple Shortcuts `/jarvis/ask` + JARVIS-only tokens ✅
   (D-042, on-device check needs staging), optional free OpenRouter AI ✅ (D-043,
-  off until a key is set). Staging config ✅ (deploy is the owner's step). **M3:** search ✅ (offline too), files ✅ (read-only offline), library ✅ (offline too),
+  off until a key is set). **Staging deployed ✅** (2026-10-24,
+  https://directory-staging.mchowcl.workers.dev); on-iPhone Shortcut check pending. **M3:** search ✅ (offline too), files ✅ (read-only offline), library ✅ (offline too),
   offline editing ✅, wiki ✅. **M4:** habits ✅, calendar ✅, dashboard ✅, automations ✅, music ✅.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
@@ -53,8 +54,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   - PWA install and offline relaunch with the saved session.
   - Customizable Home dashboard (today, habits, recent notes, capture,
     status, modules), with the layout saved to the account.
-- **Not deployed.** Nothing has run on Cloudflare yet; that needs owner approval
-  (R2 activation asks for a payment method) and hostname vars.
+- **Staging is deployed** (owner-approved, 2026-10-24). Owner setup, the
+  iPhone passkey, Windows sign-in, and both device tokens are done, and the
+  remote smoke exited 0 (see the log entry for what that proves).
+  **Production is not deployed** (separate decision).
 - **Design:** no Paper handoff yet. All screens are provisional
   (docs/MODULES.md › Design status).
 
@@ -68,6 +71,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | `npm run test:handoff` | ✅ 50 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
 | `npm run test:browser` (headless Edge, virtual passkey) | ✅ 31/31 |
+| Staging: `BASE_URL=… npm run smoke` with tokens (owner, 2026-10-24) | ✅ exit 0; per-check lines not recorded |
+| Staging: tokenless remote checks (2026-10-24) | ✅ health, anonymous 401s, app shell, security headers |
 
 ### Known issues and technical debt
 - **CPU budget unmeasured:** ES256/RS256 verification in WASM has not been
@@ -97,10 +102,6 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   Projects, Notes, Journal, Inbox, and Settings.
 
 ### Unresolved decisions (need the owner)
-- **Staging deploy:** `wrangler login`, R2 activation (asks for a payment
-  method; free within limits), `d1 create directory-db-staging`, and the
-  staging hostname vars. Then run the on-iPhone checks in docs/STAGING.md ›
-  Verify. Everything else for staging is ready (005250e).
 - **Production deploy:** separate approval, after staging passes.
 - **AI key (optional):** create a $0 OpenRouter key, then set
   `OPENROUTER_API_KEY` and a `:free` `JARVIS_AI_MODEL` (D-043).
@@ -120,9 +121,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to delete the retired OneDrive copy of the repo (D-040).
 
 ### Next task
-1. Owner: staging deploy, then the iPhone Shortcut check
-   (docs/JARVIS_SHORTCUTS.md). Report any phrase JARVIS misunderstands;
-   it becomes a parser test.
+1. Owner: build the iPhone Shortcut (docs/IPHONE_SHORTCUT.md) and run its
+   first-run checks, including a confirmed "yes" (not yet exercised on
+   staging). Report any phrase JARVIS misunderstands; it becomes a parser
+   test. Also docs/STAGING.md §8 by hand and §9.
 2. Mail OAuth feasibility, once the owner has created the clients.
 3. Watch item: the intermittent "Offline edits" failure. Its likely cause
    is fixed (D-039); not proven.
@@ -131,6 +133,39 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-24 — Staging deployed; iPhone Shortcut guide
+- **Deployed** `directory-staging` to
+  https://directory-staging.mchowcl.workers.dev (owner-approved). Fixed the
+  staging D1 block in `wrangler.toml` (a pasted `[[d1_databases]]` header
+  had emptied it; binding must be `DB`), added the real database id,
+  hostname vars, and `DIRECTORY_QUOTA_BYTES` = 100 MB. Applied migrations
+  0001–0022 remotely; `npm run verify` passed first.
+- **Evidence:** health `ok`, `schema v22`, storage bound; anonymous
+  `/api/v1/tasks` and `/api/v1/jarvis/ask` → 401; a bad Bearer token → 401;
+  `/api/v1/auth/session` reports `setupRequired: false` (owner exists).
+  R2 r2.dev URL disabled.
+- **Owner-reported:** setup token set, first-run setup with an iPhone
+  passkey, Windows sign-in, two device tokens (Full "Staging smoke",
+  JARVIS-only "iPhone Shortcut"), and remote `npm run smoke` exit 0.
+  Caveat: the remote smoke prints `skip` and still exits 0 when a token
+  variable is missing, so exit 0 alone doesn't prove the file, task, and
+  JARVIS checks ran. The tokenless checks were re-run and pass. The remote
+  smoke covers JARVIS read + preview + "no", not a confirmed "yes".
+- **Docs:** new docs/IPHONE_SHORTCUT.md (numbered Shortcut build, token
+  handling, exact `/ask` contract, statuses, errors, commands).
+  docs/JARVIS_SHORTCUTS.md now points there; its status table gained
+  `expired`, `running`, `not_found`, and the non-200 errors. The old
+  "booleans show as 1/0" step was replaced by checking `status` =
+  `pending`. docs/STAGING.md status updated, plus a warning to read every
+  smoke line.
+- **Backend gaps for the Shortcut:** none blocking. Non-200 replies have no
+  `speech` (the Shortcut speaks a fallback). No per-token rate limit on
+  `/ask` (security-policy change; not proposed).
+- **Not verified:** the Shortcut on a real iPhone, a confirmed write via
+  `/ask` on staging, and Worker CPU for sign-in.
+- **Note:** `package.json` now has `"wrangler": "^4.152.0"` (uncommitted,
+  not made by this slice). AGENTS.md asks for exact pins; owner to decide.
 
 ### 2026-10-24 — Staging preparation: full guide, remote checks, Downloads cleanup
 - **"STAGING.md missing":** it existed only at the active repo path

@@ -7,10 +7,21 @@ Shortcut) before any production deploy. It has its own Worker
 own private R2 bucket (`directory-files-staging`), so it never touches
 production data. They are defined in `wrangler.toml` under `[env.staging]`.
 
-**Status (2026-10-24):** the repository side is ready, and
-`npx wrangler deploy --dry-run --env staging` builds with the staging
-bindings. Nothing has been created on Cloudflare and nothing is deployed.
-Every Cloudflare step below is yours to run.
+**Status (2026-10-24):** deployed at
+`https://directory-staging.mchowcl.workers.dev` (Worker `directory-staging`,
+D1 `directory-db-staging` at schema v22, private R2
+`directory-files-staging` with r2.dev disabled, 100 MB per-owner quota).
+- §1–§6 done: resources created, migrations applied, Worker deployed.
+- §7 done by the owner: setup token set, first-run setup with an iPhone
+  passkey, Windows sign-in, and two device tokens (`Staging smoke`, Full;
+  `iPhone Shortcut`, JARVIS only). The public session endpoint reports
+  `setupRequired: false`.
+- §8: the owner reports `npm run smoke` against staging exited 0. The
+  tokenless checks (health, anonymous 401s, app shell, security headers)
+  were re-run separately and passed. Whether the token checks ran or were
+  skipped wasn't recorded; see the note in §8.
+- Not yet done: the by-hand checks in §8, §9 (including a confirmed "yes"
+  through `/ask`), and the on-iPhone Shortcut (docs/IPHONE_SHORTCUT.md).
 
 How to read this guide:
 
@@ -316,9 +327,13 @@ It should end with `all checks passed`. The remote checks are:
 - JARVIS ask with a JARVIS-only token;
 - static app shell and security headers.
 
-(The same remote checks were run locally against an isolated Worker with
-`node scripts/remote-smoke-local.mjs`. They have **not yet run against
-staging**.)
+**Read every line, not just the exit code.** If a token variable is
+missing, its checks print `skip …` and the run still ends with `all checks
+passed` and exit code 0. A full run shows `ok` for all seven checks above
+and no `skip` lines.
+
+(The same remote checks also run locally against an isolated Worker:
+`npm run smoke:remote-local`.)
 
 ### By hand (🧑)
 
@@ -365,7 +380,7 @@ curl.exe -s -o NUL -w "%{http_code}`n" -H "Authorization: Bearer dir_…" "$base
 ```
 
 Delete "test the shortcut" in the app afterwards. Then build the Shortcut
-on the iPhone (docs/JARVIS_SHORTCUTS.md).
+on the iPhone (docs/IPHONE_SHORTCUT.md).
 
 ---
 
