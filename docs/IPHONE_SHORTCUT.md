@@ -1,5 +1,9 @@
 # JARVIS on iPhone: build the Shortcut
 
+> **Optional.** The primary iPhone experience is now **Ask** in the
+> Directory web app (docs/JARVIS_ASK.md, D-044). Build this Shortcut if
+> you also want JARVIS from Siri, the Action button, or the Lock Screen.
+
 This guide is a step-by-step walkthrough for building the **JARVIS**
 Shortcut on your iPhone. It takes about 10 minutes. It uses only Apple's
 built-in actions: **Dictate Text** to listen, **Get Contents of URL** to

@@ -4,7 +4,7 @@
  * should share these ids.
  */
 
-export type ModuleId = "home" | "search" | "inbox" | "tasks" | "projects" | "calendar" | "habits" | "notes" | "journal" | "library" | "music" | "files" | "jarvis" | "settings";
+export type ModuleId = "home" | "ask" | "search" | "inbox" | "tasks" | "projects" | "calendar" | "habits" | "notes" | "journal" | "library" | "music" | "files" | "jarvis" | "settings";
 
 export interface ModuleMeta {
   id: ModuleId;
@@ -19,6 +19,7 @@ export interface ModuleMeta {
 
 export const MODULES: readonly ModuleMeta[] = [
   { id: "home", label: "Home", glyph: "~", summary: "System status and overview.", stage: "ready", offline: true },
+  { id: "ask", label: "Ask", glyph: "◎", summary: "Talk or type to JARVIS. Changes wait for your confirm.", stage: "preview", offline: false },
   { id: "search", label: "Search", glyph: "⌕", summary: "Find anything across tasks, notes, projects, and journal.", stage: "preview", offline: false },
   { id: "inbox", label: "Inbox", glyph: "↓", summary: "Capture first, sort later: triage into tasks, notes, or the journal.", stage: "preview", offline: true },
   { id: "tasks", label: "Tasks", glyph: "☐", summary: "Tasks and subtasks with due dates and priorities.", stage: "preview", offline: true },
@@ -30,7 +31,7 @@ export const MODULES: readonly ModuleMeta[] = [
   { id: "library", label: "Library", glyph: "◫", summary: "PDFs and ePubs with reading progress.", stage: "preview", offline: false },
   { id: "music", label: "Music", glyph: "♫", summary: "Your audio files, playlists, and offline listening.", stage: "preview", offline: true },
   { id: "files", label: "Files", glyph: "▤", summary: "Private cloud storage.", stage: "preview", offline: false },
-  { id: "jarvis", label: "JARVIS", glyph: "◉", summary: "Text commands with preview and approval.", stage: "preview", offline: false },
+  { id: "jarvis", label: "JARVIS", glyph: "◉", summary: "Command console: preview and approval, presets, automations, history.", stage: "preview", offline: false },
   { id: "settings", label: "Settings", glyph: "§", summary: "Passkeys, device tokens, and sign-out.", stage: "ready", offline: false },
 ];
 

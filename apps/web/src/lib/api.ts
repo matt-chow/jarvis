@@ -19,6 +19,7 @@ import type { Note, NotePatch, NoteSummary } from "./notes";
 import type { Preferences, PreferencesPatch } from "./preferences";
 import type { NewProject, Project, ProjectPatch } from "./projects";
 import type { SearchHit } from "./search";
+import type { AskAnswer } from "./talk";
 import { localDate, type NewTask, type PlanProposal, type Task, type TaskFilter, type TaskPatch } from "./tasks";
 import type { AssertionJson, CreationOptionsJson, RegistrationJson, RequestOptionsJson } from "./webauthn";
 
@@ -257,6 +258,12 @@ export class Api {
   /** `today` (local) dates any automations the plan fires. */
   jarvisExecute = (id: string) => this.call<Plan>("POST", `/api/v1/jarvis/plans/${encodeURIComponent(id)}/execute?today=${localDate()}`);
   jarvisCancel = (id: string) => this.call<Plan>("POST", `/api/v1/jarvis/plans/${encodeURIComponent(id)}/cancel`);
+  /**
+   * One conversational turn (D-042, D-044): `{ speech, status, plan_id? }`.
+   * With `confirm`, `text` answers that pending plan ("yes" / "no").
+   */
+  jarvisAsk = (text: string, today: string, confirm?: string) =>
+    this.call<AskAnswer>("POST", "/api/v1/jarvis/ask", { text, today, confirm });
   jarvisHistory = async () => (await this.call<{ plans: Plan[] }>("GET", "/api/v1/jarvis/history")).plans;
   presets = async () => (await this.call<{ presets: Preset[] }>("GET", "/api/v1/jarvis/presets")).presets;
   createPreset = (name: string, input: string) => this.call<Preset>("POST", "/api/v1/jarvis/presets", { name, input });

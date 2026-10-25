@@ -13,7 +13,9 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   (D-041), iPhone via Apple Shortcuts `/jarvis/ask` + JARVIS-only tokens ✅
   (D-042, on-device check needs staging), optional free OpenRouter AI ✅ (D-043,
   off until a key is set). **Staging deployed ✅** (2026-10-24,
-  https://directory-staging.mchowcl.workers.dev); on-iPhone Shortcut check pending. **M3:** search ✅ (offline too), files ✅ (read-only offline), library ✅ (offline too),
+  https://directory-staging.mchowcl.workers.dev); on-iPhone Shortcut check pending.
+  **JARVIS Ask** ✅ locally (D-044): the web conversation is now the
+  primary iPhone path; not yet deployed or tried on an iPhone. **M3:** search ✅ (offline too), files ✅ (read-only offline), library ✅ (offline too),
   offline editing ✅, wiki ✅. **M4:** habits ✅, calendar ✅, dashboard ✅, automations ✅, music ✅.
 - **Works locally** (verified by automated tests):
   - Passkey owner setup and sign-in, sessions, sign-out.
@@ -43,6 +45,9 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   - Full JSON data export from Settings, and restore from an export
     (merge-only).
   - Library of PDFs/ePubs with reading progress, and an in-app ePub reader.
+  - JARVIS Ask (`#/ask`): full-screen phone conversation over
+    `/jarvis/ask` with the session cookie; Confirm and Cancel; keyboard
+    dictation fallback; optional voice reply.
   - JARVIS text commands (tasks, projects, agenda, habit check-ins, links,
     notes, journal, capture, list, find) with preview,
     approve, results, history, and saved presets.
@@ -71,6 +76,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 | `npm run test:handoff` | ✅ 50 passed |
 | `npm run smoke` (isolated wrangler dev, software authenticator) | ✅ all checks passed |
 | `npm run test:browser` (headless Edge, virtual passkey) | ✅ 31/31 |
+| `npm run ci` after JARVIS Ask (2026-10-24) | ✅ core 133, Vitest 118, handoff 50, smoke all passed, browser e2e 33/33 |
 | Staging: `BASE_URL=… npm run smoke` with tokens (owner, 2026-10-24) | ✅ exit 0; per-check lines not recorded |
 | Staging: tokenless remote checks (2026-10-24) | ✅ health, anonymous 401s, app shell, security headers |
 
@@ -109,9 +115,13 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - **Mail feasibility** (docs/MAIL_FEASIBILITY.md): create the Google OAuth
   client (Testing → In production, unverified), and try consent on the
   school Microsoft account. Both need a staging host for the redirect URI.
-- **Browser voice in the web app** (Web Speech API sends audio to the
-  browser vendor): still not approved. iPhone voice goes through Apple
-  Shortcuts instead (D-042).
+- **In-page speech recognition for JARVIS Ask** (D-044): change
+  `Permissions-Policy` to `microphone=(self)`. Security policy, owner
+  approval. The browser vendor's speech service (Apple on iPhone) hears
+  the audio; Directory gets text only. Until then, Ask uses keyboard
+  dictation.
+- **Deploy JARVIS Ask to staging** (`npm run deploy:staging`), then the
+  iPhone steps in docs/JARVIS_ASK.md.
 - **M4 time-based automations:** these need a Workers Cron Trigger (free
   tier) that runs saved commands with no signed-in request behind them.
   That is a new way of acting as the owner, so it is a security-policy
@@ -121,18 +131,62 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to delete the retired OneDrive copy of the repo (D-040).
 
 ### Next task
-1. Owner: build the iPhone Shortcut (docs/IPHONE_SHORTCUT.md) and run its
-   first-run checks, including a confirmed "yes" (not yet exercised on
-   staging). Report any phrase JARVIS misunderstands; it becomes a parser
-   test. Also docs/STAGING.md §8 by hand and §9.
-2. Mail OAuth feasibility, once the owner has created the clients.
-3. Watch item: the intermittent "Offline edits" failure. Its likely cause
+1. Owner: approve and deploy JARVIS Ask to staging, then run the iPhone
+   steps in docs/JARVIS_ASK.md (they include a confirmed "yes" on staging).
+   Decide on `microphone=(self)` (D-044). Report any phrase JARVIS
+   misunderstands; it becomes a parser test.
+2. Optional: the Apple Shortcut (docs/IPHONE_SHORTCUT.md), and
+   docs/STAGING.md §8 by hand and §9.
+3. Mail OAuth feasibility, once the owner has created the clients.
+4. Watch item: the intermittent "Offline edits" failure. Its likely cause
    is fixed (D-039); not proven.
-4. Measure Worker CPU on staging (`/auth/login/verify`).
+5. Measure Worker CPU on staging (`/auth/login/verify`).
 
 ---
 
 ## Log
+
+### 2026-10-24 — JARVIS Ask: mobile-first web conversation (D-044)
+- **New module `ask`** (`#/ask`, second in the tab bar and sidebar): a
+  full-screen phone conversation over the existing `POST
+  /api/v1/jarvis/ask`. No backend change; the parser, planner, and
+  approval are unchanged. It uses the passkey session cookie (`ask`
+  already accepted sessions, with the Origin check), so the page holds no
+  device token.
+- **Behaviour:**
+  - editable text box (Enter or Send), example chips, conversation bubbles
+    with the `speech` and status;
+  - Confirm and Cancel send `yes`/`no` with the original `plan_id`,
+    disabled while busy (a double tap sends once);
+  - a new request drops an unconfirmed change;
+  - actionable messages for network, 401 (then sign-in), 403, 413, 502,
+    and 503;
+  - optional voice reply (`speechSynthesis`, per-device toggle);
+  - offline: send and mic disabled with a message.
+- **Voice input:** `lib/speech.ts` feature-detects
+  `webkitSpeechRecognition`, a secure context, and the Permissions-Policy.
+  It handles denied permission, silence (engine or 8 s timeout), no mic,
+  network, discard, and a throwing start. Our own `_headers` deny the
+  microphone, so today the mic button falls back to focusing the box for
+  iPhone keyboard dictation. Enabling in-page recognition
+  (`microphone=(self)`) is proposed, awaiting approval. Apple has said
+  Home Screen web apps lack recognition (WebKit bug 225298). No audio is
+  ever recorded or uploaded by Directory.
+- **PWA:** manifest `shortcuts` → `/#/ask` (Android/desktop; iOS ignores
+  it). Already installable on iOS (standalone, apple metas, icon, safe
+  areas). Proposed: an "open Ask at launch" option and an install hint.
+- **Tests:** `lib/talk.test.ts` and `lib/speech.test.ts` (request body,
+  no token, confirm/cancel/once, drop, retry, errors, unsupported,
+  blocked, error mapping, silence, discard, synthesis). Browser e2e "Ask
+  (phone)" at 390×844: full screen, no horizontal scroll, policy fallback,
+  ask, confirm with a double tap → one task, cancel → none, anonymous →
+  401. Ask added to the accessibility sweep.
+- **Docs:** docs/JARVIS_ASK.md (new: how it works, iPhone test steps,
+  implemented/tested/unverified, proposals), D-044, MODULES.md,
+  SECURITY.md, and pointers in the Shortcut docs (now optional).
+- **Unverified on a real iPhone:** safe-area layout with the keyboard,
+  keyboard dictation in Safari and the Home Screen app, voice reply
+  unlocking, in-page recognition (blocked by policy).
 
 ### 2026-10-24 — Staging deployed; iPhone Shortcut guide
 - **Deployed** `directory-staging` to

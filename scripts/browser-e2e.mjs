@@ -616,7 +616,7 @@ try {
 
   await step("Accessibility: on every module, controls have accessible names and the page has a heading", async () => {
     const problems = [];
-    for (const m of ["home", "search", "inbox", "tasks", "projects", "calendar", "habits", "notes", "journal", "library", "music", "files", "jarvis", "settings"]) {
+    for (const m of ["home", "ask", "search", "inbox", "tasks", "projects", "calendar", "habits", "notes", "journal", "library", "music", "files", "jarvis", "settings"]) {
       await page.hash(`/${m}`);
       await waitFor(`${m} loaded`, async () => !/Loading/.test(await page.text()), 10_000).catch(() => {});
       for (const p of await audit(page)) problems.push(`${m}: ${p}`);
@@ -722,6 +722,61 @@ try {
     await page.waitForText("PENDING");
     await page.click("cancel");
     await page.waitForText("CANCELLED");
+  });
+
+  await step("Ask (phone): full screen, keyboard-dictation fallback, ask, confirm and cancel over /jarvis/ask (D-044)", async () => {
+    await page.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+    try {
+      await page.hash("/ask");
+      await page.waitForText("Changes wait for your confirm");
+      // Full screen on a phone: the composer, not the tab bar, sits at the bottom.
+      const bottom = await page.evaluate(`(() => { const el = document.elementFromPoint(195, 830); return el?.closest("nav") ? "nav" : el?.closest("form") ? "form" : String(el?.tagName); })()`);
+      if (bottom !== "form") throw new Error(`bottom of the screen is ${bottom}, expected the composer`);
+      const wide = await page.evaluate(`document.documentElement.scrollWidth > window.innerWidth`);
+      if (wide) throw new Error("horizontal scroll at phone width");
+      // The site's Permissions-Policy denies the microphone, so recognition is
+      // off; the mic opens the keyboard (whose dictation key still works).
+      await page.click("Dictate with the keyboard");
+      await page.waitForText("Type instead");
+      const focused = await page.evaluate(`document.activeElement?.getAttribute("aria-label")`);
+      if (focused !== "Message to JARVIS") throw new Error(`focus on ${focused}`);
+      await shot("ask-phone", { width: 390, height: 844 });
+
+      await page.fill("Message to JARVIS", "what should I do today");
+      await page.click("send");
+      await page.waitForText("Top ");
+
+      await page.fill("Message to JARVIS", "add task Ask from the phone due tomorrow");
+      await page.click("send");
+      await page.waitForText("Create task “Ask from the phone” due");
+      await page.waitForText("needs confirm");
+      const before = await page.evaluate(`fetch("/api/v1/tasks").then((r) => r.json())`);
+      if (before.tasks.some((t) => t.title === "Ask from the phone")) throw new Error("created before confirm");
+      // A double tap sends one confirmation (the buttons disable while it runs).
+      await page.evaluate(`(() => { const b = [...document.querySelectorAll("button")].find((x) => x.innerText.toLowerCase() === "confirm"); b.click(); b.click(); })()`);
+      await page.waitForText("Created task “Ask from the phone”");
+      await page.waitForText("confirmed");
+      const after = await page.evaluate(`fetch("/api/v1/tasks").then((r) => r.json())`);
+      const made = after.tasks.filter((t) => t.title === "Ask from the phone");
+      if (made.length !== 1 || !made[0].due_date) throw new Error(`expected one dated task, got ${JSON.stringify(made)}`);
+      if ((await page.text()).includes("That was already done")) throw new Error("confirm was sent twice");
+
+      await page.fill("Message to JARVIS", "add task Should not exist");
+      await page.click("send");
+      await page.waitForText("Create task “Should not exist”");
+      await page.click("cancel");
+      await page.waitForText("Okay, cancelled.");
+      const final = await page.evaluate(`fetch("/api/v1/tasks").then((r) => r.json())`);
+      if (final.tasks.some((t) => t.title === "Should not exist")) throw new Error("cancelled task was created");
+      await shot("ask-phone-conversation", { width: 390, height: 844 });
+
+      // Without the session cookie, the same request is refused.
+      const anon = await page.evaluate(`fetch("/api/v1/jarvis/ask", { method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "list tasks" }) }).then((r) => r.status)`);
+      if (anon !== 401) throw new Error(`anonymous ask → ${anon}`);
+    } finally {
+      await page.send("Emulation.clearDeviceMetricsOverride", {});
+    }
+    await page.hash("/settings");
   });
 
   await step("Settings lists one passkey; device token is shown once", async () => {

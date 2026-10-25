@@ -14,6 +14,7 @@ import { Home } from "./modules/Home";
 
 // Modules load on first use (each is its own chunk; the service worker
 // precaches them all, so they still open offline). Home is the default route.
+const Ask = lazy(() => import("./modules/Ask").then((m) => ({ default: m.Ask })));
 const Files = lazy(() => import("./modules/Files").then((m) => ({ default: m.Files })));
 const Inbox = lazy(() => import("./modules/Inbox").then((m) => ({ default: m.Inbox })));
 const Jarvis = lazy(() => import("./modules/Jarvis").then((m) => ({ default: m.Jarvis })));
@@ -38,6 +39,7 @@ export interface ModuleProps {
 
 const VIEWS: Record<ModuleId, ComponentType<ModuleProps>> = {
   home: Home,
+  ask: Ask,
   search: Search,
   inbox: Inbox,
   tasks: Tasks,

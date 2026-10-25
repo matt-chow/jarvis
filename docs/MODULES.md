@@ -7,6 +7,7 @@ JARVIS commands will refer to them.
 | Id | Name | Stage | Offline | Backend | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `home` | Home | ready | yes | `/api/v1/health`, `/api/v1/preferences` | Customizable dashboard: capture, today (events, tasks due/overdue with complete), habits to check off, recent notes, system status, modules. Reorder/hide/add widgets; the layout is saved to the account (works offline, syncs). |
+| `ask` | Ask | preview | no | `POST /api/v1/jarvis/ask` | JARVIS conversation, iPhone-first and full screen on phones (D-044). Type, or speak where the browser offers speech recognition and the site allows the microphone (feature-detected; otherwise the mic button opens the keyboard for system dictation). Each answer shows its `speech` and status; changes show Confirm and Cancel, which send `yes`/`no` with the plan id, once. Optional spoken replies (on-device speech synthesis). Uses the signed-in session, no device token. |
 | `search` | Search | preview | cached data | `/api/v1/search` | Debounced search over tasks, notes, projects, journal, calendar events (title, location, notes; opens that day), and habits, with highlighted titles and snippets, query in the URL (`#/search?q=`), and `/` to open from anywhere. Also the JARVIS `find …` command. Offline or with the server unreachable, it searches the copies cached on this device, ranked the same way (D-031). |
 | `inbox` | Inbox | preview | yes | `/api/v1/inbox` | Quick capture (also on Home); triage into task (first line becomes the title), note, or today's journal. Capture, discard, and triage all work offline (queued; triage files the item when it syncs, D-036). |
 | `tasks` | Tasks | preview | yes | `/api/v1/tasks` | Tasks and one-level subtasks, status, priority, due date, notes. Editable offline: changes queue and sync on reconnect. |
@@ -54,6 +55,7 @@ provisional (DECISIONS D-013): built from the shared `Panel`, `Button`, and
 | Files | `modules/Files.tsx` | awaiting design integration |
 | Settings | `modules/Settings.tsx` | awaiting design integration |
 | JARVIS console | `modules/Jarvis.tsx` | awaiting design integration |
+| JARVIS Ask (conversation) | `modules/Ask.tsx` | awaiting design integration |
 
 ## Adding a module
 

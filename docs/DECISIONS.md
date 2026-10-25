@@ -136,6 +136,47 @@ operations are ordered so that a failure can only leave a duplicate source
   during planning. Zero or several matches are rejected with a clear message
   rather than guessed.
 
+## D-044 — JARVIS Ask: the web conversation is the primary iPhone path
+**Status:** accepted (owner goal, 2026-10-24: "mobile-first JARVIS web
+interface … replacing the planned Apple Shortcuts integration as our
+primary iPhone experience"). The microphone header change below is
+**proposed, awaiting owner approval**.
+
+A new module, `ask` (`#/ask`, `modules/Ask.tsx`), is a conversation over
+the existing `POST /api/v1/jarvis/ask` contract (D-042). There is no new
+endpoint and no backend change. The parser, planner, approval, and
+once-only execution are unchanged.
+
+- **Auth:** the passkey session cookie, the same as every web screen.
+  `ask` already accepted sessions; cookie POSTs need an allowed `Origin`
+  (CSRF check), which same-origin `fetch` sends. The page never holds a
+  device token. JARVIS-only tokens stay for the optional Shortcut.
+- **Confirmation:** a `pending` answer shows Confirm and Cancel. They send
+  `text: "yes"` or `"no"` with `confirm: plan_id`. The client refuses a
+  second send while one is in flight, and the server runs a plan at most
+  once. Sending a new request drops (doesn't run) an unconfirmed change.
+- **Speech input:** feature-detected (`SpeechRecognition` /
+  `webkitSpeechRecognition`, a secure context, and the Permissions-Policy
+  where the browser exposes it). Directory never records or uploads
+  audio. When available, the *browser's* speech service transcribes:
+  Apple on iPhone and Mac Safari, Google in Chrome. Only the text reaches
+  Directory. When it's unavailable, the mic button focuses the text box,
+  so the iPhone keyboard's dictation key (system dictation) can be used.
+- **Current policy blocks web recognition:** the app shell sends
+  `Permissions-Policy: microphone=()` (docs/SECURITY.md). So today voice
+  input on the web is keyboard dictation. Turning on in-page recognition
+  needs `microphone=(self)` in `apps/web/public/_headers`. That is a
+  security-policy change (AGENTS.md), so it's not made here. Apple says
+  recognition is unavailable in Home Screen web apps (WebKit bug 225298),
+  so even with the change, an installed Directory may still need keyboard
+  dictation.
+- **Speech output:** optional "voice reply" (`speechSynthesis`, on-device
+  voices), off by default. The choice is a per-device `localStorage`
+  flag, which is not a secret.
+- **Reachability:** `ask` is second in the module list (the phone tab bar
+  and the sidebar). The PWA manifest gains a `shortcuts` entry
+  (`/#/ask`); Android and desktop Chrome honour it, iOS ignores it.
+
 ## D-043 — Optional AI intent parsing: OpenRouter free models, parser first
 **Status:** accepted (owner goal, 2026-10-24: "optional OpenRouter
 free-model adapter, $0 default budget, no automatic paid fallback")

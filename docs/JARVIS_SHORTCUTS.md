@@ -1,5 +1,8 @@
 # JARVIS on iPhone (Apple Shortcuts)
 
+> The primary iPhone path is now the web **Ask** screen
+> (docs/JARVIS_ASK.md, D-044). The Shortcut below is optional.
+
 JARVIS Alpha on iPhone is an Apple Shortcut. It uses Apple's built-in
 **Dictate Text** for speech input and **Speak Text** for replies, and sends
 the transcript to Directory over HTTPS. Directory has no custom speech

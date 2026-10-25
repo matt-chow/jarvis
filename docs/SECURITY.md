@@ -45,6 +45,9 @@ approval (AGENTS.md).
     `nosniff`.
   - `Referrer-Policy: strict-origin-when-cross-origin`, and a
     Permissions-Policy that denies camera, microphone, and geolocation.
+    JARVIS Ask therefore uses keyboard dictation; allowing
+    `microphone=(self)` for in-page speech recognition is proposed and
+    awaits owner approval (D-044, docs/JARVIS_ASK.md).
   - API responses: `no-store`.
 - **Offline data** (IndexedDB) stays in the owner's browser profile. The
   service worker never caches `/api/*`. Plain sign-out keeps the copy for
