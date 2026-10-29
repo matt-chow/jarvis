@@ -663,3 +663,34 @@ The choice ("Home Screen app opens on": Ask or Home) is per device, in
 `localStorage` (`launch:module`). It defaults to Ask on iPhone and iPad and to
 Home elsewhere. Browser tabs never redirect. The manifest, service worker,
 auth, and backend are unchanged.
+
+## D-046 — Paper design system: one remapped token set, integrated screen by screen
+**Status:** accepted (owner goal, 2026-10-28: "Treat Paper as the visual design
+source of truth and the existing Directory codebase as the functional source
+of truth"). Supersedes D-013 for the shell, Home, and Ask.
+
+- **One styling system.** Directory's token names (`canvas`, `panel`,
+  `sunken`, `ink`, `muted`, `accent`, …) were kept and remapped to Paper's
+  values for light and night, and the radius scale now follows Paper. So every
+  screen changed at once, and there's no second set of tokens or components to
+  drift. `Panel`, `Button`, and `StatusChip` now follow the style board.
+- **Fonts are self-hosted.** Geist and Geist Mono (OFL) are woff2 files in
+  `apps/web/src/assets/fonts`, not npm dependencies or Google Fonts. The CSP
+  stays `default-src 'self'`, and the service worker precaches them.
+- **Night** follows `prefers-color-scheme` unless the device chooses Light or
+  Night (Settings › *this device*; `localStorage`, applied before the first
+  render).
+- **Accessibility wins over pixel matching.** The tidal gradient starts at a
+  deeper periwinkle so white text stays ≥ 4.5:1, and contrast is
+  unit-tested for both themes.
+- **No inert design elements.** Paper cards with no data behind them (time
+  blocks, now playing, bookmarks, tracker) weren't built. "JARVIS suggests"
+  uses the existing read-only planner (D-041).
+- **Navigation:** the sidebar is grouped (main, Knowledge, Media, System),
+  with Settings in the account footer. The phone tab bar is Home, Tasks, the
+  JARVIS button (Ask), Projects, and Modules; Modules is a new launcher route
+  (`#/modules`) for everything else. ⌘J / Ctrl+J opens Ask.
+
+Screen-specific layouts for Tasks, Projects, Calendar, Habits, and the
+desktop JARVIS console wait on Paper access (docs/DESIGN_HANDOFF.md ›
+Blocked).

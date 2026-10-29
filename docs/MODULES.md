@@ -32,30 +32,33 @@ wraps the shell, and core `identity` provides `Principal` to every module API.
 
 ## Design status
 
-No Paper design handoff (`docs/DESIGN_HANDOFF.md`) exists yet. Every screen is
-provisional (DECISIONS D-013): built from the shared `Panel`, `Button`, and
-`StatusChip` components, with logic kept in `lib/` and hooks.
+The Paper design system is integrated (docs/DESIGN_HANDOFF.md, DECISIONS
+D-046). Every screen uses its tokens and the shared `Panel`, `Button`, and
+`StatusChip` components. A screen is *integrated* once its layout matches
+its Paper artboard; *design system* means it has the new look but its own
+layout, because the artboard hasn't been read yet or doesn't exist.
 
 | Screen | File | Status |
 | --- | --- | --- |
-| App shell (sidebar, header, tab bar) | `App.tsx` | provisional (Sprint 00 style) |
-| Sign-in / first-run setup | `components/AuthScreen.tsx` | awaiting design integration |
-| Home dashboard and widgets | `modules/Home.tsx`, `modules/widgets.tsx` | awaiting design integration |
-| Music and player bar | `modules/Music.tsx`, `components/Player.tsx` | awaiting design integration |
-| JARVIS automations panel | `modules/AutomationsPanel.tsx` | awaiting design integration |
-| Search | `modules/Search.tsx` | awaiting design integration |
-| Inbox + capture box | `modules/Inbox.tsx`, `components/CaptureBox.tsx` | awaiting design integration |
-| Tasks | `modules/Tasks.tsx` | awaiting design integration |
-| Projects | `modules/Projects.tsx` | awaiting design integration |
-| Habits | `modules/Habits.tsx` | awaiting design integration |
-| Calendar | `modules/Calendar.tsx` | awaiting design integration |
-| Notes | `modules/Notes.tsx` | awaiting design integration |
-| Journal | `modules/Journal.tsx` | awaiting design integration |
-| Library | `modules/Library.tsx` | awaiting design integration |
-| Files | `modules/Files.tsx` | awaiting design integration |
-| Settings | `modules/Settings.tsx` | awaiting design integration |
-| JARVIS console | `modules/Jarvis.tsx` | awaiting design integration |
-| JARVIS Ask (conversation) | `modules/Ask.tsx` | awaiting design integration |
+| App shell (sidebar, header, tab bar) | `App.tsx` | integrated (Desktop · Home, Mobile · Home) |
+| Sign-in / first-run setup | `components/AuthScreen.tsx` | design system |
+| Home dashboard and widgets | `modules/Home.tsx`, `modules/widgets.tsx`, `modules/Suggest.tsx` | integrated |
+| Music and player bar | `modules/Music.tsx`, `components/Player.tsx` | design system |
+| JARVIS automations panel | `modules/AutomationsPanel.tsx` | design system |
+| Search | `modules/Search.tsx` | design system |
+| Inbox + capture box | `modules/Inbox.tsx`, `components/CaptureBox.tsx` | design system |
+| Tasks | `modules/Tasks.tsx` | design system |
+| Projects | `modules/Projects.tsx` | design system |
+| Habits | `modules/Habits.tsx` | design system |
+| Calendar | `modules/Calendar.tsx` | design system |
+| Notes | `modules/Notes.tsx` | design system |
+| Journal | `modules/Journal.tsx` | design system |
+| Library | `modules/Library.tsx` | design system |
+| Files | `modules/Files.tsx` | design system |
+| Settings | `modules/Settings.tsx` | design system |
+| JARVIS console | `modules/Jarvis.tsx` | design system |
+| JARVIS Ask (conversation) | `modules/Ask.tsx` | integrated (Mobile · JARVIS · Voice) |
+| Modules launcher (phone tab) | `modules/Modules.tsx`, `components/ModuleGrid.tsx` | design system |
 
 ## Adding a module
 

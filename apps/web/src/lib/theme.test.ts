@@ -21,7 +21,7 @@ function contrast(a: string, b: string): number {
 
 // The light theme is the first block with hex values; the dark theme is the media-query block.
 const light = tokens(css.slice(css.indexOf("--panel: #") - 200, css.indexOf("prefers-color-scheme")));
-const dark = tokens(css.slice(css.indexOf("prefers-color-scheme")));
+const dark = tokens(css.slice(css.indexOf("prefers-color-scheme"), css.indexOf(':root[data-theme="night"]')));
 
 describe.each([
   ["light", light],
@@ -35,5 +35,32 @@ describe.each([
 
   it("button text on the accent is readable", () => {
     expect(contrast(t["accent-ink"], t.accent)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe("night theme", () => {
+  it("the forced Night block matches the system dark block", () => {
+    const forced = tokens(css.slice(css.indexOf(':root[data-theme="night"]')));
+    for (const [k, v] of Object.entries(dark)) expect(forced[k], `--${k}`).toBe(v);
+  });
+});
+
+describe("tidal gradient", () => {
+  it("white text is readable on every stop", () => {
+    const rule = css.slice(css.indexOf("@utility bg-tidal"));
+    const stops = [...rule.slice(0, rule.indexOf("}")).matchAll(/#[0-9a-fA-F]{6}/g)].map((m) => m[0]).filter((c) => c !== "#ffffff");
+    expect(stops.length).toBeGreaterThanOrEqual(3);
+    for (const stop of stops) expect(contrast("#ffffff", stop), stop).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe("theme choice", () => {
+  it("accepts the three choices and defaults to the system", async () => {
+    const { parseTheme } = await import("./theme");
+    expect(parseTheme("light")).toBe("light");
+    expect(parseTheme("night")).toBe("night");
+    expect(parseTheme("system")).toBe("system");
+    expect(parseTheme(null)).toBe("system");
+    expect(parseTheme("dark")).toBe("system");
   });
 });

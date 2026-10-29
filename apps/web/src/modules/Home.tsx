@@ -1,15 +1,16 @@
 import { useState, type ReactNode } from "react";
 import type { ModuleProps } from "../App";
 import { CaptureBox } from "../components/CaptureBox";
-import { Button, Panel, StageTag } from "../components/ui";
+import { ModuleGrid } from "../components/ModuleGrid";
+import { Button, Panel } from "../components/ui";
 import { useInbox } from "../hooks/useInbox";
 import { usePreferences } from "../hooks/usePreferences";
-import { formatTime } from "../lib/format";
-import { MODULES } from "../lib/modules";
+import { formatTime, greeting, longDay } from "../lib/format";
 import { WIDGETS, moveWidget, widgetsOf, type WidgetId } from "../lib/preferences";
+import { SuggestCard } from "./Suggest";
 import { HabitsWidget, NotesWidget, TodayWidget } from "./widgets";
 
-// Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
+// Paper "Desktop · Home" and "Mobile · Home" (docs/DESIGN_HANDOFF.md). Widgets stay customizable (D-023).
 
 const SW_TEXT: Record<ModuleProps["sw"]["kind"], string> = {
   ready: "App shell cached. Directory will open without a connection.",
@@ -20,7 +21,7 @@ const SW_TEXT: Record<ModuleProps["sw"]["kind"], string> = {
   error: "Service worker failed to register.",
 };
 
-const small = "min-h-7 px-2 text-[10px]";
+const small = "min-h-8 px-3 text-xs";
 /** Widgets that span both columns on wide screens. */
 const WIDE: ReadonlySet<WidgetId> = new Set(["capture", "modules"]);
 
@@ -28,6 +29,7 @@ export function Home(props: ModuleProps) {
   const { online, session } = props;
   const { prefs, error, update } = usePreferences(online);
   const [customizing, setCustomizing] = useState(false);
+  const now = new Date();
   const widgets = widgetsOf(prefs);
   const hidden = WIDGETS.filter((w) => !widgets.includes(w.id));
   /** Apply `f` to the latest layout (not this render's), so quick edits all count. */
@@ -35,17 +37,21 @@ export function Home(props: ModuleProps) {
 
   return (
     <div className="flex flex-col gap-5">
+      {/* Paper "Desktop · Home": date eyebrow and a light display greeting. */}
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="label">boot sequence complete</p>
-          <h2 className="mt-1 text-2xl font-semibold tracking-tight md:text-3xl">
-            Good to see you{session.status.kind === "signed-in" ? `, ${session.status.user.displayName.split(" ")[0]}` : ""}.
+        <div className="min-w-0">
+          <p className="label">{longDay(now)}</p>
+          <h2 className="mt-2 text-[34px] leading-[1.08] font-light tracking-[-0.02em] md:text-[48px] xl:text-[56px]">
+            {greeting(now.getHours())}
+            {session.status.kind === "signed-in" ? `, ${session.status.user.displayName.split(" ")[0]}` : ""}.
           </h2>
         </div>
         <Button className={small} disabled={!prefs} aria-pressed={customizing} onClick={() => setCustomizing((v) => !v)}>
           {customizing ? "done" : "customize"}
         </Button>
       </div>
+
+      <SuggestCard online={online} />
       {error && (
         <p role="alert" className="text-sm text-bad">
           {error}
@@ -74,9 +80,9 @@ export function Home(props: ModuleProps) {
       {widgets.length === 0 ? (
         <p className="text-sm text-muted">Your dashboard is empty. Use customize to add widgets.</p>
       ) : (
-        <div className="grid gap-5 lg:grid-cols-2">
+        <div className="grid gap-5 md:grid-cols-2">
           {widgets.map((id, i) => {
-            const className = WIDE.has(id) ? "lg:col-span-2" : undefined;
+            const className = WIDE.has(id) ? "md:col-span-2" : undefined;
             const body = <Widget id={id} props={props} className={customizing ? undefined : className} />;
             if (!customizing) return <div key={id} className="contents">{body}</div>;
             const label = WIDGETS.find((w) => w.id === id)!.label;
@@ -192,28 +198,8 @@ function StatusWidget({ props, className }: { props: ModuleProps; className?: st
 function ModulesWidget({ navigate, className }: { navigate: ModuleProps["navigate"]; className?: string }) {
   return (
     <div className={className}>
-      <p className="label mb-2">modules</p>
-      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {MODULES.filter((m) => m.id !== "home").map((m) => (
-          <li key={m.id}>
-            <button
-              type="button"
-              onClick={() => navigate(m.id)}
-              className="group flex h-full w-full flex-col rounded-md border border-line bg-panel p-4 text-left transition hover:border-accent"
-            >
-              <span className="flex items-center justify-between">
-                <span aria-hidden className="font-mono text-xl text-accent">
-                  {m.glyph}
-                </span>
-                <StageTag stage={m.stage} />
-              </span>
-              <span className="mt-3 font-medium">{m.label}</span>
-              <span className="mt-1 text-sm text-muted">{m.summary}</span>
-              <span className="label mt-3">{m.offline ? "works offline" : "needs connection"}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
+      <p className="label mb-3">modules</p>
+      <ModuleGrid navigate={navigate} exclude={["home", "modules"]} />
     </div>
   );
 }

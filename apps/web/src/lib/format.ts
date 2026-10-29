@@ -17,3 +17,16 @@ export function formatTime(ms: number): string {
 export function formatDate(ms: number): string {
   return new Date(ms).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
 }
+
+/** Home greeting by local hour (Paper: "Good morning, Matthew."). */
+export function greeting(hour: number): string {
+  if (hour < 5) return "Good evening";
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+/** Home eyebrow: "Wednesday, 21 October" in the device's locale. */
+export function longDay(date: Date): string {
+  return date.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" });
+}

@@ -9,6 +9,7 @@ import { KINDS, KIND_LABELS, planImport, type ExportPlan, type ImportKind, type 
 import type { ClientError } from "../lib/errors";
 import { formatDate } from "../lib/format";
 import { readLaunchChoice, writeLaunchChoice, type LaunchChoice } from "../lib/launch";
+import { readTheme, writeTheme, type Theme } from "../lib/theme";
 import { localDate } from "../lib/tasks";
 import { creationRequest, describePasskeyError, encodeRegistration } from "../lib/webauthn";
 
@@ -27,8 +28,26 @@ function describe(e: unknown): string {
 /** Per-device: where the Home Screen app opens (lib/launch.ts). Browser tabs always open Home. */
 function LaunchPanel() {
   const [choice, setChoice] = useState<LaunchChoice>(readLaunchChoice);
+  const [theme, setTheme] = useState<Theme>(readTheme);
   return (
     <Panel title="this device" className="lg:col-span-2">
+      <label className="mb-3 flex flex-wrap items-center gap-3 text-sm">
+        <span>Theme</span>
+        <select
+          value={theme}
+          onChange={(e) => {
+            const next = e.target.value as Theme;
+            setTheme(next);
+            writeTheme(next);
+          }}
+          aria-label="Theme"
+          className="min-h-9 rounded-sm border border-line bg-sunken/40 px-2 text-sm focus:border-accent"
+        >
+          <option value="system">Match the system</option>
+          <option value="light">Light</option>
+          <option value="night">Night</option>
+        </select>
+      </label>
       <label className="flex flex-wrap items-center gap-3 text-sm">
         <span>Home Screen app opens on</span>
         <select

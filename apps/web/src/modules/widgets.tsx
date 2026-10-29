@@ -10,7 +10,7 @@ import { formatDate, formatTime } from "../lib/format";
 import { weekday } from "../lib/habits";
 import { isOpen, localDate } from "../lib/tasks";
 
-// Provisional widgets: awaiting design integration (see docs/MODULES.md › Design status).
+// Paper "Desktop · Home" cards: round task checks, square habit marks, mono times.
 
 const link = "font-mono text-[11px] text-accent underline-offset-4 hover:underline";
 
@@ -45,18 +45,18 @@ export function TodayWidget({ online, className }: { online: boolean; className?
       ) : (
         <ul className="flex flex-col gap-1.5">
           {occ.map((o) => (
-            <li key={`${o.event.id}${o.start_date}`} className="flex items-baseline gap-3 text-sm">
+            <li key={`${o.event.id}${o.start_date}`} className="flex min-h-9 items-center gap-3 text-[15px]">
               <span className="w-24 shrink-0 font-mono text-[11px] text-muted">{timeLabel(o.event)}</span>
               <span className="truncate">{o.event.title}</span>
             </li>
           ))}
           {due.map((t) => (
-            <li key={t.id} className="flex items-center gap-3 text-sm">
+            <li key={t.id} className="flex min-h-9 items-center gap-3 text-[15px]">
               <button
                 type="button"
                 aria-label={`Complete “${t.title}”`}
                 onClick={() => void tasks.update(t.id, { status: "done" })}
-                className="grid size-5 shrink-0 place-items-center rounded-sm border border-line hover:border-accent"
+                className="grid size-[18px] shrink-0 place-items-center rounded-full border-[1.5px] border-muted transition hover:border-accent hover:bg-accent/10"
               />
               <a href={`#/tasks?task=${t.id}`} className="min-w-0 truncate hover:underline">
                 {t.title}
@@ -102,11 +102,11 @@ export function HabitsWidget({ online, className }: { online: boolean; className
                   type="button"
                   aria-pressed={done}
                   onClick={() => void state.check(h.id, today, !done)}
-                  className="flex w-full items-center gap-3 rounded-sm px-1 py-0.5 text-left text-sm hover:bg-sunken/60"
+                  className="flex min-h-9 w-full items-center gap-3 rounded-sm px-1 text-left text-[15px] hover:bg-sunken/60"
                 >
                   <span
                     aria-hidden
-                    className={`grid size-5 shrink-0 place-items-center rounded-sm border font-mono text-[11px] ${done ? "border-accent bg-accent text-accent-ink" : "border-line"}`}
+                    className={`grid size-[22px] shrink-0 place-items-center rounded-[6px] border font-mono text-[11px] transition ${done ? "border-accent bg-accent text-accent-ink" : "border-muted/50 bg-panel"}`}
                   >
                     {done ? "✓" : ""}
                   </span>
@@ -144,7 +144,7 @@ export function NotesWidget({ online, className }: { online: boolean; className?
         <ul className="flex flex-col gap-1">
           {recent.map((n) => (
             <li key={n.id}>
-              <a href={`#/notes?note=${n.id}`} className="flex items-baseline gap-3 rounded-sm px-1 py-0.5 text-sm hover:bg-sunken/60">
+              <a href={`#/notes?note=${n.id}`} className="flex min-h-9 items-center gap-3 rounded-sm px-1 text-[15px] hover:bg-sunken/60">
                 <span className="min-w-0 truncate">{n.title}</span>
                 <span className="ml-auto shrink-0 font-mono text-[11px] text-muted">
                   {new Date(n.updated_at).toDateString() === new Date().toDateString() ? formatTime(n.updated_at) : formatDate(n.updated_at)}

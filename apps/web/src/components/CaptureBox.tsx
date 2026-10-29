@@ -5,7 +5,7 @@ import { Button, inputClass } from "./ui";
 export function CaptureBox({
   onCapture,
   disabled,
-  placeholder = "Capture a thought, task, or idea…",
+  placeholder = "Capture a thought…",
 }: {
   onCapture: (text: string) => Promise<unknown>;
   disabled?: boolean;

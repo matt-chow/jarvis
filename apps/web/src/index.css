@@ -1,7 +1,28 @@
 @import "tailwindcss";
 
-/* Palette: warm paper / ink with an amber "phosphor" accent. Tokens are CSS
- * variables so light and dark share one set of Tailwind utilities. */
+/* Design system from Paper ("Directory — Design" › Design System, D-046):
+ * paper and ink with an indigo primary; violet and periwinkle only in the
+ * tidal gradient (JARVIS and hero surfaces). Tokens are CSS variables so light
+ * and night share one set of Tailwind utilities. */
+
+/* Geist and Geist Mono (OFL, assets/fonts/OFL.txt), latin subset, self-hosted
+ * so the service worker caches them and no third-party request is made. */
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("./assets/fonts/geist-latin-wght-normal.woff2") format("woff2-variations");
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("./assets/fonts/geist-mono-latin-wght-normal.woff2") format("woff2-variations");
+}
+
 @theme {
   --color-canvas: var(--canvas);
   --color-panel: var(--panel);
@@ -11,44 +32,69 @@
   --color-muted: var(--muted);
   --color-accent: var(--accent);
   --color-accent-ink: var(--accent-ink);
+  --color-violet: var(--violet);
+  --color-periwinkle: var(--periwinkle);
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-bad: var(--bad);
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Paper radii: rows and inputs 8, controls 14, cards 22. */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
 }
 
 :root {
-  --canvas: #f4efe4;
-  --panel: #fbf8f1;
-  --sunken: #ebe5d7;
-  --line: #d9d1bf;
-  --ink: #1d1b16;
-  --muted: #6b6457;
-  --accent: #9a560b; /* ≥ 4.5:1 on panel and sunken (WCAG AA) */
-  --accent-ink: #fffaf0;
+  --canvas: #f5f3ee; /* paper: app ground */
+  --panel: #fbfaf7; /* sheet: surfaces */
+  --sunken: #ecebe5; /* paper, pressed: inputs, hover, active nav */
+  --line: rgb(28 30 46 / 12%);
+  --ink: #1c1e2e;
+  --muted: #5f6275;
+  --accent: #3b3fa8; /* indigo: primary */
+  --accent-ink: #ffffff;
+  --violet: #7a4fc4;
+  --periwinkle: #8fa6e8;
   --ok: #2c7445;
-  --warn: #905b00;
+  --warn: #8a5600;
   --bad: #b23a32;
   color-scheme: light;
 }
 
+/* Night (Paper "· Night" artboards): follows the system unless this device chose a theme. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --canvas: #101217;
-    --panel: #171a21;
-    --sunken: #0c0e12;
-    --line: #2a2f3a;
-    --ink: #e8e3d7;
-    --muted: #8d919b;
-    --accent: #f2a541;
-    --accent-ink: #1a1206;
+  :root:not([data-theme="light"]) {
+    --canvas: #12131f;
+    --panel: #1b1d2d;
+    --sunken: #0d0e17;
+    --line: rgb(238 239 246 / 12%);
+    --ink: #eeeff6;
+    --muted: #9a9db3;
+    --accent: #8e93f0;
+    --accent-ink: #12131f;
     --ok: #7bd88f;
     --warn: #f2c14e;
     --bad: #ef6f6c;
     color-scheme: dark;
   }
+}
+
+:root[data-theme="night"] {
+  --canvas: #12131f;
+  --panel: #1b1d2d;
+  --sunken: #0d0e17;
+  --line: rgb(238 239 246 / 12%);
+  --ink: #eeeff6;
+  --muted: #9a9db3;
+  --accent: #8e93f0;
+  --accent-ink: #12131f;
+  --ok: #7bd88f;
+  --warn: #f2c14e;
+  --bad: #ef6f6c;
+  color-scheme: dark;
 }
 
 @layer base {
@@ -60,11 +106,9 @@
 
   body {
     background-color: var(--canvas);
-    /* Subtle dot grid: the retro "graph paper" texture. */
-    background-image: radial-gradient(color-mix(in srgb, var(--line) 70%, transparent) 1px, transparent 1px);
-    background-size: 22px 22px;
     color: var(--ink);
     font-family: var(--font-sans);
+    font-size: 15px;
     -webkit-font-smoothing: antialiased;
     -webkit-tap-highlight-color: transparent;
   }
@@ -75,16 +119,25 @@
   }
 
   ::selection {
-    background: color-mix(in srgb, var(--accent) 35%, transparent);
+    background: color-mix(in srgb, var(--accent) 25%, transparent);
   }
 }
 
+/* Mono micro label: dates, metadata, card eyebrows ("JARVIS SUGGESTS"). */
 @utility label {
   font-family: var(--font-mono);
   font-size: 0.6875rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+/* Tidal gradient: JARVIS and hero surfaces only. Paper starts at periwinkle
+ * (#8fa6e8, 2.4:1 under white text); a deeper periwinkle keeps every stop ≥ 4.5:1. */
+@utility bg-tidal {
+  background-color: #3b3fa8;
+  background-image: linear-gradient(135deg, #5a6bc8 0%, #3b3fa8 52%, #7a4fc4 100%);
+  color: #ffffff;
 }
 
 @utility pb-safe {

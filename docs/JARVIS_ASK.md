@@ -90,10 +90,10 @@ approval.
 1. In Safari on the iPhone, open
    `https://directory-staging.mchowcl.workers.dev` and sign in with your
    passkey.
-2. Tap **Ask** in the bottom tab bar (second from the left). The screen
+2. Tap the round **JARVIS** button in the middle of the bottom tab bar. The screen
    fills the phone: a ← back arrow, the JARVIS title, *voice reply*, and
-   *history* at the top, with the text box and a large mic button at the
-   bottom.
+   *history* at the top, the JARVIS orb in the middle, and the text box,
+   **Send**, and the round mic button at the bottom.
 3. Tap the **mic button**. You should see "Voice input is turned off for
    this site…" and the keyboard opens. Tap the keyboard's 🎤 key, say
    "What should I do today", and tap **Send** (or the keyboard's *send*

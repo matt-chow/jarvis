@@ -103,7 +103,7 @@ try {
     await page.fill("your name", "Browser Owner");
     await page.fill("setup token", server.setupToken);
     await page.click("create passkey");
-    await page.waitForText("Good to see you, Browser");
+    await waitFor("greeting", async () => /Good (morning|afternoon|evening), Browser\./.test(await page.text()));
   });
 
   await step("health shows database and storage ok", async () => {
@@ -779,6 +779,53 @@ try {
     await page.hash("/settings");
   });
 
+  await step("Paper shell (D-046): phone tab bar with the JARVIS button, Modules launcher, Ctrl+J, Night theme, JARVIS suggests", async () => {
+    // Desktop: the hero card is fed by the planner (a real task, not demo text).
+    await page.hash("/home");
+    await page.waitForText("JARVIS SUGGESTS");
+    await waitFor("a suggestion or an empty state", async () => /Start with “|Nothing open\. Nice\./.test(await page.text()));
+    await shot("home-desktop");
+    // Ctrl+J opens Ask from anywhere.
+    await page.evaluate(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "j", ctrlKey: true, bubbles: true }))`);
+    await page.waitForText("Changes wait for your confirm");
+    await page.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+    try {
+      await page.hash("/home");
+      await page.waitForText("JARVIS SUGGESTS");
+      const tabs = await page.evaluate(`[...document.querySelectorAll('nav[aria-label="Tabs"] li a')].filter((a) => a.offsetParent).map((a) => a.getAttribute("aria-label") ?? a.innerText.trim().split("\\n").pop())`);
+      if (JSON.stringify(tabs) !== JSON.stringify(["Home", "Tasks", "Ask JARVIS", "Projects", "Modules"])) throw new Error(`tab bar: ${JSON.stringify(tabs)}`);
+      const wide = await page.evaluate(`document.documentElement.scrollWidth > window.innerWidth`);
+      if (wide) throw new Error("horizontal scroll at phone width");
+      await shot("home-phone", { width: 390, height: 844 });
+      await page.click("Ask JARVIS");
+      await page.waitForText("Changes wait for your confirm");
+      await page.hash("/modules");
+      await page.waitForText("NEEDS CONNECTION");
+      await page.click("Calendar");
+      await waitFor("Calendar from Modules", async () => (await page.evaluate("location.hash")) === "#/calendar");
+      // The Modules tab stays highlighted for screens that aren't tabs.
+      const current = await page.evaluate(`document.querySelector('nav[aria-label="Tabs"] a[aria-current="page"]')?.innerText.trim().split("\\n").pop()`);
+      if (current !== "Modules") throw new Error(`current tab: ${current}`);
+      await page.hash("/modules");
+      await shot("modules-phone", { width: 390, height: 844 });
+    } finally {
+      await page.send("Emulation.clearDeviceMetricsOverride", {});
+    }
+    // Night theme: chosen per device in Settings, applied to <html>.
+    await page.hash("/settings");
+    await page.waitForText("Theme");
+    const pick = (v) => page.evaluate(`(() => { const s = document.querySelector('select[aria-label="Theme"]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(s, ${JSON.stringify(v)}); s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+    await pick("night");
+    if ((await page.evaluate(`document.documentElement.dataset.theme`)) !== "night") throw new Error("night not applied");
+    const ground = await page.evaluate(`getComputedStyle(document.body).backgroundColor`);
+    if (ground !== "rgb(18, 19, 31)") throw new Error(`night ground ${ground}`);
+    await page.hash("/home");
+    await page.waitForText("JARVIS SUGGESTS");
+    await shot("home-desktop-night");
+    await page.evaluate(`localStorage.removeItem("theme"); document.documentElement.removeAttribute("data-theme")`);
+    await page.hash("/settings");
+  });
+
   await step("Home Screen launch: the installed iPhone app opens on Ask; tabs, reloads, and chosen routes are kept", async () => {
     const heading = () => page.evaluate(`document.querySelector("h1")?.innerText ?? ""`);
     const fresh = async (path) => {
@@ -871,7 +918,7 @@ try {
     await page.click("sign out and forget this device");
     await page.waitForText("Delete everything saved in this browser?");
     await page.click("sign out and forget");
-    await page.waitForText("sign in with passkey".toUpperCase());
+    await page.waitForText("Sign in with passkey");
     if (await page.evaluate(cached)) throw new Error("cached tasks survived 'forget this device'");
   });
 
