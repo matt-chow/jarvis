@@ -154,6 +154,39 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-10-29 — JARVIS 2.0, slice 2: conversation and model tool loop (D-048)
+- **Core (`jarvis/chat.rs`, `conversation.rs`, `agent.rs`):** `chat` runs
+  one turn of a conversation. The parser goes first. What it doesn't
+  understand goes to the optional free model, which may run up to 6
+  read-only, owner-scoped lookups (tasks, a task, calendar ≤14 days,
+  projects, notes, a note, preferences) and then propose actions, ask one
+  question, or answer. That's at most 3 model calls, each counted by the
+  daily budget. A malformed reply gets one correction; outages, timeouts,
+  and a spent budget fall back to direct commands and say so. The model
+  sees short handles (`t3`, `b7`), never ids. Stored text reaches it only as
+  quoted DATA (`<`, `>`, and `|` replaced). Its actions become ordinary
+  commands, which are resolved, previewed, and approved as before.
+- **Conversation state** (30 min, bounded): recent items, the list just
+  shown ("the second one"), on-screen items (checked against the caller's
+  data), the last 6 turns (clipped), the pending plan, and open questions.
+  A typed "yes" or "no" decides the pending plan (with steps left out).
+  Corrections ("move the second session to tomorrow afternoon", "leave
+  Thursday free") replace the pending plan, and the old one can no longer
+  run. "Start over" resets the conversation.
+- **Worker:** `POST /api/v1/jarvis/chat` (session only).
+  `execute` takes an optional `{skip, conversation_id}`. The D1
+  conversation store is owner-scoped on read and write, and expired rows
+  are pruned. The OpenRouter call has a timeout (`JARVIS_AI_TIMEOUT_MS`,
+  default 12 s, aborted) and `max_tokens` 700.
+- **Verified:** core 179 tests (11 chat tests with a scripted model:
+  lookups → plan → move → keep-free → approve → undo, the §16 scenarios,
+  injection in stored text, forged handles, malformed and outage replies,
+  budget, model questions, cross-user screens and conversations, reset).
+  The smoke test has a new chat check, and all checks pass. Clippy is
+  clean (wasm too).
+- **Next:** the Ask UI on `/jarvis/chat` (preview cards, step toggles,
+  choices, undo), Settings for JARVIS preferences, browser e2e, and docs.
+
 ### 2026-10-29 — JARVIS 2.0, slice 1: scheduling plans, revalidation, undo (D-048)
 - **Core (`jarvis/expand.rs`, `schedule.rs`, `undo.rs`):** "find 4 hours
   for the essay by Friday", "make time for my assignments this week",

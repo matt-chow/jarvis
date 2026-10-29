@@ -1254,3 +1254,5 @@ fn a_repeated_create_reports_instead_of_duplicating() {
     assert!(ran.results[0].message.contains("already scheduled"));
     assert_eq!(f.blocks.0.borrow().len(), 1);
 }
+
+mod chat;

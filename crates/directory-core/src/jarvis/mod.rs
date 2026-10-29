@@ -6,7 +6,10 @@
 //! anything that writes waits for approval and runs exactly once. Every
 //! command executes through the owning module's service as the caller.
 
+pub mod agent;
 pub mod ai;
+pub mod chat;
+pub mod conversation;
 mod expand;
 pub mod parser;
 pub mod presets;
@@ -1301,19 +1304,24 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     date,
                 })
             }
-            Command::CompleteTask { query, .. } => {
-                let t = self.resolve_open_task(p, &query, t).await?;
+            Command::CompleteTask { query, task_id, .. } => {
+                let t = self.task_ref(p, &query, task_id.as_deref(), t).await?;
                 Ok(Command::CompleteTask {
                     task_id: Some(t.id),
                     title: Some(t.title),
                     query,
                 })
             }
-            Command::UpdateTask { query, change, .. } => {
+            Command::UpdateTask {
+                query,
+                change,
+                task_id,
+                ..
+            } => {
                 if change.is_empty() {
                     return Err(JarvisError::Invalid("change", "nothing to change"));
                 }
-                let t = self.resolve_open_task(p, &query, t).await?;
+                let t = self.task_ref(p, &query, task_id.as_deref(), t).await?;
                 Ok(Command::UpdateTask {
                     task_id: Some(t.id),
                     title: Some(t.title),
@@ -1410,6 +1418,35 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
             name: Some(pr.name.clone()),
             query: scope.query,
         })
+    }
+
+    /// The open task `task_id` names (a reference the conversation resolved;
+    /// checked to be the caller's), else the one whose title matches `query`.
+    async fn task_ref<C: CommandTargets>(
+        &self,
+        p: &Principal,
+        query: &str,
+        task_id: Option<&str>,
+        t: &C,
+    ) -> Result<tasks::Task, JarvisError> {
+        let Some(id) = task_id else {
+            return self.resolve_open_task(p, query, t).await;
+        };
+        let task = TaskService::new(t.tasks(), self.entropy, self.now)
+            .get(p, id)
+            .await
+            .map_err(|e| match e {
+                TaskError::Backend(b) => JarvisError::Backend(b),
+                _ => JarvisError::Unresolved("That task no longer exists.".into()),
+            })?;
+        if !task.status.is_open() {
+            return Err(JarvisError::Unresolved(format!(
+                "“{}” is already {}.",
+                task.title,
+                task.status.as_str()
+            )));
+        }
+        Ok(task)
     }
 
     /// The one open task whose title matches `query`.

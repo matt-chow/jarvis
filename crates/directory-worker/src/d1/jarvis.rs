@@ -1,6 +1,7 @@
 //! D1 implementation of `JarvisRepository` (migration 0010).
 
 use super::{changes, err, int, opt_text, stmt, text};
+use directory_core::jarvis::conversation::{Conversation, ConversationRepository};
 use directory_core::jarvis::{ActionResult, JarvisRepository, Plan, PlanStatus};
 use serde::Deserialize;
 use worker::D1Database;
@@ -167,5 +168,81 @@ impl JarvisRepository for D1JarvisRepository {
             .into_iter()
             .map(Plan::try_from)
             .collect()
+    }
+}
+
+/// Conversation state (migration 0024): one JSON row per conversation.
+pub struct D1ConversationRepository {
+    db: D1Database,
+}
+
+impl D1ConversationRepository {
+    pub fn new(db: D1Database) -> Self {
+        Self { db }
+    }
+}
+
+#[derive(Deserialize)]
+struct ConversationRow {
+    id: String,
+    owner_id: String,
+    state: String,
+    updated_at: f64,
+    expires_at: f64,
+}
+
+impl ConversationRepository for D1ConversationRepository {
+    async fn get(&self, owner_id: &str, id: &str) -> Result<Option<Conversation>, String> {
+        let row = stmt(
+            &self.db,
+            "SELECT id, owner_id, state, updated_at, expires_at FROM jarvis_conversations
+              WHERE owner_id = ?1 AND id = ?2",
+            &[text(owner_id), text(id)],
+        )?
+        .first::<ConversationRow>(None)
+        .await
+        .map_err(err)?;
+        let Some(r) = row else { return Ok(None) };
+        // A row that no longer parses (older shape) starts afresh.
+        let state = serde_json::from_str(&r.state).unwrap_or_default();
+        Ok(Some(Conversation {
+            id: r.id,
+            owner_id: r.owner_id,
+            state,
+            updated_at: r.updated_at as i64,
+            expires_at: r.expires_at as i64,
+        }))
+    }
+
+    async fn put(&self, c: &Conversation) -> Result<(), String> {
+        // The update only ever touches the owner's own row.
+        stmt(
+            &self.db,
+            "INSERT INTO jarvis_conversations (id, owner_id, state, updated_at, expires_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT (id) DO UPDATE SET state = excluded.state,
+                 updated_at = excluded.updated_at, expires_at = excluded.expires_at
+              WHERE jarvis_conversations.owner_id = excluded.owner_id",
+            &[
+                text(&c.id),
+                text(&c.owner_id),
+                text(&to_json(&c.state)?),
+                int(c.updated_at),
+                int(c.expires_at),
+            ],
+        )?
+        .run()
+        .await
+        .map_err(err)?;
+        // Expired conversations aren't kept.
+        stmt(
+            &self.db,
+            "DELETE FROM jarvis_conversations WHERE owner_id = ?1 AND expires_at < ?2",
+            &[text(&c.owner_id), int(c.updated_at)],
+        )?
+        .run()
+        .await
+        .map_err(err)?;
+        Ok(())
     }
 }

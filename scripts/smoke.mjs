@@ -674,6 +674,57 @@ async function local() {
       await api.req("DELETE", `/api/v1/tasks/${task.id}`);
     });
 
+    await check("jarvis chat (D-048): conversation, typed yes, follow-up pronoun, skip steps, undo, honest fallback", async () => {
+      expect((await fetch(`${baseUrl}/api/v1/jarvis/chat`, { method: "POST" })).status === 401, "anonymous → 401");
+      let conversation;
+      const say = async (text, extra = {}) => {
+        const r = await api.req("POST", "/api/v1/jarvis/chat", { body: { text, today: "2026-10-21", time: "09:00", conversation_id: conversation, ...extra } });
+        expect(r.status === 200, `chat ${text} → ${r.status} ${r.text}`);
+        conversation = r.json.conversation_id;
+        return r.json;
+      };
+      const add = await say("add task Chat smoke due tomorrow");
+      expect(add.status === "plan" && add.plan.status === "pending" && add.via === "parser", `add → ${JSON.stringify(add)}`);
+      expect(/^[0-9a-f]{32}$/.test(conversation), "conversation id");
+      const yes = await say("yes");
+      expect(yes.plan.status === "executed" && yes.plan.id === add.plan.id, `yes → ${JSON.stringify(yes)}`);
+      const task = (await api.req("GET", "/api/v1/tasks")).json.tasks.find((t) => t.title === "Chat smoke");
+      expect(task && task.due_date === "2026-10-22", "created once");
+      const again = await say("yes");
+      expect(again.status !== "plan", "a second yes approves nothing");
+
+      const done = await say("complete it");
+      expect(done.plan.actions[0].summary === "Complete task “Chat smoke”", `it → ${JSON.stringify(done)}`);
+      const ran = await api.req("POST", `/api/v1/jarvis/plans/${done.plan.id}/execute`, { body: { conversation_id: conversation } });
+      expect(ran.json.status === "executed", `execute → ${ran.text}`);
+      const undo = await say("undo the last change");
+      expect(undo.plan.status === "pending" && undo.plan.actions.length === 1, `undo → ${JSON.stringify(undo)}`);
+      const undone = await say("yes");
+      expect(undone.plan.status === "executed", `undo yes → ${JSON.stringify(undone)}`);
+      const reopened = (await api.req("GET", `/api/v1/tasks/${task.id}`)).json;
+      expect(reopened.status === "todo", `reopened → ${reopened.status}`);
+
+      const two = await say("add task Chat keep; add task Chat skip");
+      const skipped = await api.req("POST", `/api/v1/jarvis/plans/${two.plan.id}/execute`, { body: { skip: [1] } });
+      expect(skipped.json.results[1].skipped && !skipped.json.results[0].skipped, `skip → ${skipped.text}`);
+      const titles = (await api.req("GET", "/api/v1/tasks")).json.tasks.map((t) => t.title);
+      expect(titles.includes("Chat keep") && !titles.includes("Chat skip"), "left-out step not run");
+      const bad = await api.req("POST", `/api/v1/jarvis/plans/${two.plan.id}/execute`, { body: "{nope" });
+      expect(bad.status === 400 || bad.status === 409, `malformed body → ${bad.status}`);
+
+      const unknown = await say("could you reorganise my whole life");
+      if (!unknown.ai) {
+        expect(unknown.status === "not_understood" && unknown.examples.length > 0, `fallback → ${JSON.stringify(unknown)}`);
+      }
+      const forged = await say("list tasks", { conversation_id: "0".repeat(32) });
+      expect(forged.conversation_id !== "0".repeat(32), "unknown conversation ids start a new one");
+      const reset = await say("start over");
+      expect(reset.status === "reset", "reset");
+      for (const t of (await api.req("GET", "/api/v1/tasks")).json.tasks.filter((t) => t.title.startsWith("Chat "))) {
+        await api.req("DELETE", `/api/v1/tasks/${t.id}`);
+      }
+    });
+
     await check("jarvis projects: create, add a task to one (also within the same plan), list with progress", async () => {
       const plan = (input) => api.req("POST", "/api/v1/jarvis/plan", { body: { input, today: "2026-10-21" } });
       const both = await plan("new project Smoke Garden; add task sow seeds in project smoke garden due friday");
@@ -967,7 +1018,7 @@ async function local() {
       const phone = new Client(baseUrl);
       const ask = (body) => phone.req("POST", "/api/v1/jarvis/ask", { body, headers: auth });
       // Default deny: every other route refuses this token.
-      for (const [method, path] of [["GET", "/api/v1/tasks"], ["GET", "/api/v1/export"], ["GET", "/api/v1/files"], ["POST", "/api/v1/jarvis/plan"], ["GET", "/api/v1/auth/tokens"]]) {
+      for (const [method, path] of [["GET", "/api/v1/tasks"], ["GET", "/api/v1/export"], ["GET", "/api/v1/files"], ["POST", "/api/v1/jarvis/plan"], ["POST", "/api/v1/jarvis/chat"], ["GET", "/api/v1/auth/tokens"]]) {
         const r = await phone.req(method, path, { body: method === "POST" ? { input: "list tasks", today: "2026-10-21" } : undefined, headers: auth });
         expect(r.status === 403 && r.json.error === "token_scope", `${method} ${path} → ${r.status}`);
       }

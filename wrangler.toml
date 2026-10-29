@@ -47,7 +47,8 @@ DIRECTORY_ORIGINS = ""
 #   OPENROUTER_API_KEY    — optional, AI intent parsing (D-043, docs/JARVIS_SHORTCUTS.md).
 # Optional AI vars (AI stays off unless both the key and a ":free" model are set):
 #   JARVIS_AI_MODEL = "<openrouter model id ending in :free>"
-#   JARVIS_AI_DAILY = "40"   # most AI calls per owner per UTC day
+#   JARVIS_AI_DAILY = "40"   # most AI calls per owner per UTC day (a chat turn may use up to 3)
+#   JARVIS_AI_TIMEOUT_MS = "12000"   # per call; slower replies count as unavailable
 
 # ---------------------------------------------------------------------------
 # Staging (docs/STAGING.md): a separate Worker, D1 database, and private R2

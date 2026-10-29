@@ -28,7 +28,7 @@ use serde::Serialize;
 use worker::{Headers, Request, Response, Result};
 
 /// JSON request bodies larger than this are rejected before parsing.
-const MAX_JSON_BYTES: usize = 64 * 1024;
+pub(crate) const MAX_JSON_BYTES: usize = 64 * 1024;
 
 #[derive(Serialize)]
 struct ErrorBody<'a> {

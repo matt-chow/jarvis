@@ -15,3 +15,5 @@ pub const OPENROUTER_API_KEY: &str = "OPENROUTER_API_KEY";
 pub const AI_MODEL: &str = "JARVIS_AI_MODEL";
 /// Var (optional): most AI calls per owner per UTC day (default 40).
 pub const AI_DAILY: &str = "JARVIS_AI_DAILY";
+/// Var (optional): how long one AI call may take, in ms (default 12000, 2000–25000).
+pub const AI_TIMEOUT_MS: &str = "JARVIS_AI_TIMEOUT_MS";

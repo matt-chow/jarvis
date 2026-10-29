@@ -1,16 +1,19 @@
-//! JARVIS routes: plan (preview), execute (approve), cancel, history.
+//! JARVIS routes: chat (conversation), plan (preview), execute (approve),
+//! cancel, history.
 
 use super::auth::{jarvis_principal, principal};
-use super::{error, error_with, json, no_content, read_json};
+use super::{error, error_with, json, no_content, read_json, MAX_JSON_BYTES};
 use crate::ai::{DailyBudget, OpenRouter};
 use crate::d1::{
-    D1BlockRepository, D1EventRepository, D1HabitRepository, D1InboxRepository, D1JarvisRepository,
-    D1JournalRepository, D1LinkRepository, D1NoteRepository, D1PreferencesRepository,
-    D1PresetRepository, D1ProjectRepository, D1SearchSource, D1TaskRepository,
+    D1BlockRepository, D1ConversationRepository, D1EventRepository, D1HabitRepository,
+    D1InboxRepository, D1JarvisRepository, D1JournalRepository, D1LinkRepository, D1NoteRepository,
+    D1PreferencesRepository, D1PresetRepository, D1ProjectRepository, D1SearchSource,
+    D1TaskRepository,
 };
 use crate::{bindings, entropy::WebCryptoEntropy, try_or_respond};
 use directory_core::habits::HabitRepository;
 use directory_core::identity::Principal;
+use directory_core::jarvis::chat::{Assistant, ChatRequest};
 use directory_core::jarvis::parser::{ParseError, EXAMPLES};
 use directory_core::jarvis::presets::{NewPreset, PresetError, PresetService};
 use directory_core::jarvis::{
@@ -183,18 +186,75 @@ pub async fn plan(mut req: Request, rc: RouteContext<()>) -> Result<Response> {
     }
 }
 
-pub async fn execute(req: Request, rc: RouteContext<()>) -> Result<Response> {
+/// Optional body of `execute`: steps to leave out, and the conversation
+/// to tell about the result (so "undo that" and "it" work afterwards).
+#[derive(Default, serde::Deserialize)]
+struct Approval {
+    #[serde(default)]
+    skip: Vec<usize>,
+    #[serde(default)]
+    conversation_id: Option<String>,
+}
+
+pub async fn execute(mut req: Request, rc: RouteContext<()>) -> Result<Response> {
     let c = try_or_respond!(ctx(&req, &rc).await?);
+    let bytes = req.bytes().await?;
+    if bytes.len() > MAX_JSON_BYTES {
+        return error(413, "too_large");
+    }
+    let approval: Approval = if bytes.iter().all(u8::is_ascii_whitespace) {
+        Approval::default()
+    } else {
+        match serde_json::from_slice(&bytes) {
+            Ok(a) => a,
+            Err(e) => return error_with(400, "invalid_json", e.to_string()),
+        }
+    };
     let targets = Targets::from_env(&rc.env)?;
-    match c
-        .service()
-        .execute(&c.principal, &id_param(&rc), &targets)
+    let svc = c.service();
+    match svc
+        .execute_with(&c.principal, &id_param(&rc), &approval.skip, &targets)
         .await
     {
         Ok(plan) => {
             let today = super::automations::local_date(&req);
             fire_automations(&today, &rc.env, &c.principal, &plan, &targets).await;
+            if let Some(id) = &approval.conversation_id {
+                let convs = D1ConversationRepository::new(rc.env.d1(bindings::DB)?);
+                // The plan ran; failing to note it only weakens follow-ups.
+                if let Err(e) = svc.remember_plan(&c.principal, &convs, id, &plan).await {
+                    worker::console_error!("jarvis conversation note failed: {e:?}");
+                }
+            }
             json(200, &plan)
+        }
+        Err(e) => jarvis_error(e),
+    }
+}
+
+/// `POST /api/v1/jarvis/chat`: one conversational turn (D-048). Replies are
+/// always 200 with a `status`; only a backend failure is an error.
+pub async fn chat(mut req: Request, rc: RouteContext<()>) -> Result<Response> {
+    let c = try_or_respond!(ctx(&req, &rc).await?);
+    let input: ChatRequest = try_or_respond!(read_json(&mut req).await?);
+    let today = input.today.clone();
+    let targets = Targets::from_env(&rc.env)?;
+    let convs = D1ConversationRepository::new(rc.env.d1(bindings::DB)?);
+    let (model, budget) = ai_parts(&rc.env, &c.principal)?;
+    let ai = Assistant {
+        model: model.as_ref(),
+        budget: &budget,
+    };
+    match c
+        .service()
+        .chat(&c.principal, &ai, &convs, input, &targets)
+        .await
+    {
+        Ok(reply) => {
+            if let Some(plan) = &reply.plan {
+                fire_automations(&today, &rc.env, &c.principal, plan, &targets).await;
+            }
+            json(200, &reply)
         }
         Err(e) => jarvis_error(e),
     }

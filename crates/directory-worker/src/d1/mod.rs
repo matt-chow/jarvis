@@ -31,7 +31,7 @@ pub use files::D1FileRepository;
 pub use habits::D1HabitRepository;
 pub use identity::D1IdentityRepository;
 pub use inbox::D1InboxRepository;
-pub use jarvis::D1JarvisRepository;
+pub use jarvis::{D1ConversationRepository, D1JarvisRepository};
 pub use journal::D1JournalRepository;
 pub use library::D1LibraryRepository;
 pub use links::D1LinkRepository;

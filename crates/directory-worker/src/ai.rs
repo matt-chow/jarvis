@@ -9,15 +9,23 @@ use crate::d1::D1RateLimitStore;
 use directory_core::jarvis::ai::{is_free_model, AiBudget, TextModel};
 use directory_core::rate_limit::{self, Decision, Policy};
 use serde_json::{json, Value};
-use worker::{Date, Env, Fetch, Headers, Method, Request, RequestInit};
+use std::future::{poll_fn, Future};
+use std::pin::pin;
+use std::task::Poll;
+use std::time::Duration;
+use worker::{AbortController, Date, Delay, Env, Fetch, Headers, Method, Request, RequestInit};
 
 const ENDPOINT: &str = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_DAILY: u32 = 40;
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+const DEFAULT_TIMEOUT_MS: u64 = 12_000;
+/// Room for a chat turn's JSON (several actions), still small.
+const MAX_TOKENS: u32 = 700;
 
 pub struct OpenRouter {
     key: String,
     model: String,
+    timeout_ms: u64,
 }
 
 impl OpenRouter {
@@ -34,9 +42,16 @@ impl OpenRouter {
             );
             return None;
         }
+        let timeout_ms = env
+            .var(bindings::AI_TIMEOUT_MS)
+            .ok()
+            .and_then(|v| v.to_string().trim().parse().ok())
+            .unwrap_or(DEFAULT_TIMEOUT_MS)
+            .clamp(2_000, 25_000);
         Some(Self {
             key: key.trim().to_owned(),
             model: model.trim().to_owned(),
+            timeout_ms,
         })
     }
 }
@@ -50,7 +65,7 @@ impl TextModel for OpenRouter {
                 { "role": "user", "content": user },
             ],
             "temperature": 0,
-            "max_tokens": 400,
+            "max_tokens": MAX_TOKENS,
         });
         let headers = Headers::new();
         let set = |k: &str, v: &str| headers.set(k, v).map_err(|e| e.to_string());
@@ -62,19 +77,44 @@ impl TextModel for OpenRouter {
             .with_headers(headers.clone())
             .with_body(Some(body.to_string().into()));
         let req = Request::new_with_init(ENDPOINT, &init).map_err(|e| e.to_string())?;
-        let mut resp = Fetch::Request(req)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-        if resp.status_code() != 200 {
-            return Err(format!("openrouter status {}", resp.status_code()));
-        }
-        let v: Value = resp.json().await.map_err(|e| e.to_string())?;
+        let abort = AbortController::default();
+        let signal = abort.signal();
+        let call = async {
+            let mut resp = Fetch::Request(req)
+                .send_with_signal(&signal)
+                .await
+                .map_err(|e| e.to_string())?;
+            if resp.status_code() != 200 {
+                return Err(format!("openrouter status {}", resp.status_code()));
+            }
+            resp.json::<Value>().await.map_err(|e| e.to_string())
+        };
+        let Some(v) = within(call, self.timeout_ms).await else {
+            abort.abort();
+            return Err("openrouter timed out".into());
+        };
+        let v = v?;
         v.pointer("/choices/0/message/content")
             .and_then(Value::as_str)
             .map(str::to_owned)
             .ok_or_else(|| "openrouter reply without content".into())
     }
+}
+
+/// `f`'s output, or `None` if it takes longer than `ms`.
+async fn within<F: Future>(f: F, ms: u64) -> Option<F::Output> {
+    let mut f = pin!(f);
+    let mut timer = pin!(Delay::from(Duration::from_millis(ms)));
+    poll_fn(|cx| {
+        if let Poll::Ready(v) = f.as_mut().poll(cx) {
+            return Poll::Ready(Some(v));
+        }
+        if timer.as_mut().poll(cx).is_ready() {
+            return Poll::Ready(None);
+        }
+        Poll::Pending
+    })
+    .await
 }
 
 /// Per-owner daily cap, counted in D1 (the rate-limit table). Fails closed:
