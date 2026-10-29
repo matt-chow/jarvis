@@ -710,9 +710,17 @@ fn parse_scheduling(step: &str, lower: &str, today: &str) -> Result<Option<Comma
                 };
                 return Ok(Some(Command::ScheduleDue { by, keep: vec![] }));
             }
+            // "my essay" and "the essay" name the task "Essay".
             let query = match q {
                 "it" | "that" | "this" | "this task" | "that task" => String::new(),
-                _ => query.to_owned(),
+                _ => ["my ", "the "]
+                    .iter()
+                    .find_map(|a| {
+                        let named = query.get(..a.len())?.eq_ignore_ascii_case(a);
+                        query.get(a.len()..).filter(|_| named)
+                    })
+                    .unwrap_or(query)
+                    .to_owned(),
             };
             return Ok(Some(Command::ScheduleTask {
                 query,
@@ -1628,7 +1636,7 @@ mod link_tests {
         assert_eq!(
             one("find four hours for the essay by friday"),
             Command::ScheduleTask {
-                query: "the essay".into(),
+                query: "essay".into(),
                 task_id: None,
                 minutes: Some(240),
                 from: None,
@@ -1637,6 +1645,10 @@ mod link_tests {
                 keep: vec![],
             }
         );
+        match one("Find four hours for my Lab Report before Friday") {
+            Command::ScheduleTask { query, .. } => assert_eq!(query, "Lab Report"),
+            c => panic!("{c:?}"),
+        }
         match one("schedule time for it before friday") {
             Command::ScheduleTask {
                 query, minutes, by, ..

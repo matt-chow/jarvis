@@ -27,6 +27,7 @@
     "deploy": "npm run build && wrangler deploy",
     "deploy:staging": "npm run build && wrangler deploy --env staging",
     "test:browser": "node scripts/browser-e2e.mjs",
+    "eval:jarvis": "node scripts/jarvis-eval.mjs",
     "ci": "npm run verify && npm run smoke && npm run test:browser"
   },
   "devDependencies": {

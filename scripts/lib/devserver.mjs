@@ -29,10 +29,11 @@ function killTree(child) {
 }
 
 /**
- * @param {{ port?: number, name?: string }} opts
+ * @param {{ port?: number, name?: string, vars?: Record<string, string> }} opts
+ *   `vars` override the test defaults (the eval passes a real free model only when asked).
  * @returns {Promise<{ baseUrl: string, origin: string, rpId: string, setupToken: string, stop: () => void, logs: () => string }>}
  */
-export async function startDevServer({ port = 8790, name = "smoke" } = {}) {
+export async function startDevServer({ port = 8790, name = "smoke", vars = {} } = {}) {
   const stateDir = join(".wrangler", `${name}-state`);
   rmSync(join(ROOT, stateDir), { recursive: true, force: true });
   mkdirSync(join(ROOT, stateDir), { recursive: true });
@@ -52,7 +53,10 @@ export async function startDevServer({ port = 8790, name = "smoke" } = {}) {
       // so no request ever leaves for OpenRouter during tests.
       "OPENROUTER_API_KEY=sk-or-test-not-a-real-key",
       "JARVIS_AI_MODEL=example/paid-model",
-    ].join("\n"),
+    ]
+      .filter((line) => !(line.split("=")[0] in vars))
+      .concat(Object.entries(vars).map(([k, v]) => `${k}=${v}`))
+      .join("\n"),
   );
 
   // On Windows a just-stopped run can still hold the state files for a moment
