@@ -4,9 +4,9 @@ use super::auth::{jarvis_principal, principal};
 use super::{error, error_with, json, no_content, read_json};
 use crate::ai::{DailyBudget, OpenRouter};
 use crate::d1::{
-    D1EventRepository, D1HabitRepository, D1InboxRepository, D1JarvisRepository,
-    D1JournalRepository, D1LinkRepository, D1NoteRepository, D1PresetRepository,
-    D1ProjectRepository, D1SearchSource, D1TaskRepository,
+    D1BlockRepository, D1EventRepository, D1HabitRepository, D1InboxRepository, D1JarvisRepository,
+    D1JournalRepository, D1LinkRepository, D1NoteRepository, D1PreferencesRepository,
+    D1PresetRepository, D1ProjectRepository, D1SearchSource, D1TaskRepository,
 };
 use crate::{bindings, entropy::WebCryptoEntropy, try_or_respond};
 use directory_core::habits::HabitRepository;
@@ -40,6 +40,10 @@ fn jarvis_error(e: JarvisError) -> Result<Response> {
             error_with(400, "invalid_input", format!("{field}: {why}"))
         }
         JarvisError::Unresolved(message) => error_with(422, "unresolved", message),
+        JarvisError::Ambiguous { message, choices } => json(
+            422,
+            &body!({ "error": "ambiguous", "message": message, "choices": choices }),
+        ),
         JarvisError::NotFound => error(404, "not_found"),
         JarvisError::NotPending(status) => error_with(409, "not_pending", status.as_str()),
         JarvisError::Backend(detail) => {
@@ -60,6 +64,8 @@ pub(crate) struct Targets {
     events: D1EventRepository,
     habits: D1HabitRepository,
     links: D1LinkRepository,
+    blocks: D1BlockRepository,
+    preferences: D1PreferencesRepository,
 }
 
 impl Targets {
@@ -75,6 +81,8 @@ impl Targets {
             events: D1EventRepository::new(db()?),
             habits: D1HabitRepository::new(db()?),
             links: D1LinkRepository::new(db()?),
+            blocks: D1BlockRepository::new(db()?),
+            preferences: D1PreferencesRepository::new(db()?),
         })
     }
 }
@@ -89,6 +97,14 @@ impl CommandTargets for Targets {
     type Events = D1EventRepository;
     type Habits = D1HabitRepository;
     type Links = D1LinkRepository;
+    type Blocks = D1BlockRepository;
+    type Preferences = D1PreferencesRepository;
+    fn blocks(&self) -> &D1BlockRepository {
+        &self.blocks
+    }
+    fn preferences(&self) -> &D1PreferencesRepository {
+        &self.preferences
+    }
     fn links(&self) -> &D1LinkRepository {
         &self.links
     }
@@ -345,6 +361,7 @@ pub async fn ask(mut req: Request, rc: RouteContext<()>) -> Result<Response> {
     let input = PlanRequest {
         input: body.text,
         today,
+        time: None,
     };
     let (model, budget) = ai_parts(&rc.env, &c.principal)?;
     let provider = ParserThenModel {

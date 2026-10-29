@@ -153,6 +153,7 @@ pub fn from_error(e: &JarvisError) -> Option<Answer> {
         ),
         JarvisError::Invalid(field, why) => answer(format!("Invalid {field}: {why}."), "invalid"),
         JarvisError::Unresolved(message) => answer(message.clone(), "unresolved"),
+        JarvisError::Ambiguous { message, .. } => answer(message.clone(), "ambiguous"),
         JarvisError::NotFound => answer(
             "I couldn't find that request. Please ask again.",
             "not_found",
@@ -197,10 +198,14 @@ mod tests {
                     command: Command::ListTasks,
                     summary: (*s).into(),
                     risk: Risk::Write,
+                    notes: vec![],
+                    after: vec![],
                 })
                 .collect(),
             status,
             requires_approval: true,
+            reversed_by: None,
+            revises: None,
             created_at: 0,
             expires_at: 1,
             results: results
@@ -210,6 +215,7 @@ mod tests {
                     message: (*m).into(),
                     entity: None,
                     changed: false,
+                    ..Default::default()
                 })
                 .collect(),
         }

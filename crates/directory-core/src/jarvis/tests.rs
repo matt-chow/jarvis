@@ -1,4 +1,6 @@
 use super::*;
+use crate::blocks::memory::MemoryBlocks;
+use crate::blocks::{BlockRepository, TimeBlock};
 use crate::calendar::memory::MemoryEvents;
 use crate::calendar::{CalendarService, NewEvent};
 use crate::entropy::testing::CountingEntropy;
@@ -9,6 +11,7 @@ use crate::inbox::memory::MemoryInbox;
 use crate::journal::testing::MemoryJournal;
 use crate::links::testing::MemoryLinks;
 use crate::notes::testing::MemoryNotes;
+use crate::preferences::testing::MemoryPreferences;
 use crate::projects::memory::MemoryProjects;
 use crate::search::{Candidate, SearchKind, SearchSource};
 use crate::tasks::memory::MemoryTasks;
@@ -119,6 +122,17 @@ impl JarvisRepository for MemoryPlans {
         v.truncate(limit as usize);
         Ok(v)
     }
+    async fn mark_reversed(&self, owner_id: &str, id: &str, by: &str) -> Result<(), String> {
+        for p in self
+            .0
+            .borrow_mut()
+            .iter_mut()
+            .filter(|p| p.owner_id == owner_id && p.id == id)
+        {
+            p.reversed_by = Some(by.into());
+        }
+        Ok(())
+    }
 }
 
 const TODAY: &str = "2026-10-21";
@@ -141,6 +155,8 @@ struct F {
     events: MemoryEvents,
     habits: MemoryHabits,
     links: MemoryLinks,
+    blocks: MemoryBlocks,
+    prefs: MemoryPreferences,
     e: CountingEntropy,
 }
 
@@ -154,6 +170,14 @@ impl CommandTargets for F {
     type Events = MemoryEvents;
     type Habits = MemoryHabits;
     type Links = MemoryLinks;
+    type Blocks = F;
+    type Preferences = MemoryPreferences;
+    fn blocks(&self) -> &F {
+        self
+    }
+    fn preferences(&self) -> &MemoryPreferences {
+        &self.prefs
+    }
     fn links(&self) -> &MemoryLinks {
         &self.links
     }
@@ -183,6 +207,36 @@ impl CommandTargets for F {
     }
 }
 
+/// Sessions, linked to the fixture's own tasks.
+impl BlockRepository for F {
+    async fn list(&self, owner_id: &str, limit: u32) -> Result<Vec<TimeBlock>, String> {
+        self.blocks.list(owner_id, limit).await
+    }
+    async fn get(&self, owner_id: &str, id: &str) -> Result<Option<TimeBlock>, String> {
+        self.blocks.get(owner_id, id).await
+    }
+    async fn count(&self, owner_id: &str) -> Result<u32, String> {
+        self.blocks.count(owner_id).await
+    }
+    async fn insert(&self, block: &TimeBlock) -> Result<(), String> {
+        self.blocks.insert(block).await
+    }
+    async fn update(&self, block: &TimeBlock) -> Result<bool, String> {
+        self.blocks.update(block).await
+    }
+    async fn delete(&self, owner_id: &str, id: &str) -> Result<bool, String> {
+        self.blocks.delete(owner_id, id).await
+    }
+    async fn task_exists(&self, owner_id: &str, task_id: &str) -> Result<bool, String> {
+        Ok(self
+            .tasks
+            .0
+            .borrow()
+            .iter()
+            .any(|t| t.owner_id == owner_id && t.id == task_id))
+    }
+}
+
 impl F {
     fn svc(&self, now: i64) -> JarvisService<'_, MemoryPlans, CountingEntropy> {
         JarvisService::new(&self.plans, &self.e, now)
@@ -192,6 +246,7 @@ impl F {
     }
     fn plan_as(&self, p: &Principal, input: &str, now: i64) -> Result<Plan, JarvisError> {
         let req = PlanRequest {
+            time: None,
             input: input.into(),
             today: TODAY.into(),
         };
@@ -280,7 +335,11 @@ fn complete_resolves_by_title() {
         .any(|t| t.title == "Water plants" && t.status == Status::Done));
 
     match f.plan("complete pay") {
-        Err(JarvisError::Unresolved(msg)) => assert!(msg.contains("matches 2 open tasks"), "{msg}"),
+        Err(JarvisError::Ambiguous { message, choices }) => {
+            assert!(message.contains("matches 2 open tasks"), "{message}");
+            assert_eq!(choices.len(), 2);
+            assert_eq!(choices[0].kind, "task");
+        }
         other => panic!("{other:?}"),
     }
     assert!(matches!(
@@ -336,7 +395,7 @@ fn projects_create_list_and_receive_tasks() {
     );
 
     match f.plan("add task x in project ga") {
-        Err(JarvisError::Unresolved(msg)) => {
+        Err(JarvisError::Ambiguous { message: msg, .. }) => {
             assert!(msg.contains("matches 2 active projects"), "{msg}")
         }
         other => panic!("{other:?}"),
@@ -421,6 +480,7 @@ fn input_validation() {
         Err(JarvisError::Invalid("input", _))
     ));
     let bad_today = PlanRequest {
+        time: None,
         input: "list tasks".into(),
         today: "yesterday".into(),
     };
@@ -749,4 +809,448 @@ fn planning_can_be_limited_to_one_project() {
         Err(JarvisError::Unresolved(m)) => assert!(m.contains("No active project matches"), "{m}"),
         other => panic!("{other:?}"),
     }
+}
+
+// ---- JARVIS 2.0: scheduling, revalidation, skips, undo (D-048) ----
+
+use crate::blocks::{BlockPatch, BlockService, NewBlock};
+use crate::tasks::NewTask;
+
+/// A model stand-in: always proposes the same commands.
+struct Fixed(Vec<Command>);
+
+impl IntentProvider for Fixed {
+    async fn interpret(&self, _: &str, _: &str) -> Result<Vec<Command>, JarvisError> {
+        Ok(self.0.clone())
+    }
+}
+
+fn add_task(f: &F, p: &Principal, title: &str, estimate: Option<u32>, due: Option<&str>) -> String {
+    block_on(TaskService::new(&f.tasks, &f.e, 1).create(
+        p,
+        NewTask {
+            title: title.into(),
+            estimate_minutes: estimate,
+            due_date: due.map(Into::into),
+            ..Default::default()
+        },
+    ))
+    .unwrap()
+    .id
+}
+
+fn add_event(f: &F, title: &str, date: &str, start: &str, end: &str) {
+    block_on(CalendarService::new(&f.events, &f.e, 1).create(
+        &me(),
+        NewEvent {
+            title: title.into(),
+            start_date: date.into(),
+            start_time: Some(start.into()),
+            end_time: Some(end.into()),
+            ..Default::default()
+        },
+    ))
+    .unwrap();
+}
+
+fn add_block(f: &F, p: &Principal, title: &str, date: &str, start: &str, end: &str) -> String {
+    block_on(BlockService::new(f, &f.e, 1).create(
+        p,
+        NewBlock {
+            title: Some(title.into()),
+            date: date.into(),
+            start_time: start.into(),
+            end_time: end.into(),
+            ..Default::default()
+        },
+    ))
+    .unwrap()
+    .id
+}
+
+fn model_plan(f: &F, commands: Vec<Command>) -> Result<Plan, JarvisError> {
+    block_on(f.svc(1_000).plan(
+        &me(),
+        &Fixed(commands),
+        PlanRequest::new("model request", TODAY),
+        f,
+    ))
+}
+
+fn sessions(plan: &Plan) -> Vec<(String, String, String)> {
+    plan.actions
+        .iter()
+        .filter_map(|a| match &a.command {
+            Command::CreateBlock {
+                date,
+                start_time,
+                end_time,
+                ..
+            } => Some((date.clone(), start_time.clone(), end_time.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+fn minutes(s: &str) -> u32 {
+    validate::clock(s, true).unwrap()
+}
+
+#[test]
+fn scheduling_avoids_fixed_events_waits_for_approval_and_undoes() {
+    let f = F::default();
+    let essay = add_task(&f, &me(), "Essay", Some(180), Some("2026-10-23"));
+    add_event(&f, "Class", TODAY, "09:00", "12:00");
+
+    let plan = f.plan("find time for essay").unwrap();
+    assert!(plan.requires_approval);
+    let found = sessions(&plan);
+    let total: u32 = found.iter().map(|(_, s, e)| minutes(e) - minutes(s)).sum();
+    assert_eq!(total, 180);
+    for (d, s, e) in &found {
+        assert!(d.as_str() <= "2026-10-23", "by the due date");
+        assert!(
+            !(d == TODAY && minutes(s) < 12 * 60 && minutes(e) > 9 * 60),
+            "never over the class: {d} {s}–{e}"
+        );
+    }
+    assert!(f.blocks.0.borrow().is_empty(), "nothing before approval");
+
+    let done = f.execute(&plan.id, 2_000).unwrap();
+    assert_eq!(done.status, PlanStatus::Executed, "{:?}", done.results);
+    assert_eq!(f.blocks.0.borrow().len(), found.len());
+    assert!(f
+        .blocks
+        .0
+        .borrow()
+        .iter()
+        .all(|b| b.task_id.as_deref() == Some(essay.as_str())));
+
+    // Now covered: asking again says so instead of double-booking.
+    assert!(matches!(
+        f.plan("find time for essay"),
+        Err(JarvisError::Unresolved(m)) if m.contains("already has 3 h scheduled")
+    ));
+
+    let undo = f.plan("undo the last change").unwrap();
+    assert!(undo.requires_approval, "undo is a change too");
+    assert!(undo
+        .actions
+        .iter()
+        .all(|a| matches!(a.command, Command::Revert { .. })));
+    assert_eq!(undo.actions.len(), found.len());
+    let undone = f.execute(&undo.id, 3_000).unwrap();
+    assert_eq!(undone.status, PlanStatus::Executed, "{:?}", undone.results);
+    assert!(f.blocks.0.borrow().is_empty());
+    let original = block_on(f.svc(4_000).load(&me(), &plan.id)).unwrap();
+    assert_eq!(original.reversed_by.as_deref(), Some(undo.id.as_str()));
+
+    assert!(matches!(
+        f.plan("undo"),
+        Err(JarvisError::Unresolved(m)) if m == "There's no change to undo."
+    ));
+}
+
+#[test]
+fn a_new_clash_before_approval_stops_the_step() {
+    let f = F::default();
+    add_task(&f, &me(), "Essay", Some(60), Some("2026-10-23"));
+    let plan = f.plan("find 1 hour for essay").unwrap();
+    let (date, start, end) = sessions(&plan).remove(0);
+    add_event(&f, "Dentist", &date, &start, &end);
+
+    let ran = f.execute(&plan.id, 2_000).unwrap();
+    assert_eq!(ran.status, PlanStatus::Failed);
+    assert!(
+        ran.results[0].message.contains("now overlaps “Dentist”"),
+        "{}",
+        ran.results[0].message
+    );
+    assert!(f.blocks.0.borrow().is_empty(), "nothing written");
+}
+
+#[test]
+fn steps_can_be_left_out_but_not_ones_others_need() {
+    let f = F::default();
+    add_task(&f, &me(), "Essay", Some(180), Some("2026-10-23"));
+    let plan = f.plan("find 3 hours for essay").unwrap();
+    assert_eq!(plan.actions.len(), 3);
+    let svc = f.svc(2_000);
+    assert!(matches!(
+        block_on(svc.execute_with(&me(), &plan.id, &[0, 1, 2], &f)),
+        Err(JarvisError::Invalid("skip", _))
+    ));
+    assert!(matches!(
+        block_on(svc.execute_with(&me(), &plan.id, &[7], &f)),
+        Err(JarvisError::Invalid("skip", _))
+    ));
+    let ran = block_on(svc.execute_with(&me(), &plan.id, &[1], &f)).unwrap();
+    assert_eq!(ran.status, PlanStatus::Executed);
+    assert!(ran.results[1].skipped);
+    assert_eq!(f.blocks.0.borrow().len(), 2);
+
+    // A session for a task the same plan creates depends on that step.
+    let id = "ab".repeat(16);
+    let plan = model_plan(
+        &f,
+        vec![
+            Command::CreateTask {
+                id: Some(id.clone()),
+                title: "Lab report".into(),
+                due_date: Some("2026-10-23".into()),
+                project: None,
+                project_id: None,
+                priority: None,
+                estimate_minutes: Some(60),
+            },
+            Command::ScheduleTask {
+                query: String::new(),
+                task_id: Some(id.clone()),
+                minutes: None,
+                from: None,
+                by: None,
+                session_minutes: None,
+                keep: vec![],
+            },
+        ],
+    )
+    .unwrap();
+    assert_eq!(plan.actions[1].after, vec![0]);
+    assert!(matches!(
+        block_on(f.svc(2_000).execute_with(&me(), &plan.id, &[0], &f)),
+        Err(JarvisError::Invalid("skip", _))
+    ));
+    let ran = f.execute(&plan.id, 2_000).unwrap();
+    assert_eq!(ran.status, PlanStatus::Executed, "{:?}", ran.results);
+    assert!(f
+        .blocks
+        .0
+        .borrow()
+        .iter()
+        .any(|b| b.task_id.as_deref() == Some(id.as_str())));
+}
+
+#[test]
+fn rearranging_moves_only_clashing_flexible_sessions() {
+    let f = F::default();
+    let tomorrow = "2026-10-22";
+    let clashing = add_block(&f, &me(), "Reading", tomorrow, "10:00", "11:00");
+    let fine = add_block(&f, &me(), "Problem set", tomorrow, "13:00", "14:00");
+    add_event(&f, "Lab", tomorrow, "10:00", "12:00");
+
+    let plan = f.plan("rearrange tomorrow").unwrap();
+    assert_eq!(plan.actions.len(), 1, "{:?}", plan.actions);
+    match &plan.actions[0].command {
+        Command::MoveBlock {
+            block_id,
+            start_time,
+            end_time,
+            ..
+        } => {
+            assert_eq!(block_id, &clashing);
+            let (s, e) = (minutes(start_time), minutes(end_time));
+            assert!(e <= 10 * 60 || s >= 12 * 60, "clear of the lab");
+            assert!(e <= 13 * 60 || s >= 14 * 60, "clear of the other session");
+        }
+        other => panic!("{other:?}"),
+    }
+    f.execute(&plan.id, 2_000).unwrap();
+    let get = |id: &str| {
+        f.blocks
+            .0
+            .borrow()
+            .iter()
+            .find(|b| b.id == id)
+            .cloned()
+            .unwrap()
+    };
+    assert_ne!(get(&clashing).start_time, "10:00");
+    assert_eq!(get(&fine).start_time, "13:00", "untouched");
+
+    let undo = f.plan("undo that").unwrap();
+    f.execute(&undo.id, 3_000).unwrap();
+    assert_eq!(get(&clashing).start_time, "10:00", "moved back");
+}
+
+#[test]
+fn undo_never_overwrites_later_edits() {
+    let f = F::default();
+    add_task(&f, &me(), "Essay", Some(60), Some("2026-10-23"));
+    let plan = f.plan("find 1 hour for essay").unwrap();
+    f.execute(&plan.id, 2_000).unwrap();
+    let id = f.blocks.0.borrow()[0].id.clone();
+    // The owner moves the session by hand afterwards.
+    block_on(BlockService::new(&f, &f.e, 3_000).update(
+        &me(),
+        &id,
+        BlockPatch {
+            start_time: Some("16:00".into()),
+            end_time: Some("17:00".into()),
+            ..Default::default()
+        },
+    ))
+    .unwrap();
+
+    let undo = f.plan("undo").unwrap();
+    let ran = f.execute(&undo.id, 4_000).unwrap();
+    assert_eq!(ran.status, PlanStatus::Failed);
+    assert!(ran.results[0].message.contains("changed after"));
+    assert_eq!(f.blocks.0.borrow().len(), 1, "the edited session stays");
+    let original = block_on(f.svc(5_000).load(&me(), &plan.id)).unwrap();
+    assert!(original.reversed_by.is_none());
+}
+
+#[test]
+fn completing_a_task_can_be_undone() {
+    let f = F::default();
+    add_task(&f, &me(), "Water plants", None, None);
+    let plan = f.plan("complete water plants").unwrap();
+    f.execute(&plan.id, 2_000).unwrap();
+    assert_eq!(f.tasks.0.borrow()[0].status, Status::Done);
+    let undo = f.plan("undo").unwrap();
+    assert_eq!(
+        f.execute(&undo.id, 3_000).unwrap().status,
+        PlanStatus::Executed
+    );
+    assert_eq!(f.tasks.0.borrow()[0].status, Status::Todo);
+}
+
+#[test]
+fn other_users_items_and_forged_reversals_are_refused() {
+    let f = F::default();
+    let them = Principal {
+        user_id: "u2".into(),
+        method: AuthMethod::Session,
+    };
+    let their_task = add_task(&f, &them, "Their essay", Some(60), None);
+    let their_block = add_block(&f, &them, "Theirs", "2026-10-22", "10:00", "11:00");
+
+    let schedule = |task_id: &str| Command::ScheduleTask {
+        query: String::new(),
+        task_id: Some(task_id.into()),
+        minutes: Some(60),
+        from: None,
+        by: None,
+        session_minutes: None,
+        keep: vec![],
+    };
+    assert!(matches!(
+        model_plan(&f, vec![schedule(&their_task)]),
+        Err(JarvisError::Unresolved(m)) if m == "That task no longer exists."
+    ));
+    assert!(matches!(
+        model_plan(
+            &f,
+            vec![Command::MoveBlock {
+                block_id: their_block.clone(),
+                title: "x".into(),
+                date: "2026-10-23".into(),
+                start_time: "10:00".into(),
+                end_time: "11:00".into(),
+                expect: None,
+                overlaps: vec![],
+            }]
+        ),
+        Err(JarvisError::Unresolved(_))
+    ));
+    assert!(matches!(
+        model_plan(
+            &f,
+            vec![Command::Revert {
+                plan_id: "cd".repeat(16),
+                op: undo::UndoOp::DeleteBlock {
+                    id: their_block.clone(),
+                    title: "Theirs".into(),
+                    updated_at: 1,
+                },
+            }]
+        ),
+        Err(JarvisError::Invalid("command", _))
+    ));
+    // Asking to undo a plan that isn't yours finds nothing.
+    assert!(matches!(
+        model_plan(
+            &f,
+            vec![Command::Undo {
+                plan_id: Some("ef".repeat(16))
+            }]
+        ),
+        Err(JarvisError::NotFound)
+    ));
+    assert_eq!(f.blocks.0.borrow().len(), 1, "their session is untouched");
+}
+
+#[test]
+fn reviews_run_at_once_and_change_nothing() {
+    let f = F::default();
+    add_task(&f, &me(), "Essay", Some(180), Some("2026-10-23"));
+    let covered = add_task(&f, &me(), "Covered", Some(60), Some("2026-10-22"));
+    let id = add_block(&f, &me(), "Covered", "2026-10-22", "10:00", "11:00");
+    f.blocks.0.borrow_mut().iter_mut().for_each(|b| {
+        if b.id == id {
+            b.task_id = Some(covered.clone());
+        }
+    });
+
+    let plan = f.plan("what's still unscheduled this week").unwrap();
+    assert!(!plan.requires_approval);
+    assert_eq!(plan.status, PlanStatus::Executed);
+    let said = &plan.results[0].message;
+    assert!(
+        said.contains("Essay") && !said.contains("Covered"),
+        "{said}"
+    );
+
+    let free = f.plan("when am i free tomorrow").unwrap();
+    let said = &free.results[0].message;
+    assert!(
+        said.contains("09:00–10:00") && said.contains("11:00–17:00"),
+        "{said}"
+    );
+
+    let missed = f.plan("what did i forget to finish yesterday").unwrap();
+    assert_eq!(missed.status, PlanStatus::Executed);
+    assert_eq!(f.blocks.0.borrow().len(), 1);
+}
+
+#[test]
+fn standing_preferences_shape_scheduling_and_can_be_undone() {
+    let f = F::default();
+    add_task(&f, &me(), "Essay", Some(120), Some("2026-10-23"));
+    let plan = f.plan("from now on, no sessions after 3pm").unwrap();
+    assert!(plan.requires_approval, "saving a preference needs approval");
+    f.execute(&plan.id, 2_000).unwrap();
+
+    let schedule = f.plan("find time for essay").unwrap();
+    assert!(sessions(&schedule)
+        .iter()
+        .all(|(_, _, e)| minutes(e) <= 15 * 60));
+
+    let undo = f.plan("undo").unwrap();
+    f.execute(&undo.id, 3_000).unwrap();
+    let prefs =
+        block_on(crate::preferences::PreferencesService::new(&f.prefs, 1).get(&me())).unwrap();
+    assert_eq!(prefs.jarvis, None);
+}
+
+#[test]
+fn a_repeated_create_reports_instead_of_duplicating() {
+    let f = F::default();
+    let id = "12".repeat(16);
+    let command = Command::CreateBlock {
+        id: id.clone(),
+        task_id: None,
+        title: "Gym".into(),
+        date: "2026-10-22".into(),
+        start_time: "10:00".into(),
+        end_time: "11:00".into(),
+        overlaps: vec![],
+    };
+    let first = model_plan(&f, vec![command.clone()]).unwrap();
+    f.execute(&first.id, 2_000).unwrap();
+    let again = model_plan(&f, vec![command]).unwrap();
+    let ran = f.execute(&again.id, 3_000).unwrap();
+    assert!(ran.results[0].ok);
+    assert!(ran.results[0].message.contains("already scheduled"));
+    assert_eq!(f.blocks.0.borrow().len(), 1);
 }

@@ -7,10 +7,14 @@
 //! command executes through the owning module's service as the caller.
 
 pub mod ai;
+mod expand;
 pub mod parser;
 pub mod presets;
+pub mod schedule;
+pub mod undo;
 pub mod voice;
 
+use crate::blocks::BlockRepository;
 use crate::calendar::{CalendarService, EventRepository, Occurrence};
 use crate::entropy::{is_id, new_id, Entropy};
 use crate::habits::{HabitError, HabitRepository, HabitService, HabitView};
@@ -20,6 +24,7 @@ use crate::journal::{JournalError, JournalRepository, JournalService};
 use crate::links::{EntityKind, EntityRef, LinkError, LinkRepository, LinkService, NewLink};
 use crate::notes::{NewNote, NoteError, NoteRepository, NoteService};
 use crate::planner::{self, Constraints};
+use crate::preferences::PreferencesRepository;
 use crate::projects::{NewProject, ProjectError, ProjectRepository, ProjectService};
 use crate::search::{self, SearchError, SearchSource};
 use crate::tasks::{
@@ -38,6 +43,10 @@ const LIST_PREVIEW: usize = 10;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Command {
     CreateTask {
+        /// Chosen when the plan is made, so later steps can refer to the task
+        /// and a replayed step can't create it twice.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         title: String,
         due_date: Option<String>,
         /// Project named by the user ("… in project Garden").
@@ -114,6 +123,150 @@ pub enum Command {
     Find {
         query: String,
     },
+    /// Find work sessions for an open task (D-048). Becomes `CreateBlock`
+    /// steps when the plan is made; `task_id` may name a task an earlier step
+    /// creates.
+    ScheduleTask {
+        query: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        task_id: Option<String>,
+        /// Total minutes; default: what the estimate still needs.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        minutes: Option<u32>,
+        /// First date to use (default: today).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from: Option<String>,
+        /// Last date to use (default: the due date, else two weeks).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        by: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_minutes: Option<u32>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        keep: Vec<schedule::Keep>,
+    },
+    /// Sessions for every open task due by `by` that still needs time.
+    ScheduleDue {
+        by: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        keep: Vec<schedule::Keep>,
+    },
+    /// Re-place flexible sessions on `date` (between `start` and `end`)
+    /// around fixed commitments. Becomes `MoveBlock` steps.
+    Rearrange {
+        date: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        start: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        end: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        keep: Vec<schedule::Keep>,
+    },
+    CreateBlock {
+        /// Chosen when the plan is made (see `CreateTask::id`).
+        #[serde(default)]
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        task_id: Option<String>,
+        title: String,
+        date: String,
+        start_time: String,
+        end_time: String,
+        /// Titles it overlapped when proposed; anything new overlapping it
+        /// when it runs stops the step.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        overlaps: Vec<String>,
+    },
+    /// Move a session; `expect` is its `updated_at` when proposed.
+    MoveBlock {
+        block_id: String,
+        #[serde(default)]
+        title: String,
+        date: String,
+        start_time: String,
+        end_time: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expect: Option<i64>,
+        /// As for `CreateBlock`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        overlaps: Vec<String>,
+    },
+    DeleteBlock {
+        block_id: String,
+        #[serde(default)]
+        title: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expect: Option<i64>,
+    },
+    CreateEvent {
+        #[serde(default)]
+        id: String,
+        title: String,
+        date: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        start_time: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        end_time: Option<String>,
+        /// A fixed commitment (default) or flexible time.
+        #[serde(default = "yes")]
+        fixed: bool,
+    },
+    /// Move a single (non-repeating) event.
+    MoveEvent {
+        event_id: String,
+        #[serde(default)]
+        title: String,
+        date: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        start_time: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        end_time: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expect: Option<i64>,
+    },
+    AddSubtask {
+        #[serde(default)]
+        id: String,
+        parent_id: String,
+        #[serde(default)]
+        parent_title: String,
+        title: String,
+    },
+    /// Open tasks due by `to` whose sessions don't cover their estimate.
+    Unscheduled {
+        from: String,
+        to: String,
+    },
+    FreeTime {
+        from: String,
+        to: String,
+        /// Minutes since midnight on `from` when asked (time already gone
+        /// isn't free); filled in when the plan is made.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        now: Option<u32>,
+    },
+    /// What was left undone on `date`: open tasks due by then, and sessions
+    /// not marked done.
+    Missed {
+        date: String,
+    },
+    /// Reverse the latest change (or `plan_id`'s). Becomes `Revert` steps.
+    Undo {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        plan_id: Option<String>,
+    },
+    /// One recorded reversal from an executed plan.
+    Revert {
+        plan_id: String,
+        op: undo::UndoOp,
+    },
+    /// Save scheduling preferences the owner asked JARVIS to keep.
+    Remember {
+        prefs: crate::preferences::JarvisPrefs,
+    },
+}
+
+const fn yes() -> bool {
+    true
 }
 
 /// A planning request limited to one project: the name the user said, and
@@ -236,7 +389,12 @@ impl Command {
             | Self::Agenda { .. }
             | Self::Find { .. }
             | Self::Priorities { .. }
-            | Self::Suggest { .. } => Risk::Read,
+            | Self::Suggest { .. }
+            | Self::Unscheduled { .. }
+            | Self::FreeTime { .. }
+            | Self::Missed { .. } => Risk::Read,
+            Self::DeleteBlock { .. } => Risk::Destructive,
+            Self::Revert { op, .. } if op.deletes() => Risk::Destructive,
             _ => Risk::Write,
         }
     }
@@ -320,7 +478,110 @@ impl Command {
             Self::Capture { text } => format!("Capture to inbox: {}", quote(text, 60)),
             Self::ListTasks => "List open tasks".into(),
             Self::Find { query } => format!("Search for {}", quote(query, 60)),
+            Self::ScheduleTask { query, minutes, .. } => match minutes {
+                Some(m) => format!("Find {} for {}", planner::duration(*m), quote(query, 80)),
+                None => format!("Find time for {}", quote(query, 80)),
+            },
+            Self::ScheduleDue { by, .. } => {
+                format!("Find time for open tasks due by {}", day_label(by))
+            }
+            Self::Rearrange { date, .. } => {
+                format!("Rearrange flexible sessions on {}", day_label(date))
+            }
+            Self::CreateBlock {
+                title,
+                date,
+                start_time,
+                end_time,
+                ..
+            } => format!(
+                "Schedule {} {} {start_time}–{end_time}",
+                quote(title, 80),
+                day_label(date)
+            ),
+            Self::MoveBlock {
+                title,
+                date,
+                start_time,
+                end_time,
+                ..
+            } => format!(
+                "Move {} to {} {start_time}–{end_time}",
+                quote(title, 80),
+                day_label(date)
+            ),
+            Self::DeleteBlock { title, .. } => format!("Remove the session {}", quote(title, 80)),
+            Self::CreateEvent {
+                title,
+                date,
+                start_time,
+                end_time,
+                fixed,
+                ..
+            } => format!(
+                "Add {} {} on {}{}",
+                if *fixed { "event" } else { "flexible event" },
+                quote(title, 80),
+                day_label(date),
+                times_label(start_time.as_deref(), end_time.as_deref())
+            ),
+            Self::MoveEvent {
+                title,
+                date,
+                start_time,
+                end_time,
+                ..
+            } => format!(
+                "Move the event {} to {}{}",
+                quote(title, 80),
+                day_label(date),
+                times_label(start_time.as_deref(), end_time.as_deref())
+            ),
+            Self::AddSubtask {
+                title,
+                parent_title,
+                ..
+            } => format!(
+                "Add subtask {} to {}",
+                quote(title, 80),
+                quote(parent_title, 60)
+            ),
+            Self::Unscheduled { to, .. } => {
+                format!("Show tasks that still need time by {}", day_label(to))
+            }
+            Self::FreeTime { from, to, .. } if from == to => {
+                format!("Show free time on {}", day_label(from))
+            }
+            Self::FreeTime { from, to, .. } => format!(
+                "Show free time from {} to {}",
+                day_label(from),
+                day_label(to)
+            ),
+            Self::Missed { date } => format!("Show what was left undone on {}", day_label(date)),
+            Self::Undo { .. } => "Undo the last change".into(),
+            Self::Revert { op, .. } => op.summary(),
+            Self::Remember { prefs } => format!("Remember: {}", undo::describe_prefs(prefs)),
         }
+    }
+}
+
+/// "Thu 2026-11-05"
+pub fn day_label(date: &str) -> String {
+    match validate::date(date) {
+        Ok(d) => format!(
+            "{} {d}",
+            &WEEKDAY_NAMES[validate::weekday(&d) as usize][..3]
+        ),
+        Err(_) => date.to_owned(),
+    }
+}
+
+/// " 14:00–15:00", " at 14:00", or "" (all day).
+fn times_label(start: Option<&str>, end: Option<&str>) -> String {
+    match (start, end) {
+        (Some(s), Some(e)) => format!(" {s}–{e}"),
+        (Some(s), None) => format!(" at {s}"),
+        _ => String::new(),
     }
 }
 
@@ -343,9 +604,44 @@ pub struct PlannedAction {
     pub command: Command,
     pub summary: String,
     pub risk: Risk,
+    /// Things the owner should know before approving (overlaps, time that
+    /// couldn't be found, assumptions such as a default length).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+    /// Indexes of earlier steps this one needs (e.g. the task it schedules).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub after: Vec<usize>,
 }
 
+impl PlannedAction {
+    pub fn new(command: Command) -> Self {
+        Self {
+            summary: command.summary(),
+            risk: command.risk(),
+            command,
+            notes: vec![],
+            after: vec![],
+        }
+    }
+}
+
+/// A calendar item a result refers to (time blocks and events aren't
+/// linkable entities), for linking in the UI.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Item {
+    pub kind: ItemKind,
+    pub id: String,
+    pub date: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ItemKind {
+    Block,
+    Event,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActionResult {
     pub ok: bool,
     pub message: String,
@@ -356,6 +652,14 @@ pub struct ActionResult {
     /// D-024). Not stored.
     #[serde(skip)]
     pub changed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item: Option<Item>,
+    /// How to reverse this step, recorded when it ran (D-048).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undo: Option<undo::UndoOp>,
+    /// The owner left this step out when approving.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub skipped: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -410,6 +714,12 @@ pub struct Plan {
     pub created_at: i64,
     pub expires_at: i64,
     pub results: Vec<ActionResult>,
+    /// The plan that undid this one, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reversed_by: Option<String>,
+    /// The pending plan this one replaced (an edit before approval).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revises: Option<String>,
 }
 
 impl Plan {
@@ -427,6 +737,54 @@ pub struct PlanRequest {
     pub input: String,
     /// The user's local date (`YYYY-MM-DD`), for "today", "tomorrow", weekdays.
     pub today: String,
+    /// The user's local time (`HH:MM`), so nothing is scheduled in the past.
+    /// Without it the whole of today counts as ahead.
+    #[serde(default)]
+    pub time: Option<String>,
+}
+
+/// Most steps one plan may have (after expansion).
+pub const MAX_PLAN_STEPS: usize = 20;
+
+/// The caller's local date and time: "today" and "now" for every relative
+/// date and for scheduling (wall clock, so DST never shifts anything).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Clock {
+    pub today: String,
+    /// Minutes since local midnight.
+    pub minutes: u32,
+}
+
+impl Clock {
+    pub fn new(today: &str, time: Option<&str>) -> Result<Self, JarvisError> {
+        let today = validate::date(today).map_err(|w| JarvisError::Invalid("today", w))?;
+        let minutes = match time {
+            Some(t) => validate::clock(t, false).map_err(|w| JarvisError::Invalid("time", w))?,
+            None => 0,
+        };
+        Ok(Self { today, minutes })
+    }
+
+    pub fn from_request(req: &PlanRequest) -> Result<Self, JarvisError> {
+        Self::new(&req.today, req.time.as_deref())
+    }
+
+    pub fn now(&self) -> schedule::Now {
+        schedule::Now {
+            date: self.today.clone(),
+            minutes: self.minutes,
+        }
+    }
+}
+
+impl PlanRequest {
+    pub fn new(input: impl Into<String>, today: impl Into<String>) -> Self {
+        Self {
+            input: input.into(),
+            today: today.into(),
+            time: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -435,6 +793,11 @@ pub enum JarvisError {
     Invalid(&'static str, &'static str),
     /// A command couldn't be resolved (e.g. no or several matching tasks).
     Unresolved(String),
+    /// A name matched several items; the owner picks one (D-048).
+    Ambiguous {
+        message: String,
+        choices: Vec<Choice>,
+    },
     NotFound,
     /// The plan is not pending (already run, cancelled, or expired).
     NotPending(PlanStatus),
@@ -456,6 +819,8 @@ pub trait JarvisRepository {
     /// Move `pending` → `cancelled`; `false` if it wasn't pending.
     async fn cancel(&self, owner_id: &str, id: &str) -> Result<bool, String>;
     async fn history(&self, owner_id: &str, limit: u32) -> Result<Vec<Plan>, String>;
+    /// Record that plan `by` undid plan `id`.
+    async fn mark_reversed(&self, owner_id: &str, id: &str, by: &str) -> Result<(), String>;
 }
 
 /// Module repositories commands execute through, provided by each host
@@ -470,6 +835,8 @@ pub trait CommandTargets {
     type Events: EventRepository;
     type Habits: HabitRepository;
     type Links: LinkRepository;
+    type Blocks: BlockRepository;
+    type Preferences: PreferencesRepository;
     fn tasks(&self) -> &Self::Tasks;
     fn notes(&self) -> &Self::Notes;
     fn journal(&self) -> &Self::Journal;
@@ -479,6 +846,8 @@ pub trait CommandTargets {
     fn events(&self) -> &Self::Events;
     fn habits(&self) -> &Self::Habits;
     fn links(&self) -> &Self::Links;
+    fn blocks(&self) -> &Self::Blocks;
+    fn preferences(&self) -> &Self::Preferences;
 }
 
 fn backend(e: String) -> JarvisError {
@@ -491,6 +860,7 @@ fn failure(message: String) -> ActionResult {
         message,
         entity: None,
         changed: false,
+        ..Default::default()
     }
 }
 
@@ -500,6 +870,19 @@ fn task_failure(e: TaskError) -> ActionResult {
         TaskError::NotFound | TaskError::Exists => "That task no longer exists.".into(),
         TaskError::Backend(_) => "The task service is unavailable.".into(),
     })
+}
+
+/// How to put `before`'s fields back on `after` (the task once changed).
+fn restore_task(before: &tasks::Task, after: &tasks::Task) -> undo::UndoOp {
+    undo::UndoOp::RestoreTask {
+        id: before.id.clone(),
+        title: before.title.clone(),
+        status: before.status,
+        priority: before.priority,
+        due_date: before.due_date.clone(),
+        estimate_minutes: before.estimate_minutes,
+        updated_at: after.updated_at,
+    }
 }
 
 fn note_failure(e: NoteError) -> ActionResult {
@@ -695,20 +1078,49 @@ fn created_earlier(earlier: &[PlannedAction], query: &str) -> Option<String> {
     })
 }
 
-fn ambiguity<X>(query: &str, what: &str, matches: &[&X], name: impl Fn(&X) -> &str) -> JarvisError {
+/// One of several items a name matched, offered back to the owner.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Choice {
+    pub kind: String,
+    pub id: String,
+    pub title: String,
+}
+
+/// Most choices offered for an ambiguous name.
+pub const MAX_CHOICES: usize = 5;
+
+fn ambiguity<X>(
+    query: &str,
+    what: &str,
+    matches: &[&X],
+    name: impl Fn(&X) -> &str,
+    id: impl Fn(&X) -> &str,
+) -> JarvisError {
     if matches.is_empty() {
         return JarvisError::Unresolved(format!("No {what} matches “{query}”."));
     }
     let names: Vec<String> = matches
         .iter()
-        .take(5)
+        .take(MAX_CHOICES)
         .map(|x| format!("“{}”", name(x)))
         .collect();
-    JarvisError::Unresolved(format!(
-        "“{query}” matches {} {what}s: {}. Be more specific.",
-        matches.len(),
-        names.join(", ")
-    ))
+    let kind = what.rsplit(' ').next().unwrap_or(what).to_owned();
+    JarvisError::Ambiguous {
+        message: format!(
+            "“{query}” matches {} {what}s: {}. Be more specific.",
+            matches.len(),
+            names.join(", ")
+        ),
+        choices: matches
+            .iter()
+            .take(MAX_CHOICES)
+            .map(|x| Choice {
+                kind: kind.clone(),
+                id: id(x).to_owned(),
+                title: name(x).to_owned(),
+            })
+            .collect(),
+    }
 }
 
 fn inbox_failure(e: InboxError) -> ActionResult {
@@ -745,17 +1157,50 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         if input.chars().count() > MAX_INPUT {
             return Err(JarvisError::Invalid("input", "too long"));
         }
-        let today = validate::date(&req.today).map_err(|w| JarvisError::Invalid("today", w))?;
-        let commands = provider.interpret(input, &today).await?;
-        let mut actions = Vec::with_capacity(commands.len());
+        let clock = Clock::from_request(&req)?;
+        let commands = provider.interpret(input, &clock.today).await?;
+        self.plan_commands(p, input, commands, &clock, None, targets)
+            .await
+    }
+
+    /// Resolve and expand `commands` into a stored plan (read-only plans run
+    /// at once). `revises` is a pending plan this one replaces.
+    pub async fn plan_commands<C: CommandTargets>(
+        &self,
+        p: &Principal,
+        input: &str,
+        commands: Vec<Command>,
+        clock: &Clock,
+        revises: Option<String>,
+        targets: &C,
+    ) -> Result<Plan, JarvisError> {
+        let mut actions: Vec<PlannedAction> = Vec::with_capacity(commands.len());
         for command in commands {
-            let command = self.resolve(p, command, &actions, targets).await?;
-            actions.push(PlannedAction {
-                summary: command.summary(),
-                risk: command.risk(),
-                command,
-            });
+            let expanded = self.expand(p, command, &actions, clock, targets).await?;
+            actions.extend(expanded);
+            if actions.len() > MAX_PLAN_STEPS {
+                return Err(JarvisError::Invalid(
+                    "plan",
+                    "too many steps; ask for less at once",
+                ));
+            }
         }
+        if actions.is_empty() {
+            return Err(JarvisError::Unresolved("There's nothing to do.".into()));
+        }
+        expand::link_steps(&mut actions);
+        self.store_plan(p, input, actions, revises, targets).await
+    }
+
+    /// Store a resolved plan (running it at once when it only reads).
+    async fn store_plan<C: CommandTargets>(
+        &self,
+        p: &Principal,
+        input: &str,
+        actions: Vec<PlannedAction>,
+        revises: Option<String>,
+        targets: &C,
+    ) -> Result<Plan, JarvisError> {
         let requires_approval = actions.iter().any(|a| a.risk > Risk::Read);
         let mut plan = Plan {
             id: new_id(self.entropy),
@@ -767,9 +1212,11 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
             created_at: self.now,
             expires_at: self.now + PLAN_TTL_MS,
             results: vec![],
+            reversed_by: None,
+            revises,
         };
         if !requires_approval {
-            let (status, results) = self.run(p, &plan.actions, targets).await;
+            let (status, results) = self.run(p, &plan.id, &plan.actions, &[], targets).await;
             plan.status = status;
             plan.results = results;
         }
@@ -795,7 +1242,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     .await
                     .map_err(|_| unavailable("tasks"))?;
                 let x = pick(&all, |x| &x.title, &query)
-                    .map_err(|m| ambiguity(&query, "task", &m, |x| &x.title))?;
+                    .map_err(|m| ambiguity(&query, "task", &m, |x| &x.title, |x| &x.id))?;
                 (x.id.clone(), x.title.clone())
             }
             EntityKind::Note => {
@@ -804,7 +1251,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     .await
                     .map_err(|_| unavailable("notes"))?;
                 let x = pick(&all, |x| &x.title, &query)
-                    .map_err(|m| ambiguity(&query, "note", &m, |x| &x.title))?;
+                    .map_err(|m| ambiguity(&query, "note", &m, |x| &x.title, |x| &x.id))?;
                 (x.id.clone(), x.title.clone())
             }
             EntityKind::Project => {
@@ -813,7 +1260,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     .await
                     .map_err(|_| unavailable("projects"))?;
                 let x = pick(&all, |x| &x.name, &query)
-                    .map_err(|m| ambiguity(&query, "project", &m, |x| &x.name))?;
+                    .map_err(|m| ambiguity(&query, "project", &m, |x| &x.name, |x| &x.id))?;
                 (x.id.clone(), x.name.clone())
             }
         };
@@ -844,8 +1291,9 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                         _ => JarvisError::Unresolved("Couldn't read your habits.".into()),
                     })?;
                 let active: Vec<_> = habits.into_iter().filter(|h| !h.habit.archived).collect();
-                let h = pick(&active, |h| &h.habit.name, &query)
-                    .map_err(|m| ambiguity(&query, "habit", &m, |h| &h.habit.name))?;
+                let h = pick(&active, |h| &h.habit.name, &query).map_err(|m| {
+                    ambiguity(&query, "habit", &m, |h| &h.habit.name, |h| &h.habit.id)
+                })?;
                 Ok(Command::CheckHabit {
                     habit_id: Some(h.habit.id.clone()),
                     name: Some(h.habit.name.clone()),
@@ -874,12 +1322,13 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                 })
             }
             Command::CreateTask {
+                id,
                 title,
                 due_date,
                 project: Some(query),
                 priority,
                 estimate_minutes,
-                ..
+                project_id: _,
             } => {
                 let active = ProjectService::new(t.projects(), self.entropy, self.now)
                     .list(p, false)
@@ -890,6 +1339,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     })?;
                 match pick(&active, |x| &x.name, &query) {
                     Ok(pr) => Ok(Command::CreateTask {
+                        id,
                         title,
                         due_date,
                         project: Some(pr.name.clone()),
@@ -900,6 +1350,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     // Created by an earlier step of this plan: look it up when it runs.
                     Err(m) if m.is_empty() && created_earlier(earlier, &query).is_some() => {
                         Ok(Command::CreateTask {
+                            id,
                             title,
                             due_date,
                             project: created_earlier(earlier, &query),
@@ -908,7 +1359,13 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                             estimate_minutes,
                         })
                     }
-                    Err(m) => Err(ambiguity(&query, "active project", &m, |x| &x.name)),
+                    Err(m) => Err(ambiguity(
+                        &query,
+                        "active project",
+                        &m,
+                        |x| &x.name,
+                        |x| &x.id,
+                    )),
                 }
             }
             // Any id already present is ignored: the name is always resolved here.
@@ -947,7 +1404,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                 _ => JarvisError::Unresolved("Couldn't read your projects.".into()),
             })?;
         let pr = pick(&active, |x| &x.name, &scope.query)
-            .map_err(|m| ambiguity(&scope.query, "active project", &m, |x| &x.name))?;
+            .map_err(|m| ambiguity(&scope.query, "active project", &m, |x| &x.name, |x| &x.id))?;
         Ok(ProjectScope {
             id: Some(pr.id.clone()),
             name: Some(pr.name.clone()),
@@ -971,7 +1428,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
             })?;
         pick(&open, |t| &t.title, query)
             .cloned()
-            .map_err(|m| ambiguity(query, "open task", &m, |t| &t.title))
+            .map_err(|m| ambiguity(query, "open task", &m, |t| &t.title, |t| &t.id))
     }
 
     /// Approve and run a pending plan (exactly once).
@@ -984,10 +1441,26 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
     where
         C: CommandTargets,
     {
+        self.execute_with(p, id, &[], targets).await
+    }
+
+    /// Approve a pending plan without the steps at `skip` (indexes), and run
+    /// it exactly once. A step another kept step needs can't be skipped.
+    pub async fn execute_with<C>(
+        &self,
+        p: &Principal,
+        id: &str,
+        skip: &[usize],
+        targets: &C,
+    ) -> Result<Plan, JarvisError>
+    where
+        C: CommandTargets,
+    {
         let plan = self.load(p, id).await?;
         if plan.status != PlanStatus::Pending {
             return Err(JarvisError::NotPending(plan.status));
         }
+        expand::check_skips(&plan.actions, skip)?;
         if !self
             .repo
             .claim(&p.user_id, id, self.now)
@@ -998,7 +1471,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
             let current = self.load(p, id).await?;
             return Err(JarvisError::NotPending(current.status));
         }
-        let (status, results) = self.run(p, &plan.actions, targets).await;
+        let (status, results) = self.run(p, id, &plan.actions, skip, targets).await;
         self.repo
             .finish(&p.user_id, id, status, &results)
             .await
@@ -1057,11 +1530,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         let mut actions = Vec::with_capacity(commands.len());
         for command in commands {
             match self.resolve(p, command, &actions, targets).await {
-                Ok(command) => actions.push(PlannedAction {
-                    summary: command.summary(),
-                    risk: command.risk(),
-                    command,
-                }),
+                Ok(command) => actions.push(PlannedAction::new(command)),
                 Err(e) => {
                     let message = match e {
                         JarvisError::Unresolved(m) => m,
@@ -1071,27 +1540,54 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                 }
             }
         }
-        self.run(p, &actions, targets).await
+        self.run(p, "", &actions, &[], targets).await
     }
 
-    /// Run actions in order; stop at the first failure.
+    /// Run actions in order, leaving out `skip`; stop at the first failure.
+    /// A plan whose reversals all succeed marks the plan it undid.
     async fn run<C>(
         &self,
         p: &Principal,
+        plan_id: &str,
         actions: &[PlannedAction],
+        skip: &[usize],
         t: &C,
     ) -> (PlanStatus, Vec<ActionResult>)
     where
         C: CommandTargets,
     {
+        let touched = expand::touched_blocks(actions);
+        let touched: Vec<&str> = touched.iter().map(String::as_str).collect();
         let mut results = Vec::with_capacity(actions.len());
-        for action in actions {
-            let result = self.run_one(p, &action.command, t).await;
+        for (i, action) in actions.iter().enumerate() {
+            if skip.contains(&i) {
+                results.push(ActionResult {
+                    ok: true,
+                    message: "Left out.".into(),
+                    skipped: true,
+                    ..Default::default()
+                });
+                continue;
+            }
+            let result = self.run_step(p, &action.command, &touched, t).await;
             let ok = result.ok;
             results.push(result);
             if !ok {
                 return (PlanStatus::Failed, results);
             }
+        }
+        let reverted: Vec<&str> = actions
+            .iter()
+            .filter_map(|a| match &a.command {
+                Command::Revert { plan_id, .. } => Some(plan_id.as_str()),
+                _ => None,
+            })
+            .collect();
+        if let (Some(original), false, true) =
+            (reverted.first(), plan_id.is_empty(), skip.is_empty())
+        {
+            // Best effort: the reversal itself already happened.
+            let _ = self.repo.mark_reversed(&p.user_id, original, plan_id).await;
         }
         (PlanStatus::Executed, results)
     }
@@ -1139,6 +1635,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                 id: s.task_id.clone(),
             }),
             changed: false,
+            ..Default::default()
         }
     }
 
@@ -1155,6 +1652,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         };
         match command {
             Command::CreateTask {
+                id,
                 title,
                 due_date,
                 project,
@@ -1180,7 +1678,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     (_, id) => id.clone(),
                 };
                 let input = NewTask {
-                    id: None,
+                    id: id.clone(),
                     title: title.clone(),
                     notes: None,
                     priority: *priority,
@@ -1199,7 +1697,19 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                             None => format!("Created task “{}”.", task.title),
                         },
                         entity: entity(EntityKind::Task, &task.id),
-                        changed: false,
+                        undo: Some(undo::UndoOp::DeleteTask {
+                            id: task.id.clone(),
+                            title: task.title.clone(),
+                            updated_at: task.updated_at,
+                        }),
+                        ..Default::default()
+                    },
+                    // A replayed step: the task this plan chose an id for exists.
+                    Err(TaskError::Exists) => ActionResult {
+                        ok: true,
+                        message: format!("“{title}” was already created."),
+                        entity: id.as_deref().and_then(|id| entity(EntityKind::Task, id)),
+                        ..Default::default()
                     },
                     Err(e) => task_failure(e),
                 }
@@ -1219,6 +1729,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                         message: format!("Created project “{}”.", pr.name),
                         entity: entity(EntityKind::Project, &pr.id),
                         changed: false,
+                        ..Default::default()
                     },
                     Err(e) => project_failure(e),
                 }
@@ -1266,6 +1777,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     message,
                     entity: None,
                     changed: false,
+                    ..Default::default()
                 }
             }
             Command::CompleteTask {
@@ -1275,13 +1787,20 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     status: Some(Status::Done),
                     ..Default::default()
                 };
-                let was_open = tasks.get(p, id).await.is_ok_and(|t| t.status.is_open());
+                let before = tasks.get(p, id).await.ok();
+                let was_open = before.as_ref().is_some_and(|t| t.status.is_open());
                 match tasks.update(p, id, patch).await {
                     Ok(task) => ActionResult {
                         ok: true,
                         message: format!("Completed “{}”.", task.title),
                         entity: entity(EntityKind::Task, &task.id),
                         changed: was_open,
+                        // Completing a repeating task creates the next one;
+                        // that isn't reversed automatically.
+                        undo: before
+                            .filter(|b| was_open && b.repeat == crate::calendar::Repeat::None)
+                            .map(|b| restore_task(&b, &task)),
+                        ..Default::default()
                     },
                     Err(e) => task_failure(e),
                 }
@@ -1305,6 +1824,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                         message: "Created a note.".into(),
                         entity: entity(EntityKind::Note, &note.id),
                         changed: false,
+                        ..Default::default()
                     },
                     Err(e) => note_failure(e),
                 }
@@ -1319,6 +1839,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                         message: format!("Added to the journal for {}.", e.date),
                         entity: entity(EntityKind::Journal, &e.date),
                         changed: false,
+                        ..Default::default()
                     },
                     Err(e) => journal_failure(e),
                 }
@@ -1338,6 +1859,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     message: "Captured to your inbox.".into(),
                     entity: None,
                     changed: false,
+                    ..Default::default()
                 },
                 Err(e) => inbox_failure(e),
             },
@@ -1347,6 +1869,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     message: format!("Nothing matches “{query}”."),
                     entity: None,
                     changed: false,
+                    ..Default::default()
                 },
                 Ok(hits) => {
                     let names: Vec<String> = hits
@@ -1366,6 +1889,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                         // Events and habits aren't linkable entities.
                         entity: top.kind.entity().and_then(|k| entity(k, &top.id)),
                         changed: false,
+                        ..Default::default()
                     }
                 }
                 Err(SearchError::Invalid(why)) => failure(format!("Can't search for that: {why}.")),
@@ -1394,6 +1918,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                         message: format!("“{name}” was already checked in for {date}."),
                         entity: None,
                         changed: false,
+                        ..Default::default()
                     };
                 }
                 // The streak as of the checked day.
@@ -1414,6 +1939,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     },
                     entity: None,
                     changed: true,
+                    ..Default::default()
                 }
             }
             Command::LinkItems { a, b } => {
@@ -1439,6 +1965,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                         message: format!("Linked {} with {}.", a.label(), b.label()),
                         entity: entity(a.kind, a_id),
                         changed: false,
+                        ..Default::default()
                     },
                     Err(LinkError::Invalid(f, w)) => failure(format!("Can't link those: {f} {w}.")),
                     Err(LinkError::NotFound) => {
@@ -1471,6 +1998,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     message: agenda_message(date, &events, &open, &habits),
                     entity: None,
                     changed: false,
+                    ..Default::default()
                 }
             }
             Command::UpdateTask {
@@ -1484,12 +2012,14 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     estimate_minutes: change.estimate_minutes.map(Some),
                     ..Default::default()
                 };
+                let before = tasks.get(p, id).await.ok();
                 match tasks.update(p, id, patch).await {
                     Ok(task) => ActionResult {
                         ok: true,
                         message: format!("Updated “{}”: {}.", task.title, change.describe()),
                         entity: entity(EntityKind::Task, &task.id),
-                        changed: false,
+                        undo: before.map(|b| restore_task(&b, &task)),
+                        ..Default::default()
                     },
                     Err(e) => task_failure(e),
                 }
@@ -1544,10 +2074,13 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                         message,
                         entity: None,
                         changed: false,
+                        ..Default::default()
                     }
                 }
                 Err(e) => task_failure(e),
             },
+            // Scheduling, calendar, and undo steps run in `expand::run_step`.
+            _ => failure("That step can't run on its own.".into()),
         }
     }
 }

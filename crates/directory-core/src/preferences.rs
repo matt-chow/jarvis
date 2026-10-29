@@ -16,6 +16,9 @@ pub struct Preferences {
     /// `None` = the client's default working hours.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub planner: Option<Planner>,
+    /// `None` = JARVIS's scheduling defaults (D-048).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jarvis: Option<JarvisPrefs>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -37,6 +40,29 @@ pub struct Planner {
     pub session_minutes: u32,
 }
 
+/// How JARVIS schedules work sessions (D-048). Working hours and the
+/// session length come from [`Planner`]; these refine them. Only ever set by
+/// the owner (Settings, or a JARVIS plan they approved).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JarvisPrefs {
+    /// `HH:MM`: no session ends after this time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avoid_after: Option<String>,
+    /// Free minutes kept between a session and anything else, 0–120.
+    #[serde(default)]
+    pub break_minutes: u32,
+    /// Assumed length of a task without an estimate, 15–480 minutes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_task_minutes: Option<u32>,
+    /// Most session minutes JARVIS plans on one day, 30–960.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_daily_minutes: Option<u32>,
+    /// Fill the earliest free time first instead of spreading sessions
+    /// across days.
+    #[serde(default)]
+    pub earliest_first: bool,
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct PreferencesPatch {
     /// `null` resets to the default layout.
@@ -45,6 +71,9 @@ pub struct PreferencesPatch {
     /// `null` resets to the default working hours.
     #[serde(default, deserialize_with = "validate::double_option")]
     pub planner: Option<Option<Planner>>,
+    /// `null` resets JARVIS's scheduling defaults.
+    #[serde(default, deserialize_with = "validate::double_option")]
+    pub jarvis: Option<Option<JarvisPrefs>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,6 +127,28 @@ fn check_planner(mut p: Planner) -> Result<Planner, PreferencesError> {
     Ok(p)
 }
 
+pub fn check_jarvis(mut j: JarvisPrefs) -> Result<JarvisPrefs, PreferencesError> {
+    let invalid = |why| PreferencesError::Invalid("jarvis", why);
+    if let Some(t) = &j.avoid_after {
+        let m = validate::clock(t, true).map_err(invalid)?;
+        j.avoid_after = Some(format!("{:02}:{:02}", m / 60, m % 60));
+    }
+    if j.break_minutes > 120 {
+        return Err(invalid("break_minutes must be 0 to 120"));
+    }
+    if j.default_task_minutes
+        .is_some_and(|m| !(15..=480).contains(&m))
+    {
+        return Err(invalid("default_task_minutes must be 15 to 480"));
+    }
+    if j.max_daily_minutes
+        .is_some_and(|m| !(30..=960).contains(&m))
+    {
+        return Err(invalid("max_daily_minutes must be 30 to 960"));
+    }
+    Ok(j)
+}
+
 /// Parse a stored document leniently, dropping widgets that no longer exist.
 pub fn from_stored(data: &str) -> Preferences {
     let mut prefs: Preferences = serde_json::from_str(data).unwrap_or_default();
@@ -105,6 +156,7 @@ pub fn from_stored(data: &str) -> Preferences {
         d.widgets.retain(|w| WIDGETS.contains(&w.as_str()));
     }
     prefs.planner = prefs.planner.and_then(|p| check_planner(p).ok());
+    prefs.jarvis = prefs.jarvis.and_then(|j| check_jarvis(j).ok());
     prefs
 }
 
@@ -140,6 +192,9 @@ impl<'a, R: PreferencesRepository> PreferencesService<'a, R> {
         }
         if let Some(p) = patch.planner {
             prefs.planner = p.map(check_planner).transpose()?;
+        }
+        if let Some(j) = patch.jarvis {
+            prefs.jarvis = j.map(check_jarvis).transpose()?;
         }
         let data = serde_json::to_string(&prefs).map_err(|e| backend(e.to_string()))?;
         self.repo
@@ -260,6 +315,44 @@ mod tests {
         }
         block_on(svc.update(&me(), patch(r#"{"planner":null}"#))).unwrap();
         assert_eq!(block_on(svc.get(&me())).unwrap().planner, None);
+    }
+
+    #[test]
+    fn jarvis_preferences_are_validated_normalized_and_removable() {
+        let repo = Memory::default();
+        let svc = PreferencesService::new(&repo, 1);
+        let saved = block_on(svc.update(
+            &me(),
+            patch(
+                r#"{"jarvis":{"avoid_after":"21:00","break_minutes":10,"max_daily_minutes":180}}"#,
+            ),
+        ))
+        .unwrap();
+        let j = saved.jarvis.unwrap();
+        assert_eq!(j.avoid_after.as_deref(), Some("21:00"));
+        assert_eq!(j.break_minutes, 10);
+        assert!(!j.earliest_first, "spreading across days is the default");
+        for (json, why) in [
+            (
+                r#"{"jarvis":{"break_minutes":500}}"#,
+                "break_minutes must be 0 to 120",
+            ),
+            (
+                r#"{"jarvis":{"default_task_minutes":5}}"#,
+                "default_task_minutes must be 15 to 480",
+            ),
+            (
+                r#"{"jarvis":{"max_daily_minutes":10}}"#,
+                "max_daily_minutes must be 30 to 960",
+            ),
+        ] {
+            assert_eq!(
+                block_on(svc.update(&me(), patch(json))).unwrap_err(),
+                PreferencesError::Invalid("jarvis", why)
+            );
+        }
+        block_on(svc.update(&me(), patch(r#"{"jarvis":null}"#))).unwrap();
+        assert_eq!(block_on(svc.get(&me())).unwrap().jarvis, None);
     }
 
     #[test]

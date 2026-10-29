@@ -1,6 +1,6 @@
 //! D1 implementation of `JarvisRepository` (migration 0010).
 
-use super::{changes, err, int, stmt, text};
+use super::{changes, err, int, opt_text, stmt, text};
 use directory_core::jarvis::{ActionResult, JarvisRepository, Plan, PlanStatus};
 use serde::Deserialize;
 use worker::D1Database;
@@ -16,7 +16,7 @@ impl D1JarvisRepository {
 }
 
 const COLUMNS: &str =
-    "id, owner_id, input, actions, status, requires_approval, results, created_at, expires_at";
+    "id, owner_id, input, actions, status, requires_approval, results, created_at, expires_at, reversed_by, revises";
 
 #[derive(Deserialize)]
 struct Row {
@@ -29,6 +29,8 @@ struct Row {
     results: String,
     created_at: f64,
     expires_at: f64,
+    reversed_by: Option<String>,
+    revises: Option<String>,
 }
 
 impl TryFrom<Row> for Plan {
@@ -46,6 +48,8 @@ impl TryFrom<Row> for Plan {
             requires_approval: r.requires_approval != 0.0,
             created_at: r.created_at as i64,
             expires_at: r.expires_at as i64,
+            reversed_by: r.reversed_by,
+            revises: r.revises,
         })
     }
 }
@@ -57,7 +61,7 @@ fn to_json<T: serde::Serialize>(v: &T) -> Result<String, String> {
 impl JarvisRepository for D1JarvisRepository {
     async fn insert(&self, p: &Plan) -> Result<(), String> {
         let sql = format!(
-            "INSERT INTO jarvis_plans ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"
+            "INSERT INTO jarvis_plans ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"
         );
         stmt(
             &self.db,
@@ -72,6 +76,8 @@ impl JarvisRepository for D1JarvisRepository {
                 text(&to_json(&p.results)?),
                 int(p.created_at),
                 int(p.expires_at),
+                opt_text(p.reversed_by.as_deref()),
+                opt_text(p.revises.as_deref()),
             ],
         )?
         .run()
@@ -136,6 +142,18 @@ impl JarvisRepository for D1JarvisRepository {
         .await
         .map_err(err)?;
         Ok(changes(&r) > 0)
+    }
+
+    async fn mark_reversed(&self, owner_id: &str, id: &str, by: &str) -> Result<(), String> {
+        stmt(
+            &self.db,
+            "UPDATE jarvis_plans SET reversed_by = ?3 WHERE owner_id = ?1 AND id = ?2",
+            &[text(owner_id), text(id), text(by)],
+        )?
+        .run()
+        .await
+        .map_err(err)?;
+        Ok(())
     }
 
     async fn history(&self, owner_id: &str, limit: u32) -> Result<Vec<Plan>, String> {

@@ -172,6 +172,7 @@ pub fn commands_from_reply(reply: &str, today: &str) -> Result<Vec<Command>, Jar
                     estimate_minutes,
                     project,
                 } => Command::CreateTask {
+                    id: None,
                     title: text(title, "title")?,
                     due_date: due_date.map(|d| date_or(today, Some(d))).transpose()?,
                     project: project.map(|p| text(p, "project")).transpose()?,
@@ -355,6 +356,7 @@ mod tests {
         assert_eq!(
             got[0],
             Command::CreateTask {
+                id: None,
                 title: "Call mom".into(),
                 due_date: Some("2026-10-23".into()),
                 project: None,

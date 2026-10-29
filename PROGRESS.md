@@ -154,6 +154,28 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-10-29 — JARVIS 2.0, slice 1: scheduling plans, revalidation, undo (D-048)
+- **Core (`jarvis/expand.rs`, `schedule.rs`, `undo.rs`):** "find 4 hours
+  for the essay by Friday", "make time for my assignments this week",
+  "rearrange my afternoon", "what's unscheduled this week", "when am I free
+  tomorrow", "what did I forget yesterday", "undo that", and "from now on, no
+  sessions after 9pm" become concrete, previewed steps (sessions with real
+  times, moves, reversals). Sessions avoid events, other sessions, and the
+  owner's working hours; fixed items never move. Steps carry dependencies
+  and notes (overlaps, shortfalls, assumed durations); steps can be left out
+  at approval unless a kept step needs them. Each step is checked again when
+  it runs: a session or event that changed since, or a new clash, fails the
+  step instead of overwriting. Results record reversals; undo refuses items
+  edited since and is idempotent. Ambiguous names return choices.
+- **Preferences:** optional `jarvis` block (avoid after, breaks, default
+  task length, daily cap, earliest-first), validated in core.
+- **Migration 0024 (additive):** `jarvis_plans.reversed_by`, `revises`;
+  `jarvis_conversations` (used by the next slice). Schema v24.
+- **Verified:** core 164 tests (13 new scheduling/undo/isolation tests, 3
+  parser tests), web 155, handoff 50, clippy, build, deploy dry run.
+- **Next:** conversation state and the model tool loop, the Ask UI, and
+  Settings for the preferences.
+
 ### 2026-10-29 — Unified planner: tasks, events, and time blocks (D-047)
 - **Model (migration 0023, additive):** `time_blocks` (work sessions, any
   number per task, or standalone focus blocks, with status and actual

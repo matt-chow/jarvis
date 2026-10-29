@@ -422,6 +422,320 @@ fn parse_planning_plain(step: &str, lower: &str, today: &str) -> Option<Command>
     })
 }
 
+/// The Sunday ending `today`'s week (today, on a Sunday).
+fn end_of_week(today: &str) -> String {
+    validate::add_days(today, 6 - validate::weekday(today) as i64)
+}
+
+/// "9pm", "9 pm", "9:30pm", "21:00", "noon" → "HH:MM". The whole of `words`
+/// must be the time.
+pub fn parse_time(words: &[&str]) -> Option<String> {
+    let joined = words
+        .iter()
+        .map(|w| w.trim_matches(|c: char| ",.!?".contains(c)).to_lowercase())
+        .collect::<Vec<_>>()
+        .join("");
+    let (body, add) = match joined.as_str() {
+        "noon" | "midday" => return Some("12:00".into()),
+        "midnight" => return Some("24:00".into()),
+        j => match (j.strip_suffix("pm"), j.strip_suffix("am")) {
+            (Some(b), _) => (b, Some(12)),
+            (_, Some(b)) => (b, Some(0)),
+            _ => (j, None),
+        },
+    };
+    let (h, m) = match body.split_once(':') {
+        Some((h, m)) if m.len() == 2 => (h.parse::<u32>().ok()?, m.parse::<u32>().ok()?),
+        Some(_) => return None,
+        // A bare number is only a time with am/pm.
+        None if add.is_some() => (body.parse::<u32>().ok()?, 0),
+        None => return None,
+    };
+    let h = match add {
+        Some(_) if !(1..=12).contains(&h) => return None,
+        Some(12) if h == 12 => 12,
+        Some(0) if h == 12 => 0,
+        Some(a) => h + a,
+        None => h,
+    };
+    (h < 24 && m < 60).then(|| format!("{h:02}:{m:02}"))
+}
+
+/// A trailing "by friday" / "before friday" / "this week" on `rest`: the text
+/// before it and the last day meant ("before" excludes the day itself).
+fn split_deadline(rest: &str, today: &str) -> Result<(String, Option<String>), ParseError> {
+    let words: Vec<&str> = rest.split_whitespace().collect();
+    let clean = |w: &str| w.trim_end_matches(['.', '?', '!', ',']).to_lowercase();
+    let n = words.len();
+    if n >= 2 && clean(words[n - 1]) == "week" && clean(words[n - 2]) == "this" {
+        let cut = if n >= 3 && ["by", "for", "before"].contains(&clean(words[n - 3]).as_str()) {
+            n - 3
+        } else {
+            n - 2
+        };
+        return Ok((words[..cut].join(" "), Some(end_of_week(today))));
+    }
+    if n >= 2 {
+        let key = clean(words[n - 2]);
+        if ["by", "before", "until"].contains(&key.as_str()) {
+            let day = clean(words[n - 1]);
+            let date = parse_date(&day, today).ok_or(ParseError::BadDate(day))?;
+            let date = if key == "before" {
+                validate::add_days(&date, -1)
+            } else {
+                date
+            };
+            return Ok((words[..n - 2].join(" "), Some(date)));
+        }
+    }
+    Ok((rest.to_owned(), None))
+}
+
+/// The day and hours of "my afternoon", "tomorrow morning", "friday".
+fn day_part(words: &[String], today: &str) -> Option<(String, Option<String>, Option<String>)> {
+    let mut date = today.to_owned();
+    let mut range: (Option<&str>, Option<&str>) = (None, None);
+    for w in words {
+        match w.as_str() {
+            "my" | "the" | "day" | "schedule" | "plan" | "plans" | "rest" | "of" => {}
+            "morning" => range = (None, Some("12:00")),
+            "afternoon" => range = (Some("12:00"), Some("17:00")),
+            "evening" | "tonight" => range = (Some("17:00"), None),
+            w => date = parse_date(w, today)?,
+        }
+    }
+    Some((date, range.0.map(Into::into), range.1.map(Into::into)))
+}
+
+/// Scheduling, review, and undo requests (DECISIONS D-048).
+fn parse_scheduling(step: &str, lower: &str, today: &str) -> Result<Option<Command>, ParseError> {
+    let words: Vec<String> = lower
+        .split_whitespace()
+        .map(|w| w.trim_end_matches(',').to_owned())
+        .collect();
+    let first = words.first().map(String::as_str).unwrap_or_default();
+
+    if matches!(first, "undo" | "revert") || lower.starts_with("take that back") {
+        return Ok(Some(Command::Undo { plan_id: None }));
+    }
+
+    if lower.contains("unscheduled")
+        || lower.contains("still need time")
+        || lower.contains("still needs time")
+    {
+        let rest = lower
+            .rsplit_once("unscheduled")
+            .or_else(|| lower.rsplit_once("time"))
+            .map(|(_, r)| r.trim())
+            .unwrap_or_default();
+        let to = match rest {
+            "" | "this week" | "for this week" => end_of_week(today),
+            "today" => today.to_owned(),
+            "tomorrow" => validate::add_days(today, 1),
+            r => match split_deadline(&format!("x {r}"), today)? {
+                (_, Some(d)) => d,
+                _ => return Err(ParseError::BadDate(r.to_owned())),
+            },
+        };
+        return Ok(Some(Command::Unscheduled {
+            from: today.to_owned(),
+            to,
+        }));
+    }
+
+    if let Some(rest) = strip(
+        lower,
+        &[
+            "when am i free",
+            "when'm i free",
+            "what free time do i have",
+            "how much free time do i have",
+            "find free time",
+            "show free time",
+            "free time",
+        ],
+    ) {
+        let rest = rest.trim_end_matches(['?', '.', '!']).trim();
+        let rest = strip(rest, &["on", "for"]).unwrap_or(rest);
+        let (from, to) = match rest {
+            "" | "today" => (today.to_owned(), today.to_owned()),
+            "this week" => (today.to_owned(), end_of_week(today)),
+            "next week" => {
+                let start = validate::add_days(&end_of_week(today), 1);
+                (start.clone(), validate::add_days(&start, 6))
+            }
+            r => {
+                let d = parse_date(r, today).ok_or_else(|| ParseError::BadDate(r.to_owned()))?;
+                (d.clone(), d)
+            }
+        };
+        return Ok(Some(Command::FreeTime {
+            from,
+            to,
+            now: None,
+        }));
+    }
+
+    if let Some(rest) = strip(
+        lower,
+        &[
+            "what did i forget to finish",
+            "what did i forget to do",
+            "what did i forget",
+            "what did i miss",
+            "what did i not finish",
+            "what didn't i finish",
+            "what didn't i do",
+            "what's left over from",
+            "what is left over from",
+        ],
+    ) {
+        let rest = rest.trim_end_matches(['?', '.', '!']).trim();
+        let date = match rest {
+            "" | "yesterday" => validate::add_days(today, -1),
+            "today" => today.to_owned(),
+            r => parse_date(r, today)
+                .filter(|d| d.as_str() <= today)
+                .ok_or_else(|| ParseError::BadDate(r.to_owned()))?,
+        };
+        return Ok(Some(Command::Missed { date }));
+    }
+
+    if matches!(
+        first,
+        "rearrange" | "reorganize" | "reorganise" | "reshuffle" | "replan" | "re-plan"
+    ) {
+        // "… without moving my classes": fixed items never move anyway.
+        let head = lower
+            .split(" without ")
+            .next()
+            .unwrap_or(lower)
+            .split(" but ")
+            .next()
+            .unwrap_or(lower);
+        let head: Vec<String> = head.split_whitespace().skip(1).map(str::to_owned).collect();
+        if let Some((date, start, end)) = day_part(&head, today) {
+            return Ok(Some(Command::Rearrange {
+                date,
+                start,
+                end,
+                keep: vec![],
+            }));
+        }
+    }
+
+    // "from now on, no sessions after 9pm" / "never schedule anything after
+    // 21:00": standing preferences only when said to be standing.
+    if lower.starts_with("from now on") || lower.starts_with("always") || lower.starts_with("never")
+    {
+        let w: Vec<&str> = lower.split_whitespace().collect();
+        let mut prefs = crate::preferences::JarvisPrefs::default();
+        if let Some(i) = w.iter().position(|x| *x == "after") {
+            let t = (1..=2)
+                .rev()
+                .find_map(|j| w.get(i + 1..i + 1 + j).and_then(parse_time));
+            prefs.avoid_after = t;
+        }
+        if let Some(i) = w.iter().position(|x| x.starts_with("break")) {
+            if let Some((m, _)) = w.get(i.saturating_sub(3)..i).and_then(|s| {
+                (0..s.len()).find_map(|k| leading_minutes(&s[k..]).filter(|(_, r)| r.is_empty()))
+            }) {
+                prefs.break_minutes = m;
+            }
+        }
+        if prefs.avoid_after.is_some() || prefs.break_minutes > 0 {
+            return Ok(Some(Command::Remember { prefs }));
+        }
+    }
+
+    // "find 4 hours for the essay by friday", "schedule time for it",
+    // "make time for my assignments before friday".
+    let lead = strip(
+        step,
+        &[
+            "find",
+            "schedule",
+            "block",
+            "book",
+            "make",
+            "set aside",
+            "plan",
+            "reserve",
+            "block out",
+            "carve out",
+        ],
+    );
+    if let Some(rest) = lead {
+        let rest_words: Vec<&str> = rest.split_whitespace().collect();
+        let (minutes, after) = match leading_minutes(&rest_words) {
+            Some((m, after)) => (Some(m), after.to_vec()),
+            None => (None, rest_words.clone()),
+        };
+        let mut after: &[&str] = &after;
+        for filler in ["enough", "some", "more", "time", "of", "focus", "study"] {
+            if after
+                .first()
+                .is_some_and(|w| w.eq_ignore_ascii_case(filler))
+            {
+                after = &after[1..];
+            }
+        }
+        let for_word = after.first().is_some_and(|w| w.eq_ignore_ascii_case("for"));
+        if for_word && (minutes.is_some() || rest_words.len() > after.len()) {
+            let (query, by) = split_deadline(&after[1..].join(" "), today)?;
+            let query = query.trim_end_matches(['.', '?', '!']).trim();
+            let q = query.to_lowercase();
+            let q = q.strip_prefix("my ").unwrap_or(&q);
+            let q = q.strip_prefix("unfinished ").unwrap_or(q);
+            let q = q.strip_prefix("open ").unwrap_or(q);
+            let everything = matches!(
+                q,
+                "them"
+                    | "all"
+                    | "everything"
+                    | "tasks"
+                    | "assignments"
+                    | "homework"
+                    | "work"
+                    | "deadlines"
+                    | "everything due"
+                    | "all of them"
+            );
+            if everything && minutes.is_none() {
+                // "Before Friday" here means work due by Friday.
+                let by = match split_deadline(&after[1..].join(" "), today)? {
+                    (_, Some(d)) if lower.contains(" before ") => validate::add_days(&d, 1),
+                    (_, Some(d)) => d,
+                    _ => end_of_week(today),
+                };
+                return Ok(Some(Command::ScheduleDue { by, keep: vec![] }));
+            }
+            let query = match q {
+                "it" | "that" | "this" | "this task" | "that task" => String::new(),
+                _ => query.to_owned(),
+            };
+            return Ok(Some(Command::ScheduleTask {
+                query,
+                task_id: None,
+                minutes,
+                from: None,
+                by,
+                session_minutes: None,
+                keep: vec![],
+            }));
+        }
+    }
+    // "find my unfinished assignments and schedule time for them before friday"
+    if let Some((_, tail)) = lower.split_once(" and ") {
+        if strip(tail, &["schedule", "find", "make", "block", "plan"]).is_some() {
+            if let Some(c @ Command::ScheduleDue { .. }) = parse_scheduling(tail, tail, today)? {
+                return Ok(Some(c));
+            }
+        }
+    }
+    Ok(None)
+}
+
 fn priority_word(w: &str) -> Option<Priority> {
     match w
         .trim_matches(|c: char| ",.!?".contains(c))
@@ -666,6 +980,9 @@ fn parse_step(step: &str, today: &str) -> Result<Command, ParseError> {
     if let Some(c) = parse_planning(step, lower, today) {
         return Ok(c);
     }
+    if let Some(c) = parse_scheduling(step, lower, today)? {
+        return Ok(c);
+    }
     if let Some(c) = parse_update(step, today)? {
         return Ok(c);
     }
@@ -759,6 +1076,7 @@ fn parse_step(step: &str, today: &str) -> Result<Command, ParseError> {
             return Err(ParseError::MissingText("task title"));
         }
         return Ok(Command::CreateTask {
+            id: None,
             title,
             due_date,
             project,
@@ -831,6 +1149,7 @@ mod tests {
         assert_eq!(
             one("add task Call the dentist"),
             Command::CreateTask {
+                id: None,
                 title: "Call the dentist".into(),
                 due_date: None,
                 project: None,
@@ -842,6 +1161,7 @@ mod tests {
         assert_eq!(
             one("Please add task Call the dentist due Friday"),
             Command::CreateTask {
+                id: None,
                 title: "Call the dentist".into(),
                 due_date: Some("2026-10-23".into()),
                 project: None,
@@ -853,6 +1173,7 @@ mod tests {
         assert_eq!(
             one("todo renew passport by 2026-12-01"),
             Command::CreateTask {
+                id: None,
                 title: "renew passport".into(),
                 due_date: Some("2026-12-01".into()),
                 project: None,
@@ -864,6 +1185,7 @@ mod tests {
         assert_eq!(
             one("remind me to water plants due tomorrow"),
             Command::CreateTask {
+                id: None,
                 title: "water plants".into(),
                 due_date: Some("2026-10-22".into()),
                 project: None,
@@ -876,6 +1198,7 @@ mod tests {
         assert_eq!(
             one("task walk by the river"),
             Command::CreateTask {
+                id: None,
                 title: "walk by the river".into(),
                 due_date: None,
                 project: None,
@@ -965,6 +1288,7 @@ mod tests {
         assert_eq!(
             one("task 日本語"),
             Command::CreateTask {
+                id: None,
                 title: "日本語".into(),
                 due_date: None,
                 project: None,
@@ -998,6 +1322,7 @@ mod tests {
             }
         );
         let task = |title: &str, project: Option<&str>, due: Option<&str>| Command::CreateTask {
+            id: None,
             title: title.into(),
             due_date: due.map(Into::into),
             project: project.map(Into::into),
@@ -1237,6 +1562,7 @@ mod link_tests {
         // Priority and estimate clauses on a new task; elsewhere they stay in the title.
         match one("Add task file taxes high priority due Friday.") {
             Command::CreateTask {
+                id: None,
                 title,
                 priority,
                 due_date,
@@ -1249,6 +1575,7 @@ mod link_tests {
         }
         match one("add task review high priority bugs takes 45 minutes in project work") {
             Command::CreateTask {
+                id: None,
                 title,
                 priority,
                 estimate_minutes,
@@ -1265,5 +1592,141 @@ mod link_tests {
             ),
             other => panic!("{other:?}"),
         }
+    }
+
+    fn one(input: &str) -> Command {
+        let mut v = parse(input, TODAY).unwrap();
+        assert_eq!(v.len(), 1, "{input}");
+        v.remove(0)
+    }
+
+    #[test]
+    fn clock_times() {
+        let t = |s: &str| parse_time(&s.split_whitespace().collect::<Vec<_>>());
+        assert_eq!(t("9pm").as_deref(), Some("21:00"));
+        assert_eq!(t("9 pm").as_deref(), Some("21:00"));
+        assert_eq!(t("9:30am").as_deref(), Some("09:30"));
+        assert_eq!(t("12am").as_deref(), Some("00:00"));
+        assert_eq!(t("12pm").as_deref(), Some("12:00"));
+        assert_eq!(t("21:15").as_deref(), Some("21:15"));
+        assert_eq!(t("noon").as_deref(), Some("12:00"));
+        assert_eq!(t("9"), None, "a bare number isn't a time");
+        assert_eq!(t("13pm"), None);
+        assert_eq!(t("25:00"), None);
+    }
+
+    #[test]
+    fn scheduling_requests() {
+        // Conversational phrasing isn't guessed at: it goes to the model.
+        assert!(matches!(
+            parse(
+                "I've got an assignment due Friday. Find four hours for it.",
+                TODAY
+            ),
+            Err(ParseError::Unknown(_))
+        ));
+        assert_eq!(
+            one("find four hours for the essay by friday"),
+            Command::ScheduleTask {
+                query: "the essay".into(),
+                task_id: None,
+                minutes: Some(240),
+                from: None,
+                by: Some("2026-10-23".into()),
+                session_minutes: None,
+                keep: vec![],
+            }
+        );
+        match one("schedule time for it before friday") {
+            Command::ScheduleTask {
+                query, minutes, by, ..
+            } => assert_eq!(
+                (query.as_str(), minutes, by.as_deref()),
+                ("", None, Some("2026-10-22"))
+            ),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(
+            one("Find my unfinished assignments and schedule enough time for them before Friday."),
+            Command::ScheduleDue {
+                by: "2026-10-23".into(),
+                keep: vec![]
+            }
+        );
+        assert_eq!(
+            one("make time for my assignments this week"),
+            Command::ScheduleDue {
+                by: "2026-10-25".into(),
+                keep: vec![]
+            }
+        );
+        // Unchanged meanings.
+        assert!(matches!(one("find dentist"), Command::Find { .. }));
+        assert!(matches!(
+            one("schedule for friday"),
+            Command::Agenda { date } if date == "2026-10-23"
+        ));
+    }
+
+    #[test]
+    fn review_rearrange_undo_and_standing_preferences() {
+        assert_eq!(
+            one("What's still unscheduled this week?"),
+            Command::Unscheduled {
+                from: TODAY.into(),
+                to: "2026-10-25".into()
+            }
+        );
+        assert_eq!(
+            one("when am i free tomorrow"),
+            Command::FreeTime {
+                from: "2026-10-22".into(),
+                to: "2026-10-22".into(),
+                now: None
+            }
+        );
+        assert_eq!(
+            one("What did I forget to finish yesterday?"),
+            Command::Missed {
+                date: "2026-10-20".into()
+            }
+        );
+        assert_eq!(
+            one("Reorganize my afternoon without moving my classes."),
+            Command::Rearrange {
+                date: TODAY.into(),
+                start: Some("12:00".into()),
+                end: Some("17:00".into()),
+                keep: vec![]
+            }
+        );
+        assert_eq!(
+            one("rearrange tomorrow morning"),
+            Command::Rearrange {
+                date: "2026-10-22".into(),
+                start: None,
+                end: Some("12:00".into()),
+                keep: vec![]
+            }
+        );
+        for undo in [
+            "Undo the last change.",
+            "undo that",
+            "Undo the changes you just made",
+        ] {
+            assert_eq!(one(undo), Command::Undo { plan_id: None }, "{undo}");
+        }
+        match one("From now on, no study sessions after 9pm and 10 minute breaks") {
+            Command::Remember { prefs } => {
+                assert_eq!(prefs.avoid_after.as_deref(), Some("21:00"));
+                assert_eq!(prefs.break_minutes, 10);
+            }
+            other => panic!("{other:?}"),
+        }
+        // A one-off isn't promoted to a standing preference.
+        assert!(!matches!(
+            parse("no sessions after 9pm", TODAY),
+            Ok(ref v) if matches!(v[0], Command::Remember { .. })
+        ));
     }
 }
