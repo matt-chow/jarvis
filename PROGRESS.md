@@ -141,9 +141,12 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
    Owner next: create a device token in Settings and run
    `BASE_URL=https://directory-staging.mchowcl.workers.dev
    DIRECTORY_API_TOKEN=dir_… npm run smoke`, then docs/JARVIS_ASK.md ›
-   iPhone test steps 5–7a. Free-form requests need `OPENROUTER_API_KEY` and
-   a `:free` `JARVIS_AI_MODEL` (docs/STAGING.md §4.3); until then Ask
-   handles direct commands and says so.
+   iPhone test steps 5–7a. Free-form requests: the `OPENROUTER_API_KEY`
+   staging secret exists (checked 2026-10-29, value not read), and the
+   staging config now names `google/gemma-4-31b-it:free` with a zero
+   price cap and no fallbacks, **committed but not deployed**. Owner:
+   `npm run deploy:staging` (no migration), then the live eval in
+   docs/STAGING.md §4.3. Until then Ask handles direct commands and says so.
 0. Owner: run docs/PLANNER.md › Manual acceptance on a computer and an
    iPhone. The unified planner (D-047, d5a5bc7) is on staging since
    2026-10-29: migration 0023 applied, Worker version
@@ -166,6 +169,25 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-29 — JARVIS 2.0 staging activation prep: free model, billing guard
+- Staging secrets checked with `wrangler secret list` (names only):
+  `OPENROUTER_API_KEY` and `DIRECTORY_SETUP_TOKEN` exist. No key or device
+  token is available locally, so the live eval and the authenticated
+  staging smoke are owner steps (docs/STAGING.md §4.3, Next task 00).
+- Model: `google/gemma-4-31b-it:free`, picked from OpenRouter's public
+  model list (one free Google AI Studio endpoint at price 0, JSON mode,
+  tools, optional reasoning). It's set in `[env.staging.vars]`, which takes
+  effect on the next `npm run deploy:staging`. Not deployed.
+- Billing guard: the request body is built in core (`openrouter_body`) and
+  sends one model, no `models` list or `route`, `provider.max_price` 0, and
+  `allow_fallbacks: false`, on top of the existing `:free`-only rule.
+  Reasoning is off, and `max_tokens` is 1000, so thinking can't leave the
+  JSON reply empty. A new core test pins these fields.
+- Gate: verify ✅ (core 182), smoke ✅, browser e2e ✅, `eval:jarvis` ✅
+  (parser 10/10, free-form 8/8 honest fallback, no data changed). The
+  staging dry run lists `JARVIS_AI_MODEL`. The anonymous staging checks
+  (401s, headers) are from the 029a3cfb deploy.
 
 ### 2026-10-29 — JARVIS 2.0, slice 4: eval suite, offline audit, docs (D-048)
 - **`npm run eval:jarvis`** (`scripts/jarvis-eval.mjs`): a phrase table

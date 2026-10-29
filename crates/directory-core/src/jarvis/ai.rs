@@ -36,6 +36,32 @@ pub fn is_free_model(id: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || "/-_.:".contains(c))
 }
 
+/// The OpenRouter chat request for one completion. One model and no `models`
+/// fallback list or router, and `max_price` 0 makes OpenRouter refuse a paid
+/// endpoint even if the model's providers change. Reasoning is off so that
+/// thinking can't use up `max_tokens` before the JSON reply.
+pub fn openrouter_body(
+    model: &str,
+    system: &str,
+    user: &str,
+    max_tokens: u32,
+) -> serde_json::Value {
+    serde_json::json!({
+        "model": model,
+        "messages": [
+            { "role": "system", "content": system },
+            { "role": "user", "content": user },
+        ],
+        "temperature": 0,
+        "max_tokens": max_tokens,
+        "reasoning": { "enabled": false, "exclude": true },
+        "provider": {
+            "max_price": { "prompt": 0, "completion": 0, "request": 0 },
+            "allow_fallbacks": false,
+        },
+    })
+}
+
 /// What the model may ask for. No ids: names are resolved by Directory.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -305,6 +331,21 @@ mod tests {
         assert!(!is_free_model("openrouter/auto:free"));
         assert!(!is_free_model("x:free?y"));
         assert!(!is_free_model(""));
+    }
+
+    #[test]
+    fn requests_name_one_free_model_and_refuse_paid_endpoints() {
+        let b = openrouter_body("google/gemma-4-31b-it:free", "sys", "hi", 700);
+        assert_eq!(b["model"], "google/gemma-4-31b-it:free");
+        assert!(
+            b.get("models").is_none() && b.get("route").is_none(),
+            "no fallback list or router"
+        );
+        assert_eq!(b["provider"]["max_price"]["prompt"], 0);
+        assert_eq!(b["provider"]["max_price"]["completion"], 0);
+        assert_eq!(b["provider"]["allow_fallbacks"], false);
+        assert_eq!(b["reasoning"]["enabled"], false);
+        assert_eq!(b["messages"][1]["content"], "hi");
     }
 
     #[test]

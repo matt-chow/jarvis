@@ -192,8 +192,29 @@ later, see docs/JARVIS_SHORTCUTS.md › AI:
 npx wrangler secret put OPENROUTER_API_KEY --env staging
 ```
 
-Then add `JARVIS_AI_MODEL = "<a model id ending in :free>"` to
-`[env.staging.vars]`. Any other model id leaves AI off. Optional limits:
+`[env.staging.vars]` sets `JARVIS_AI_MODEL = "google/gemma-4-31b-it:free"`
+(chosen 2026-10-29 from OpenRouter's public model list: one free endpoint,
+JSON mode, optional reasoning; alternative
+`nvidia/nemotron-3.5-super-vl:free`). Any id not ending in `:free` leaves
+AI off. Every request also sends `provider.max_price` 0 with
+`allow_fallbacks: false` and no fallback model list, so OpenRouter refuses
+rather than bills (core `openrouter_body`, unit-tested). Reasoning is
+turned off so it can't use up the reply's token limit. Privacy: free
+endpoints may log or train on prompts under the provider's policy; JARVIS
+sends only the request text and minimal handles (D-043, D-048). The model
+is active once the Worker is redeployed with this config:
+
+```powershell
+npx wrangler d1 time-travel info directory-db-staging   # note the bookmark
+npm run deploy:staging
+```
+
+To check the model live before (or after) deploying, run the eval on a
+local isolated Worker with your key in this shell only:
+
+```powershell
+$env:JARVIS_EVAL_LIVE="1"; $env:OPENROUTER_API_KEY="<your key>"; $env:JARVIS_AI_MODEL="google/gemma-4-31b-it:free"; npm run eval:jarvis
+``` Optional limits:
 `JARVIS_AI_DAILY` (calls per owner per UTC day, default 40; a JARVIS 2.0
 chat turn uses up to 3) and `JARVIS_AI_TIMEOUT_MS` (per call, default
 12000). Without a model, Ask understands direct commands and says so

@@ -6,9 +6,9 @@
 
 use crate::bindings;
 use crate::d1::D1RateLimitStore;
-use directory_core::jarvis::ai::{is_free_model, AiBudget, TextModel};
+use directory_core::jarvis::ai::{is_free_model, openrouter_body, AiBudget, TextModel};
 use directory_core::rate_limit::{self, Decision, Policy};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::future::{poll_fn, Future};
 use std::pin::pin;
 use std::task::Poll;
@@ -20,7 +20,7 @@ const DEFAULT_DAILY: u32 = 40;
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS: u64 = 12_000;
 /// Room for a chat turn's JSON (several actions), still small.
-const MAX_TOKENS: u32 = 700;
+const MAX_TOKENS: u32 = 1_000;
 
 pub struct OpenRouter {
     key: String,
@@ -58,15 +58,7 @@ impl OpenRouter {
 
 impl TextModel for OpenRouter {
     async fn complete(&self, system: &str, user: &str) -> Result<String, String> {
-        let body = json!({
-            "model": self.model,
-            "messages": [
-                { "role": "system", "content": system },
-                { "role": "user", "content": user },
-            ],
-            "temperature": 0,
-            "max_tokens": MAX_TOKENS,
-        });
+        let body = openrouter_body(&self.model, system, user, MAX_TOKENS);
         let headers = Headers::new();
         let set = |k: &str, v: &str| headers.set(k, v).map_err(|e| e.to_string());
         set("Authorization", &format!("Bearer {}", self.key))?;
