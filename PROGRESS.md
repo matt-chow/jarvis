@@ -131,16 +131,19 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to delete the retired OneDrive copy of the repo (D-040).
 
 ### Next task
-00. Owner: approve deploying **JARVIS 2.0** (D-048) to staging. It needs
-   migration 0024 (additive: two nullable columns and a new table) before
-   the Worker; health must then report schema v24. Note a restore point
-   first: `npx wrangler d1 time-travel info directory-db-staging`,
-   then `npm run db:migrate:staging` and `npm run deploy:staging`. After
-   deploying, run `BASE_URL=https://directory-staging.mchowcl.workers.dev
-   DIRECTORY_API_TOKEN=dir_… npm run smoke`, then
-   docs/JARVIS_ASK.md › iPhone test steps 5–7a. To try the model, set
-   `OPENROUTER_API_KEY` (a secret) and a `:free` `JARVIS_AI_MODEL`
-   (docs/STAGING.md §4.3). Without them, Ask works on direct commands only.
+00. **JARVIS 2.0 (D-048) is on staging** since 2026-10-29 (owner-approved):
+   migration 0024 applied, Worker version
+   029a3cfb-abd1-451f-9f26-4115e6efea5a, health reports schema v24, and
+   `/jarvis/chat`, `/jarvis/plan`, execute, and `/preferences` refuse
+   anonymous callers (401). The security headers are unchanged. Restore
+   point before the migration: bookmark
+   `00000017-00000000-00005113-52464e90f66d589ea6e914d3e1f27fe8`.
+   Owner next: create a device token in Settings and run
+   `BASE_URL=https://directory-staging.mchowcl.workers.dev
+   DIRECTORY_API_TOKEN=dir_… npm run smoke`, then docs/JARVIS_ASK.md ›
+   iPhone test steps 5–7a. Free-form requests need `OPENROUTER_API_KEY` and
+   a `:free` `JARVIS_AI_MODEL` (docs/STAGING.md §4.3); until then Ask
+   handles direct commands and says so.
 0. Owner: run docs/PLANNER.md › Manual acceptance on a computer and an
    iPhone. The unified planner (D-047, d5a5bc7) is on staging since
    2026-10-29: migration 0023 applied, Worker version
