@@ -8,6 +8,7 @@ import { api, ApiError, isNetworkError, type DeviceToken, type PasskeyInfo, type
 import { KINDS, KIND_LABELS, planImport, type ExportPlan, type ImportKind, type ImportReport } from "../lib/backup";
 import type { ClientError } from "../lib/errors";
 import { formatDate } from "../lib/format";
+import { readLaunchChoice, writeLaunchChoice, type LaunchChoice } from "../lib/launch";
 import { localDate } from "../lib/tasks";
 import { creationRequest, describePasskeyError, encodeRegistration } from "../lib/webauthn";
 
@@ -21,6 +22,35 @@ function describe(e: unknown): string {
   }
   if (isNetworkError(e)) return "Can't reach the server right now.";
   return describePasskeyError(e);
+}
+
+/** Per-device: where the Home Screen app opens (lib/launch.ts). Browser tabs always open Home. */
+function LaunchPanel() {
+  const [choice, setChoice] = useState<LaunchChoice>(readLaunchChoice);
+  return (
+    <Panel title="this device" className="lg:col-span-2">
+      <label className="flex flex-wrap items-center gap-3 text-sm">
+        <span>Home Screen app opens on</span>
+        <select
+          value={choice}
+          onChange={(e) => {
+            const next = e.target.value as LaunchChoice;
+            setChoice(next);
+            writeLaunchChoice(next);
+          }}
+          aria-label="Home Screen app opens on"
+          className="min-h-9 rounded-sm border border-line bg-sunken/40 px-2 text-sm focus:border-accent"
+        >
+          <option value="ask">Ask (JARVIS)</option>
+          <option value="home">Home</option>
+        </select>
+      </label>
+      <p className="mt-2 text-sm text-muted">
+        Applies when you open Directory from its Home Screen icon. Browser tabs always open Home, and a link to another page is kept. On
+        iPhone the Home Screen app keeps its own settings, so choose this inside the app.
+      </p>
+    </Panel>
+  );
 }
 
 export function Settings({ online, session }: ModuleProps) {
@@ -227,6 +257,8 @@ export function Settings({ online, session }: ModuleProps) {
           </ul>
         )}
       </Panel>
+
+      <LaunchPanel />
 
       <Panel title="your data" className="lg:col-span-2">
         <p className="text-sm text-muted">

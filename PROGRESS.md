@@ -134,7 +134,8 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 1. Owner: approve and deploy JARVIS Ask to staging, then run the iPhone
    steps in docs/JARVIS_ASK.md (they include a confirmed "yes" on staging).
    Decide on `microphone=(self)` (D-044). Report any phrase JARVIS
-   misunderstands; it becomes a parser test.
+   misunderstands; it becomes a parser test. After deploying D-045,
+   check the Home Screen launch (docs/JARVIS_ASK.md › Unverified).
 2. Optional: the Apple Shortcut (docs/IPHONE_SHORTCUT.md), and
    docs/STAGING.md §8 by hand and §9.
 3. Mail OAuth feasibility, once the owner has created the clients.
@@ -145,6 +146,22 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-28 — The Home Screen app opens on Ask (D-045)
+- **Problem:** the installed iPhone app opened on the dashboard. iOS uses
+  the URL saved at install time and ignores manifest `shortcuts`.
+- **Fix:** `lib/launch.ts`, called from `main.tsx` before the first render.
+  An installed app's fresh, unrouted launch moves to `#/ask` with
+  `replaceState`. Reloads, back/forward, chosen routes, and browser tabs
+  are left alone; the launch is decided once per `sessionStorage`.
+- **Setting:** Settings › *this device* › "Home Screen app opens on"
+  (Ask or Home). Per device, in `localStorage`. It defaults to Ask on
+  iOS and Home elsewhere.
+- **Unchanged:** the manifest, service worker, auth, and backend. The
+  existing install doesn't need to be reinstalled.
+- **Tests:** `lib/launch.test.ts`, and a browser e2e step with emulated
+  `navigator.standalone`. Gate: verify ✅ (core 133, web 124, handoff 50), smoke ✅, browser e2e 34/34 ✅.
+- **Unverified on a real iPhone:** docs/JARVIS_ASK.md › Unverified.
 
 ### 2026-10-24 — JARVIS Ask: mobile-first web conversation (D-044)
 - **New module `ask`** (`#/ask`, second in the tab bar and sidebar): a

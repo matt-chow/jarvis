@@ -641,3 +641,25 @@ No `DESIGN_HANDOFF.md` exists yet. New screens reuse the existing `Panel`,
 `// Provisional screen: awaiting design integration`, and are listed in
 MODULES.md › Design status. Business logic stays in `lib/` and hooks so designs
 can replace presentation only.
+
+## D-045 — The installed iPhone app opens on Ask (per-device launch route)
+**Status:** accepted (owner goal, 2026-10-28: "Make the iPhone Home Screen
+app launch directly into JARVIS Ask, while preserving normal Directory
+navigation").
+
+iOS launches a Home Screen app at the URL saved when it was installed, and it
+ignores manifest `shortcuts`, so the D-044 shortcut doesn't help on iPhone. A
+manifest `start_url` of `/#/ask` was rejected for three reasons: it would also
+change installed desktop and Android apps, an existing install wouldn't pick
+it up, and it can't vary per device. Instead, `lib/launch.ts` runs once before
+the first render:
+- It acts only in an installed app (`navigator.standalone` or `display-mode:
+  standalone`).
+- It acts only on a fresh navigation (not a reload or back/forward), once per
+  `sessionStorage` session, and only when the URL has no route or `#/home`.
+- It moves to the device's choice with `history.replaceState`.
+
+The choice ("Home Screen app opens on": Ask or Home) is per device, in
+`localStorage` (`launch:module`). It defaults to Ask on iPhone and iPad and to
+Home elsewhere. Browser tabs never redirect. The manifest, service worker,
+auth, and backend are unchanged.

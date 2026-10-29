@@ -779,6 +779,47 @@ try {
     await page.hash("/settings");
   });
 
+  await step("Home Screen launch: the installed iPhone app opens on Ask; tabs, reloads, and chosen routes are kept", async () => {
+    const heading = () => page.evaluate(`document.querySelector("h1")?.innerText ?? ""`);
+    const fresh = async (path) => {
+      await page.evaluate(`sessionStorage.clear()`); // a new launch is a new app session
+      await page.navigate("about:blank"); // a full load, even when only the hash differs
+      await page.navigate(`${server.origin}${path}`);
+    };
+    // A browser tab keeps the dashboard.
+    await fresh("/");
+    await waitFor("Home in a tab", async () => (await heading()).includes("Home"));
+    // iOS Home Screen app: navigator.standalone === true.
+    const { identifier } = await page.send("Page.addScriptToEvaluateOnNewDocument", {
+      source: `Object.defineProperty(Navigator.prototype, "standalone", { get: () => true, configurable: true });`,
+    });
+    try {
+      await fresh("/");
+      await page.waitForText("Changes wait for your confirm");
+      if ((await page.evaluate("location.hash")) !== "#/ask") throw new Error("launch did not open #/ask");
+      // Moving on, then reloading, stays where the user is.
+      await page.hash("/tasks");
+      await waitFor("Tasks", async () => (await heading()).includes("Tasks"));
+      await page.reload();
+      await waitFor("Tasks after reload", async () => (await heading()).includes("Tasks"));
+      // A launch with a route keeps it.
+      await fresh("/#/settings");
+      await page.waitForText("Home Screen app opens on");
+      const shown = await page.evaluate(`document.querySelector('select[aria-label="Home Screen app opens on"]').value`);
+      if (shown !== "ask") throw new Error(`setting shows ${shown}`);
+      // Choosing Home on this device turns the redirect off.
+      await page.evaluate(`(() => { const s = document.querySelector('select[aria-label="Home Screen app opens on"]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(s, "home"); s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+      if ((await page.evaluate(`localStorage.getItem("launch:module")`)) !== "home") throw new Error("choice not saved");
+      await fresh("/");
+      await waitFor("Home after choosing Home", async () => (await heading()).includes("Home"));
+      if ((await page.evaluate("location.hash")) !== "") throw new Error("redirected despite Home");
+    } finally {
+      await page.send("Page.removeScriptToEvaluateOnNewDocument", { identifier });
+      await page.evaluate(`localStorage.removeItem("launch:module")`);
+    }
+    await page.hash("/settings");
+  });
+
   await step("Settings lists one passkey; device token is shown once", async () => {
     await page.hash("/settings");
     await page.waitForText("PASSKEYS · 1");
