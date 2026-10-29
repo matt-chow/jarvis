@@ -42,7 +42,7 @@ No inert controls, and no mock-only features presented as done.
 ```sh
 npm run ci              # full gate: verify + smoke + browser e2e (run before committing a slice)
 npm run verify          # fmt, clippy, typecheck, all unit tests, builds, deploy dry run
-npm run dev:worker      # local Worker with D1/R2 (restart after `npm run build`)
+npm run dev:worker      # migrate local D1, then local Worker (restart after `npm run build`)
 npm run smoke           # API end-to-end on an isolated wrangler dev (or BASE_URL)
 npm run test:browser    # headless browser e2e with virtual passkey (after `npm run build`)
 npm run smoke:remote-local  # the staging (BASE_URL) smoke checks, against an isolated local Worker

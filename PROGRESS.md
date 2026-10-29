@@ -147,6 +147,43 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-10-28 — Local 502: unmigrated local D1
+- **Cause:** the local D1 was at schema v1 (only `0001` applied), so
+  `GET /api/v1/auth/session` failed with 502 `backend_unavailable`. The tests
+  didn't catch it because each run makes its own migrated database.
+- **Fix:** applied `0002`–`0022` locally. `npm run dev:worker` now runs
+  `db:migrate:local` first, which does nothing when the database is current.
+- **Staging:** already at `0022`. A one-off 7403 from `db:migrate:staging`
+  came straight after a login refresh; the same calls succeeded on retry.
+
+### 2026-10-28 — Paper design system, shell, Home, and Ask (D-046)
+- **Paper:** read "Directory — Design": the tokens, the style board, Desktop ·
+  Home, Mobile · Home, and Mobile · JARVIS · Voice. Then the Paper MCP
+  weekly limit stopped access (docs/DESIGN_HANDOFF.md › Blocked).
+- **Design system:** Directory's tokens were remapped to Paper's light and
+  night values; Geist and Geist Mono are self-hosted; Paper radii; a tidal
+  gradient (deepened for AA). `Panel`, `Button`, and `StatusChip` follow the
+  style board. There's a per-device Light / Night / system theme.
+- **Shell:** a grouped sidebar with a brand mark and account footer, and an
+  "Ask JARVIS ⌘J" chip (Ctrl+J works too). Phone tab bar: Home · Tasks ·
+  JARVIS button · Projects · Modules. The new `#/modules` launcher shares
+  `ModuleGrid` with Home. On the phone, status chips show only when
+  something needs attention.
+- **Home:** a date eyebrow, a display greeting, and "JARVIS suggests" from
+  the planner (1 of 3, Open task, Not now; loading, empty, offline, and
+  error states). The widgets are restyled and still customizable.
+- **Ask:** the tidal orb (it pulses while listening), quoted turns, a
+  "Proposed" card for pending changes, and a composer with the mic orb. The
+  confirmation logic is untouched.
+- **Not built (no data behind them):** Paper's time blocks, now playing,
+  bookmarks, and tracker.
+- **Tests:** contrast for both themes and the gradient, theme choice, and
+  greeting (unit). The browser e2e step covers the Paper shell (phone tab
+  bar, Modules, Ctrl+J, Night, suggestions). Two existing expectations
+  changed for sentence-case buttons and the new greeting.
+- **Unverified on a real iPhone:** the tab bar orb with the home indicator,
+  the Ask composer above the keyboard, and Night in the installed app.
+
 ### 2026-10-28 — The Home Screen app opens on Ask (D-045)
 - **Problem:** the installed iPhone app opened on the dashboard. iOS uses
   the URL saved at install time and ignores manifest `shortcuts`.

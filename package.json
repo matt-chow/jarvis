@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "npm run dev -w @directory/web",
-    "dev:worker": "wrangler dev",
+    "dev:worker": "npm run db:migrate:local && wrangler dev",
     "build": "npm run build -w @directory/web",
     "build:worker": "wrangler deploy --dry-run --outdir .wrangler/dry-run",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",

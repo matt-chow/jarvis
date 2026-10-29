@@ -48,7 +48,7 @@ npm install                      # also installs wrangler (pinned)
 cp .dev.vars.example .dev.vars   # local setup token + passkey origin (gitignored)
 npm run db:migrate:local         # create local D1 schema
 npm run build                    # build the PWA into apps/web/dist
-npm run dev:worker               # Worker + assets + local D1/R2
+npm run dev:worker               # applies local D1 migrations, then Worker + assets + local D1/R2
 ```
 
 Open **http://localhost:8787**, not 127.0.0.1: passkeys need a hostname. On
