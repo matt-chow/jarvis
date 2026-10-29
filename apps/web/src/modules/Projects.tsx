@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useShown } from "../lib/focus";
 import type { ModuleProps } from "../App";
 import { LinkedSection } from "../components/LinkedSection";
 import { Button, Panel, inputClass } from "../components/ui";
@@ -36,6 +37,7 @@ export function Projects({ online }: ModuleProps) {
   const state = useProjects(online);
   const { tasks } = useTasks(online);
   const [selected, setSelected] = useState<string>();
+  useShown("projects", { project_id: selected });
   const [showArchived, setShowArchived] = useState(false);
   // Edits work offline: they apply locally and sync later (useProjects / D-017).
   const readOnly = !state.projects;

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useShown } from "../lib/focus";
 import type { ModuleProps } from "../App";
 import { LinkedSection } from "../components/LinkedSection";
 import { Button, Panel, inputClass } from "../components/ui";
@@ -67,6 +68,7 @@ export function Tasks({ online }: ModuleProps) {
   const [project, setProject] = useProjectFilter();
   const [filter, setFilter] = useState<TaskFilter>("open");
   const [selected, setSelected] = useState<string>();
+  useShown("tasks", { task_id: selected });
   const today = localDate();
   const tree = useMemo(
     () =>

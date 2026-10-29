@@ -11,6 +11,7 @@ import type { ClientError, ErrorReport } from "./errors";
 import type { FileEntry, Listing, Usage } from "./files";
 import { HISTORY_DAYS, type Habit, type HabitPatch, type HabitView, type NewHabit } from "./habits";
 import type { InboxItem, Triaged, TriageTarget } from "./inbox";
+import type { ChatReply, ChatRequest } from "./chat";
 import type { Plan, Preset } from "./jarvis";
 import type { JournalEntry, JournalSummary, PutJournal } from "./journal";
 import type { LibraryItem, Progress, ProgressPatch } from "./library";
@@ -265,7 +266,8 @@ export class Api {
   /** Preview a command. Read-only plans come back already executed. */
   jarvisPlan = (input: string, today: string) => this.call<Plan>("POST", "/api/v1/jarvis/plan", { input, today });
   /** `today` (local) dates any automations the plan fires. */
-  jarvisExecute = (id: string) => this.call<Plan>("POST", `/api/v1/jarvis/plans/${encodeURIComponent(id)}/execute?today=${localDate()}`);
+  jarvisExecute = (id: string, approval?: { skip: number[]; conversation_id?: string }) =>
+    this.call<Plan>("POST", `/api/v1/jarvis/plans/${encodeURIComponent(id)}/execute?today=${localDate()}`, approval);
   jarvisCancel = (id: string) => this.call<Plan>("POST", `/api/v1/jarvis/plans/${encodeURIComponent(id)}/cancel`);
   /**
    * One conversational turn (D-042, D-044): `{ speech, status, plan_id? }`.
@@ -273,6 +275,8 @@ export class Api {
    */
   jarvisAsk = (text: string, today: string, confirm?: string) =>
     this.call<AskAnswer>("POST", "/api/v1/jarvis/ask", { text, today, confirm });
+  /** One turn of a JARVIS conversation (D-048). */
+  jarvisChat = (req: ChatRequest) => this.call<ChatReply>("POST", "/api/v1/jarvis/chat", req);
   jarvisHistory = async () => (await this.call<{ plans: Plan[] }>("GET", "/api/v1/jarvis/history")).plans;
   presets = async () => (await this.call<{ presets: Preset[] }>("GET", "/api/v1/jarvis/presets")).presets;
   createPreset = (name: string, input: string) => this.call<Preset>("POST", "/api/v1/jarvis/presets", { name, input });

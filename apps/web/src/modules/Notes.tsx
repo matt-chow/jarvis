@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useShown } from "../lib/focus";
 import type { ModuleProps } from "../App";
 import { ConflictBanner } from "../components/ConflictBanner";
 import { LinkedSection } from "../components/LinkedSection";
@@ -20,6 +21,7 @@ const small = "min-h-7 px-2 text-[10px]";
 export function Notes({ online }: ModuleProps) {
   const state = useNotes(online);
   const [selected, setSelected] = useState<string>();
+  useShown("notes", { note_id: selected });
   // Notes are editable offline: edits stay on this device and sync later (D-018).
   const offline = state.stale || !online;
 

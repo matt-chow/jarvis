@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { shownItem, useShown } from "../lib/focus";
 import type { ModuleProps } from "../App";
 import { DayAgenda, EntryForm, ItemDetails, PlannerSettings, ScheduleTask, type EntryKind } from "../components/planner/Details";
 import { longDay, shortDate } from "../components/planner/format";
@@ -123,6 +124,7 @@ export function Calendar({ online }: ModuleProps) {
 
   const findItem = (key: string) => allItems.find((i) => i.key === key);
   const selectedKey = panel?.kind === "item" || panel?.kind === "edit" ? panel.key : undefined;
+  useShown("calendar", { date: anchor, ...shownItem(selectedKey) });
 
   const go = (delta: number) => {
     if (view === "month") setAnchor(`${shiftMonth(month, delta)}-01`);

@@ -119,15 +119,39 @@ impl<'a> Chat<'a> {
         screen: Option<Screen>,
         skip: &[usize],
     ) -> ChatReply {
+        self.send(
+            p,
+            ChatRequest {
+                text: text.into(),
+                today: TODAY.into(),
+                time: Some("08:00".into()),
+                conversation_id: self.conversation(),
+                screen,
+                skip: skip.to_vec(),
+                undo: None,
+            },
+        )
+    }
+    /// The app's Undo button on plan `plan_id`.
+    fn undo_as(&self, p: &Principal, plan_id: &str) -> ChatReply {
+        self.send(
+            p,
+            ChatRequest {
+                text: "Undo that change".into(),
+                today: TODAY.into(),
+                time: Some("08:00".into()),
+                conversation_id: self.conversation(),
+                screen: None,
+                skip: vec![],
+                undo: Some(plan_id.into()),
+            },
+        )
+    }
+    fn conversation(&self) -> Option<String> {
+        self.id.borrow().clone()
+    }
+    fn send(&self, p: &Principal, req: ChatRequest) -> ChatReply {
         self.now.set(self.now.get() + 1_000);
-        let req = ChatRequest {
-            text: text.into(),
-            today: TODAY.into(),
-            time: Some("08:00".into()),
-            conversation_id: self.id.borrow().clone(),
-            screen,
-            skip: skip.to_vec(),
-        };
         let ai = Assistant {
             model: self.model,
             budget: &Budget(self.allow),
@@ -644,4 +668,42 @@ fn a_typed_yes_after_expiry_says_so_once() {
     let r = c.say("yes");
     assert_eq!(r.status, "not_understood", "nothing waits any more: {r:?}");
     assert!(f.tasks.0.borrow().iter().all(|t| t.status == Status::Todo));
+}
+
+#[test]
+fn the_undo_button_reverses_that_plan_only_for_its_owner() {
+    let f = F::default();
+    add_task(&f, &me(), "Essay", None, None);
+    add_task(&f, &me(), "Lab report", None, None);
+    let c = Chat::new(&f, None);
+    c.say("complete essay");
+    let first = plan_of(&c.say("yes")).id.clone();
+    c.say("complete lab report");
+    c.say("yes");
+
+    let other = Principal {
+        user_id: "u2".into(),
+        method: AuthMethod::Session,
+    };
+    let r = Chat::new(&f, None).undo_as(&other, &first);
+    assert_eq!(r.status, "not_found", "{r:?}");
+    let r = c.undo_as(&me(), "not an id");
+    assert_eq!(r.status, "invalid", "{r:?}");
+
+    // The older plan, not the latest one, and only after a confirm.
+    let r = c.undo_as(&me(), &first);
+    assert_eq!(plan_of(&r).status, PlanStatus::Pending, "{r:?}");
+    let done = |title: &str| {
+        f.tasks
+            .0
+            .borrow()
+            .iter()
+            .any(|t| t.title == title && t.status == Status::Done)
+    };
+    assert!(done("Essay"));
+    c.say("yes");
+    assert!(!done("Essay"), "essay reopened");
+    assert!(done("Lab report"), "the later change stays");
+    let r = c.undo_as(&me(), &first);
+    assert_eq!(r.status, "unresolved", "already undone: {r:?}");
 }

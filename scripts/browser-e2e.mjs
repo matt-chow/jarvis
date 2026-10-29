@@ -806,7 +806,7 @@ try {
     await page.waitForText("CANCELLED");
   });
 
-  await step("Ask (phone): full screen, keyboard-dictation fallback, ask, confirm and cancel over /jarvis/ask (D-044)", async () => {
+  await step("Ask (phone): full screen, keyboard-dictation fallback, ask, confirm, undo, screen context, cancel over /jarvis/chat (D-044, D-048)", async () => {
     await page.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
     try {
       await page.hash("/ask");
@@ -843,11 +843,30 @@ try {
       if (made.length !== 1 || !made[0].due_date) throw new Error(`expected one dated task, got ${JSON.stringify(made)}`);
       if ((await page.text()).includes("That was already done")) throw new Error("confirm was sent twice");
 
+      // Undo that change from its card: a previewed plan, then a confirm.
+      await page.click("undo");
+      await page.waitForText("Undo “add task Ask from the phone due tomorrow”");
+      await page.click("confirm");
+      await waitFor("undone", async () => !(await page.evaluate(`fetch("/api/v1/tasks").then((r) => r.json())`)).tasks.some((t) => t.title === "Ask from the phone"));
+      await page.waitForText("undone");
+
+      // "This task" means the task selected on the screen Ask was opened from.
+      const focus = await page.evaluate(`fetch("/api/v1/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "Focus from Tasks" }) }).then((r) => r.json())`);
+      await page.hash(`/tasks?task=${focus.id}`);
+      await page.waitForText("Focus from Tasks");
+      await page.hash("/ask");
+      await page.waitForText("Changes wait for your confirm");
+      await page.fill("Message to JARVIS", "complete this task");
+      await page.click("send");
+      await page.waitForText("Complete task “Focus from Tasks”");
+      await page.click("cancel");
+      await page.waitForText("Okay, I won't do that.");
+
       await page.fill("Message to JARVIS", "add task Should not exist");
       await page.click("send");
       await page.waitForText("Create task “Should not exist”");
       await page.click("cancel");
-      await page.waitForText("Okay, cancelled.");
+      await page.waitForText("Okay, I won't do that.");
       const final = await page.evaluate(`fetch("/api/v1/tasks").then((r) => r.json())`);
       if (final.tasks.some((t) => t.title === "Should not exist")) throw new Error("cancelled task was created");
       await shot("ask-phone-conversation", { width: 390, height: 844 });
@@ -855,6 +874,8 @@ try {
       // Without the session cookie, the same request is refused.
       const anon = await page.evaluate(`fetch("/api/v1/jarvis/ask", { method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "list tasks" }) }).then((r) => r.status)`);
       if (anon !== 401) throw new Error(`anonymous ask → ${anon}`);
+      const anonChat = await page.evaluate(`fetch("/api/v1/jarvis/chat", { method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "list tasks", today: "2026-01-01" }) }).then((r) => r.status)`);
+      if (anonChat !== 401) throw new Error(`anonymous chat → ${anonChat}`);
     } finally {
       await page.send("Emulation.clearDeviceMetricsOverride", {});
     }
@@ -992,6 +1013,23 @@ try {
     const refused = await fetch(`${server.origin}/api/v1/files?folder=uploads`, { headers: { Authorization: `Bearer ${jarvisSecret}` } });
     if (refused.status !== 403) throw new Error(`JARVIS-only token on files → ${refused.status}`);
     await page.waitForText("JARVIS only · created");
+  });
+
+  await step("Settings: JARVIS scheduling preferences save, persist, and reset (D-048)", async () => {
+    await page.hash("/settings");
+    await page.waitForText("JARVIS SCHEDULING");
+    await page.fill("Most session minutes per day", "10");
+    await page.waitForText("Daily maximum must be 30 to 960 minutes.");
+    await page.fill("Most session minutes per day", "180");
+    await page.fill("Break around sessions in minutes", "15");
+    await page.click("save jarvis settings");
+    await page.waitForText("Saved.");
+    const saved = await page.evaluate(`fetch("/api/v1/preferences").then((r) => r.json())`);
+    if (saved.jarvis?.max_daily_minutes !== 180 || saved.jarvis?.break_minutes !== 15) throw new Error(`saved: ${JSON.stringify(saved)}`);
+    await page.click("use defaults");
+    await page.waitForText("JARVIS uses its defaults again.");
+    const reset = await page.evaluate(`fetch("/api/v1/preferences").then((r) => r.json())`);
+    if (reset.jarvis !== undefined && reset.jarvis !== null) throw new Error(`reset: ${JSON.stringify(reset)}`);
   });
 
   await step("sign out and forget this device: asks first, then deletes the browser's copy", async () => {

@@ -10,6 +10,7 @@ import { useOnline } from "./hooks/useOnline";
 import { useSession, type SessionApi } from "./hooks/useSession";
 import { useSync } from "./hooks/useSync";
 import { useServiceWorker, type SwState } from "./hooks/useServiceWorker";
+import { noteRoute } from "./lib/focus";
 import { MODULES, SIDEBAR_GROUPS, TABS, moduleFromHash, sidebarModules, type ModuleId } from "./lib/modules";
 import { Home } from "./modules/Home";
 
@@ -96,6 +97,7 @@ const shortcutLabel = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘J" : "Ctr
 
 export function App() {
   const [active, navigate] = useHashModule();
+  useEffect(() => noteRoute(active), [active]);
   const online = useOnline();
   const health = useHealth(online);
   const sw = useServiceWorker();

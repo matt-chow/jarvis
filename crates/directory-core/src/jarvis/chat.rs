@@ -31,6 +31,10 @@ pub struct ChatRequest {
     /// Steps left out if this turn approves the pending plan ("yes").
     #[serde(default)]
     pub skip: Vec<usize>,
+    /// Propose reversing this executed plan (the app's Undo button); `text`
+    /// is what the conversation records. The plan must be the caller's.
+    #[serde(default)]
+    pub undo: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -151,8 +155,19 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                 self.see_screen(p, &mut conv.state, req.screen.as_ref(), t)
                     .await;
                 let time = req.time.as_deref();
-                self.turn(p, ai, &mut conv.state, &input, &clock, time, &req.skip, t)
-                    .await
+                let undo = req.undo.as_deref();
+                self.turn(
+                    p,
+                    ai,
+                    &mut conv.state,
+                    &input,
+                    &clock,
+                    time,
+                    &req.skip,
+                    undo,
+                    t,
+                )
+                .await
             }
         };
         let mut reply = match outcome {
@@ -298,6 +313,7 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         clock: &Clock,
         time: Option<&str>,
         skip: &[usize],
+        undo: Option<&str>,
         t: &C,
     ) -> Result<ChatReply, JarvisError>
     where
@@ -314,6 +330,16 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
             }
             *st = State::default();
             return Ok(ChatReply::new("reset", "Okay, starting over."));
+        }
+        if let Some(id) = undo {
+            if !is_id(id) {
+                return Err(JarvisError::Invalid("undo", "must be a plan id"));
+            }
+            st.clarify = None;
+            let commands = vec![Command::Undo {
+                plan_id: Some(id.to_owned()),
+            }];
+            return self.propose(p, st, input, commands, clock, None, t).await;
         }
         // A typed answer to the plan awaiting approval.
         if let Some(id) = st.pending_plan.clone() {

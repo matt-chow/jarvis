@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { ModuleProps } from "../App";
 import { deviceLabel } from "../components/AuthScreen";
+import { JarvisSettings } from "../components/JarvisSettings";
 import { Button, Panel } from "../components/ui";
 import { reportIfUnauthorized } from "../hooks/useSession";
 import { localDb } from "../lib/db";
@@ -278,6 +279,8 @@ export function Settings({ online, session }: ModuleProps) {
       </Panel>
 
       <LaunchPanel />
+
+      <JarvisSettings online={online} />
 
       <Panel title="your data" className="lg:col-span-2">
         <p className="text-sm text-muted">

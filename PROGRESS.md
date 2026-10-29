@@ -154,6 +154,32 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-10-29 — JARVIS 2.0, slice 3: Ask UI on /jarvis/chat, screen context, preferences (D-048)
+- **Ask (`modules/Ask.tsx`, `lib/chat.ts`):** a conversation with JARVIS
+  and you in separate bubbles. A plan shows as a card with one checkbox per
+  step. Leaving a step out also leaves out the steps that need it, and
+  confirm says how many will run. Questions offer their choices as buttons.
+  Results show ✓/✗ per step with "open" links, a partial failure is labelled
+  "partly done", and an executed plan has an undo button. Undo is still a
+  previewed plan that you confirm. Confirm runs exactly the previewed plan
+  (by id). A double tap or an expired plan says that nothing new ran. Other
+  errors keep the plan and offer a retry. "new" cancels any pending plan and
+  starts over. The composer says when the AI model is off. Voice input and
+  spoken replies are unchanged.
+- **Screen context (`lib/focus.ts`):** Tasks, Notes, Projects, and Calendar
+  report what's selected, and the calendar also reports its day. Ask sends
+  the screen you came from, and the server checks it against your data.
+- **Core:** `ChatRequest.undo` proposes reversing one executed plan,
+  owner-scoped (another user's plan is not_found).
+- **Settings › jarvis scheduling:** no sessions after, break minutes,
+  default task length, most minutes per day, and earliest-first. It shows
+  the working hours it refines. The form validates like the server, and
+  "use defaults" removes the preferences. It saves offline via the outbox.
+- **Verified:** core 181 tests, web 169, handoff 50, verify ✅, smoke ✅,
+  browser e2e all steps ✅. New e2e steps cover Ask confirm → undo → undone,
+  "complete this task" from the Tasks screen, cancel, anonymous chat → 401,
+  and Settings save, persist, and reset.
+
 ### 2026-10-29 — JARVIS 2.0, slice 2: conversation and model tool loop (D-048)
 - **Core (`jarvis/chat.rs`, `conversation.rs`, `agent.rs`):** `chat` runs
   one turn of a conversation. The parser goes first. What it doesn't
