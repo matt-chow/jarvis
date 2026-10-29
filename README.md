@@ -4,25 +4,42 @@ A modular, cloud-hosted, offline-capable personal operating environment, with a
 future JARVIS voice/AI assistant. One Cloudflare Worker serves a React PWA and a
 Rust API backed by D1 (structured data) and a private R2 bucket (files).
 
-> Status: **Sprint 00 — infrastructure foundation.** See [PROGRESS.md](PROGRESS.md).
+> Status: **MVP on staging.** The modules below work end to end, online and
+> offline. Current work and next steps: [PROGRESS.md](PROGRESS.md).
+
+## What it does
+
+| Area | Modules |
+| --- | --- |
+| Plan | **Calendar** (unified planner: tasks, events, and work sessions in month, week, and day views; repeats; suggested times; [PLANNER](docs/PLANNER.md)) · **Tasks** · **Projects** · **Habits** |
+| Capture and write | **Inbox** · **Notes** (wiki links and backlinks) · **Journal** |
+| Files and media | **Files** · **Library** (PDF and ePub reader) · **Music** |
+| Assistant | **JARVIS** (typed and spoken commands; changes need confirmation) · **Ask** (mobile conversation, the iPhone Home Screen app's default start page; [JARVIS_ASK](docs/JARVIS_ASK.md)) · **Automations** |
+| Everywhere | **Home** dashboard with widgets · **Search** · quick task capture · **Settings** (passkeys, device tokens, export and restore, diagnostics) |
+
+Sign-in is by passkey. All data lives in your own Cloudflare account on the
+free tier, and edits made offline queue and sync when the connection returns.
 
 ## Repository layout
 
 ```
 apps/web/                 React + TypeScript + Vite + Tailwind PWA
-  src/modules/            One component per Directory module (Home, Scratchpad, Files, JARVIS)
-  src/lib/                api client, IndexedDB wrapper, module registry
+  src/modules/            One screen per module (Calendar, Tasks, Notes, JARVIS, …)
+  src/components/         Shared UI (Panel, Button, StatusChip) and the planner grid
+  src/hooks/              Data hooks: cached lists, optimistic edits, offline outbox
+  src/lib/                API client, IndexedDB, sync, planner engine, time zones
   sw/service-worker.js    Service worker template (build emits dist/sw.js)
 crates/directory-core/    Portable Rust domain logic — no Cloudflare dependencies
 crates/directory-worker/  Cloudflare Worker adapter (routing, D1, R2)
 migrations/               Versioned D1 SQL migrations (append-only)
-scripts/                  smoke test, offline browser check, icon generator
+scripts/                  smoke test, browser e2e, handoff checks, icon generator
 wrangler.toml             Worker, assets, D1 and R2 configuration
 ```
 
 Docs: [VISION](docs/VISION.md) · [PRD](docs/PRD.md) · [ARCHITECTURE](docs/ARCHITECTURE.md) ·
-[MODULES](docs/MODULES.md) · [PLANNER](docs/PLANNER.md) · [ROADMAP](docs/ROADMAP.md) · [DECISIONS](docs/DECISIONS.md) ·
-[AGENTS](AGENTS.md) · [PROGRESS](PROGRESS.md)
+[MODULES](docs/MODULES.md) · [PLANNER](docs/PLANNER.md) · [JARVIS_ASK](docs/JARVIS_ASK.md) ·
+[SECURITY](docs/SECURITY.md) · [STAGING](docs/STAGING.md) · [ROADMAP](docs/ROADMAP.md) ·
+[DECISIONS](docs/DECISIONS.md) · [AGENTS](AGENTS.md) · [HANDOFF](docs/HANDOFF.md) · [PROGRESS](PROGRESS.md)
 
 ## Prerequisites
 
@@ -71,17 +88,31 @@ test offline behaviour against `dev:worker`.
 | `npm run verify` | fmt + clippy + TS typecheck, Rust and web unit tests, PWA build, Worker build (deploy dry run) |
 | `npm test` | Rust core tests (`cargo test`) and web tests (Vitest) |
 | `npm run smoke` | Starts an isolated `wrangler dev` (fresh D1/R2) and runs the API end-to-end: setup, passkey login (software authenticator), sessions, CSRF, device tokens, every module's API, files and quota |
-| `npm run test:browser` | Headless Chrome/Edge with a virtual passkey: UI setup, upload, settings, sign-out/in, service worker, offline relaunch (run `npm run build` first) |
+| `npm run test:browser` | Headless Chrome/Edge with a virtual passkey: every module's key flow (including the planner), offline edits, accessibility, error recovery, offline relaunch (run `npm run build` first) |
 
 ## Deploy
 
-See [docs/ARCHITECTURE.md › Deployment](docs/ARCHITECTURE.md#deployment) for the
-one-time Cloudflare setup (D1 database, private R2 bucket, passkey hostname vars,
-setup secret). After that:
+Never deploy without the owner's approval. Migrations are append-only; apply
+them before deploying the Worker that needs them.
+
+**Staging** (one-time setup and checks: [docs/STAGING.md](docs/STAGING.md)):
 
 ```sh
-npm run db:migrate:remote
-npm run deploy
-# then sign in, create a device token in Settings, and:
-BASE_URL=https://directory.<subdomain>.workers.dev DIRECTORY_API_TOKEN=dir_... npm run smoke
+npx wrangler d1 time-travel info <staging-db>   # note a restore point first
+npx wrangler d1 migrations list DB --remote --env staging
+npm run db:migrate:staging
+npm run deploy:staging
+```
+
+Then open `/api/v1/health` on the staging host: it should report the schema
+version the code expects (see docs/ARCHITECTURE.md).
+
+**Production:** one-time Cloudflare setup in
+[docs/ARCHITECTURE.md › Deployment](docs/ARCHITECTURE.md#deployment), then
+`npm run db:migrate:remote` and `npm run deploy`. To run the smoke test
+against a deployed Worker, create a device token in Settings and pass it in the
+environment (never commit it):
+
+```sh
+BASE_URL=https://<your-worker-host> DIRECTORY_API_TOKEN=<token> npm run smoke
 ```
