@@ -14,7 +14,7 @@ Rust API backed by D1 (structured data) and a private R2 bucket (files).
 | Plan | **Calendar** (unified planner: tasks, events, and work sessions in month, week, and day views; repeats; suggested times; [PLANNER](docs/PLANNER.md)) · **Tasks** · **Projects** · **Habits** |
 | Capture and write | **Inbox** · **Notes** (wiki links and backlinks) · **Journal** |
 | Files and media | **Files** · **Library** (PDF and ePub reader) · **Music** |
-| Assistant | **JARVIS** (typed and spoken commands; changes need confirmation) · **Ask** (mobile conversation, the iPhone Home Screen app's default start page; [JARVIS_ASK](docs/JARVIS_ASK.md)) · **Automations** |
+| Assistant | **JARVIS** (typed and spoken commands; changes need confirmation) · **Ask** (JARVIS 2.0 conversation: natural language with an optional free model, multi-step plans you preview, edit, and confirm, undo, and screen context; the iPhone Home Screen app's default start page; [JARVIS_ASK](docs/JARVIS_ASK.md), DECISIONS D-048) · **Automations** |
 | Everywhere | **Home** dashboard with widgets · **Search** · quick task capture · **Settings** (passkeys, device tokens, export and restore, diagnostics) |
 
 Sign-in is by passkey. All data lives in your own Cloudflare account on the
@@ -103,6 +103,9 @@ npx wrangler d1 migrations list DB --remote --env staging
 npm run db:migrate:staging
 npm run deploy:staging
 ```
+
+`npm run eval:jarvis` runs the JARVIS phrase table as a dry run on an
+isolated local Worker (see docs/JARVIS_ASK.md).
 
 Then open `/api/v1/health` on the staging host: it should report the schema
 version the code expects (see docs/ARCHITECTURE.md).

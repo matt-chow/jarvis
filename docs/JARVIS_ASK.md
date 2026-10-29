@@ -10,14 +10,43 @@ stays optional.
 
 ```
 Ask screen (signed-in session, no device token)
-  → POST /api/v1/jarvis/ask  { text, today: phone's yyyy-MM-dd }
-  ← { speech, status, needs_confirmation, plan_id? }
-  pending → Confirm / Cancel → POST { text: "yes" | "no", confirm: plan_id, today }
+  → POST /api/v1/jarvis/chat  { text, today, time, conversation_id?, screen?, undo? }
+  ← { conversation_id, status, say, plan?, choices?, via, ai, examples? }
+  pending plan → Confirm → POST /api/v1/jarvis/plans/{id}/execute { skip, conversation_id }
+               → Cancel  → POST /api/v1/jarvis/plans/{id}/cancel
 ```
 
-- **The same contract as the Shortcut** (docs/IPHONE_SHORTCUT.md › API
-  contract). There's no new endpoint or backend code; the deterministic
-  parser, the planner, and approval are unchanged.
+Since JARVIS 2.0 (D-048), Ask is a conversation. The Shortcut keeps the
+voice contract (`POST /jarvis/ask`, docs/IPHONE_SHORTCUT.md); both reach the
+same parser, plans, and approval.
+
+- **Understanding.** Direct commands go to the deterministic parser first
+  (`via: parser`): add, complete, move, find time, unscheduled, rearrange,
+  "what did I forget", undo, "from now on …". Anything else goes to the
+  optional free model (`via: model`, shown as *ai*), which may look things
+  up read-only and then propose steps, ask one question, or answer. With
+  the model off, out of budget, or failing, JARVIS says so and lists
+  commands it does understand. It never pretends to understand.
+- **Plans are cards.** Each step has a checkbox. Leaving a step out also
+  leaves out the steps that need it, and **Confirm** runs exactly the
+  previewed plan, minus those steps. Notes (clashes, shortfalls, assumed
+  lengths) show under each step. Nothing changes until you confirm.
+- **Follow-ups.** "it", "that", and "the second one" refer to what JARVIS
+  just showed. A correction ("actually, leave Thursday free") replaces the
+  pending plan, and the old one can't run. Typed "yes" and "no" work too.
+  **new** starts over. Conversations expire after 30 minutes.
+- **Screen context.** Ask sends the screen you came from: the task, note,
+  or project selected there, or the calendar day and selected item. So "complete
+  this task" works. The server checks every id against your data; an id
+  that isn't yours is ignored.
+- **Results and undo.** Each step shows ✓ or ✗ with an *open* link. A
+  partly failed plan is labelled *partly done*. **undo** on a finished
+  plan proposes its reversal, which you confirm. Items edited since are
+  left alone and reported.
+- **Preferences.** Settings › *jarvis scheduling*: no sessions after a
+  time, breaks, default task length, a daily cap, and earliest-first. They
+  refine the working hours set in Calendar. "From now on …" proposes a
+  change to them; a one-off request never does.
 - **Auth:** your passkey session cookie. The page never stores or sends a
   device token. If the session has ended, Ask says so, then the app shows
   sign-in.
@@ -102,14 +131,21 @@ approval.
 4. Tap **voice reply off** to turn it on, then ask "What's on tomorrow?".
    The answer should be spoken. If it's silent, check the ringer and
    silent switch, then report it (see "Unverified").
-5. Type "Add task test Ask due Friday" and send it. You should see
-   "Create task “test Ask” due … Say yes to confirm." with **Confirm**
-   and **Cancel**. Open Tasks in another tab: the task doesn't exist yet.
+5. Type "Add task test Ask due Friday" and send it. You should see a
+   card with the step "Create task “test Ask” due …", marked *proposed ·
+   nothing changes until you confirm*, with **Confirm** and **Cancel**.
+   Open Tasks in another tab: the task doesn't exist yet.
 6. Tap **Confirm** (try a quick double tap). You should see one
-   "Created task “test Ask”." The original card turns *confirmed*. Tasks
-   shows exactly one "test Ask".
+   "Created task “test Ask”." The card turns *confirmed*, and Tasks shows
+   exactly one "test Ask". Tap **undo** on it, then **Confirm**: the task
+   is gone and the card says *undone*.
 7. Type "Add task should not exist" and tap **Cancel**. You should see
-   "Okay, cancelled.", and no task is created.
+   "Okay, I won't do that.", and no task is created.
+7a. JARVIS 2.0: give an assignment an estimate and a due date, then ask
+   "Find four hours for <its name> before Friday". Untick one session,
+   confirm, and check the calendar. Then open the task in Tasks, come back
+   to Ask, and say "break this task into smaller steps" (needs the model)
+   or "complete this task".
 8. Install it: Share › **Add to Home Screen**. Open Directory from the
    Home Screen, sign in if asked, and repeat step 3. Note whether the
    keyboard dictation key is present.
@@ -120,10 +156,28 @@ approval.
 
 ## Implemented, tested, unverified
 
-**Implemented:** the `ask` module (`modules/Ask.tsx`); `lib/talk.ts`
-(conversation state, confirm and cancel, errors); `lib/speech.ts`
-(detection, recognition lifecycle, synthesis); `Api.jarvisAsk`; the
-manifest shortcut; docs.
+**Implemented:** the `ask` module (`modules/Ask.tsx`); `lib/chat.ts`
+(the conversation, plan cards, step toggles, confirm, cancel, retry, and
+undo, D-048); `lib/focus.ts` (screen context); `lib/talk.ts` (error
+messages); `lib/speech.ts` (detection, recognition lifecycle, synthesis);
+`Api.jarvisChat`; the manifest shortcut; docs.
+
+**JARVIS 2.0 tests** (D-048):
+- `lib/chat.test.ts`: the request shape, an exact confirm with skipped
+  steps, double taps, replaced and dropped plans, typed yes, retry after an
+  error, a 409 that ran nothing, choices, undo, labels, links, and screen
+  focus.
+- Core `jarvis/tests/chat.rs`: a scripted model through lookups → plan →
+  correction → keep-free → approve → undo, the completion scenarios, prompt
+  injection in stored text, forged handles, malformed and outage replies,
+  the budget, cross-user screens, conversations, and undo.
+- `npm run eval:jarvis`: a dry run of a phrase table on an isolated Worker.
+  Plans are proposed and checked, never confirmed, and the run fails if any
+  data changed. With `JARVIS_EVAL_LIVE=1`, `OPENROUTER_API_KEY`, and a
+  `:free` `JARVIS_AI_MODEL`, the same table goes to the real model. Its
+  understanding is reported; its safety is enforced.
+- Browser e2e: confirm → undo → *undone*, "complete this task" from the
+  Tasks screen, cancel, anonymous chat → 401, and the Settings panel.
 
 **Tested automatically** (`npm run ci`):
 - Unit (`lib/talk.test.ts`, `lib/speech.test.ts`):

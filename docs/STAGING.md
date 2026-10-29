@@ -193,7 +193,11 @@ npx wrangler secret put OPENROUTER_API_KEY --env staging
 ```
 
 Then add `JARVIS_AI_MODEL = "<a model id ending in :free>"` to
-`[env.staging.vars]`. Any other model id leaves AI off.
+`[env.staging.vars]`. Any other model id leaves AI off. Optional limits:
+`JARVIS_AI_DAILY` (calls per owner per UTC day, default 40; a JARVIS 2.0
+chat turn uses up to 3) and `JARVIS_AI_TIMEOUT_MS` (per call, default
+12000). Without a model, Ask understands direct commands and says so
+(DECISIONS D-048).
 
 ### 4.4 Check before going further (💻)
 
@@ -211,7 +215,7 @@ targeting production.
 ## 5. Migrations, safely
 
 The database schema comes from the append-only files in `migrations/`
-(`0001` … `0023`). The app expects **schema v23**.
+(`0001` … `0024`). The app expects **schema v24**.
 
 💻 See what will be applied (for a brand-new database, all 23 are listed):
 
@@ -273,11 +277,11 @@ $base = "https://directory-staging.<subdomain>.workers.dev"
 ```
 
 1. **Health** should be `status: ok`, with the database check saying
-   `schema v22` and storage ok:
+   `schema v24` and storage ok:
    ```powershell
    Invoke-RestMethod "$base/api/v1/health" | ConvertTo-Json -Depth 4
    ```
-   `schema vN, expected v23` means migrations are missing (§5). The
+   `schema vN, expected v24` means migrations are missing (§5). The
    endpoint returns HTTP 503 while degraded.
 2. **Data needs sign-in.** This should print `401`:
    ```powershell

@@ -751,3 +751,58 @@ personal productivity system").
   paid AI. Blocks don't cross midnight (an entry ending at midnight uses
   `24:00`). Estimates still max out at 1,440 minutes (a CHECK constraint in
   0021; widening it would need a table rebuild).
+
+## D-048 — JARVIS 2.0: a conversation over typed, previewed, revalidated plans
+**Status:** accepted (owner goal, 2026-10-29: "a natural-language,
+context-aware, multi-step AI assistant", free tier only, with every change
+previewed and approved).
+
+- **Hybrid understanding.** The deterministic parser goes first and handles
+  the direct commands, now including scheduling ("find 4 hours for the
+  essay by Friday", "make time for my assignments", "rearrange my
+  afternoon", "what's unscheduled", "what did I forget", "undo that", "from
+  now on …"). What it doesn't understand goes to the optional OpenRouter
+  `:free` model (D-043; a paid id leaves AI off). The model never gets a
+  database, SQL, HTTP, or files. It can request up to `MAX_LOOKUPS` (6)
+  read-only, owner-scoped lookups per round, through at most `MAX_ROUNDS`
+  (3) calls per turn, each counted against `JARVIS_AI_DAILY`. Then it must
+  propose typed actions (at most 8), ask one question, or answer. Its reply
+  is strict JSON; malformed output gets one correction, then falls back.
+  Timeouts (`JARVIS_AI_TIMEOUT_MS`, default 12 s), rate limits, and outages
+  fall back to direct commands and say so. There is no offline NL reasoning.
+- **Minimal, untrusted context.** The model sees short handles (`t3`, `b7`),
+  never ids. Stored text (titles, notes) reaches it clipped and quoted as
+  DATA, with `<`, `>`, and `|` replaced. Handles that weren't shown to it are
+  rejected. Its actions become the same `Command`s the parser makes, which
+  are resolved against the owner's data, previewed, and approved. A model
+  can never run a change, change preferences silently, or skip approval.
+- **Plans** are stored, versioned objects: steps with typed commands,
+  risk (read, write, destructive), dependencies (`after`), notes, results,
+  and the reversal record (`undo`). They expire after 10 minutes. Read-only
+  plans run at once; anything else waits for approval. At approval, steps
+  can be left out (`skip`); a kept step that needs a left-out one is
+  refused. Execution runs exactly the stored plan, rechecking ownership,
+  versions, and clashes per step. A changed item fails its step instead
+  of being overwritten. Steps are idempotent by id, so retries and double
+  taps can't duplicate. A failure stops the plan, and the result says
+  truthfully what ran (*partly done*).
+- **Undo** comes from the persisted results, not the model's memory. A
+  reversal is itself a previewed plan. It refuses items edited since, and a
+  plan can be undone once (`reversed_by`). A correction records the plan it
+  replaces (`revises`), and the replaced plan can't run.
+- **Conversation state** (`jarvis_conversations`, migration 0024) is
+  bounded and expires after 30 minutes. It holds recent items, the list
+  just shown, checked screen context, the last 6 turns (clipped), the pending
+  plan, and an open question. Rows are owner-scoped on read and write.
+  Client screen ids are hints and are verified server-side.
+- **Preferences** (`preferences.jarvis`): avoid-after, breaks, default task
+  length, daily cap, and earliest-first. They are explicit, editable in
+  Settings, removable, and used by the deterministic scheduler. Only "from
+  now on / always / never" proposes changing them, as an approved step.
+- **UI:** Ask on `/jarvis/chat` reuses the existing components (D-013, no
+  new Paper design). It has plan cards with step toggles, choices,
+  retry, undo, links, and voice as before. Settings gains *jarvis
+  scheduling*.
+- **Not added:** paid models or fallbacks, streaming, model-written
+  preferences, delete-task tools, and offline NL. Auth and security headers
+  are unchanged; the microphone policy stays an owner decision (D-044).

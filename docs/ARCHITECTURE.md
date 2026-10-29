@@ -85,7 +85,8 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | DELETE | `/api/v1/auth/tokens/{id}` | session only | Revoke |
 | POST | `/api/v1/jarvis/ask` | session, token, or JARVIS-only token | Apple Shortcuts (D-042, docs/JARVIS_SHORTCUTS.md). `{ text, today?, confirm? }` → `{ speech, status, needs_confirmation, plan_id? }`. Same approval as `plan`; a `confirm` answer runs or cancels the plan once. Understanding errors are 200 with `speech`. |
 | POST | `/api/v1/jarvis/plan` | session or token | `{ input, today }` → plan with typed actions. Read-only plans come back `executed`; writes are `pending` (10-minute expiry). Errors: `400 not_understood { message, examples }`, `422 unresolved`. |
-| POST | `/api/v1/jarvis/plans/{id}/execute` | session or token | Approve: atomic `pending → running` claim, so a plan runs at most once (`409 not_pending`). |
+| POST | `/api/v1/jarvis/chat` | session only | JARVIS 2.0 conversation (D-048). `{ text, today, time?, conversation_id?, screen?, skip?, undo? }` → `{ conversation_id, status, say, plan?, choices?, via, ai, examples? }`. Parser first, then the optional free model with bounded read-only lookups; changes come back as `pending` plans. |
+| POST | `/api/v1/jarvis/plans/{id}/execute` | session or token | Approve: atomic `pending → running` claim, so a plan runs at most once (`409 not_pending`). Optional body `{ skip: [step indexes], conversation_id? }` leaves steps out; a kept step that needs a left-out one is refused. Each step is revalidated as it runs. |
 | POST | `/api/v1/jarvis/plans/{id}/cancel` | session or token | |
 | GET | `/api/v1/jarvis/history` | session or token | Last 50 plans with results |
 | GET / POST | `/api/v1/jarvis/presets` | session or token | Saved commands `{ name, input }` (≤ 50, validated by parsing). Running one is a normal `plan` call. |
@@ -145,7 +146,7 @@ JSON bodies are capped at 64 KiB.
 ## Data
 
 - **D1** migrations live in `migrations/NNNN_name.sql` and are append-only.
-  `system_meta.schema_version` must equal `EXPECTED_SCHEMA_VERSION` (now **23**).
+  `system_meta.schema_version` must equal `EXPECTED_SCHEMA_VERSION` (now **24**).
   - `0001`: `system_meta`
   - `0002`: `users`, `passkeys`, `auth_challenges`, `sessions`, `api_tokens`.
     Times are epoch milliseconds; secrets are stored only as SHA-256 hex.

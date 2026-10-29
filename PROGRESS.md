@@ -131,6 +131,16 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to delete the retired OneDrive copy of the repo (D-040).
 
 ### Next task
+00. Owner: approve deploying **JARVIS 2.0** (D-048) to staging. It needs
+   migration 0024 (additive: two nullable columns and a new table) before
+   the Worker; health must then report schema v24. Note a restore point
+   first: `npx wrangler d1 time-travel info directory-db-staging`,
+   then `npm run db:migrate:staging` and `npm run deploy:staging`. After
+   deploying, run `BASE_URL=https://directory-staging.mchowcl.workers.dev
+   DIRECTORY_API_TOKEN=dir_… npm run smoke`, then
+   docs/JARVIS_ASK.md › iPhone test steps 5–7a. To try the model, set
+   `OPENROUTER_API_KEY` (a secret) and a `:free` `JARVIS_AI_MODEL`
+   (docs/STAGING.md §4.3). Without them, Ask works on direct commands only.
 0. Owner: run docs/PLANNER.md › Manual acceptance on a computer and an
    iPhone. The unified planner (D-047, d5a5bc7) is on staging since
    2026-10-29: migration 0023 applied, Worker version
@@ -153,6 +163,31 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-29 — JARVIS 2.0, slice 4: eval suite, offline audit, docs (D-048)
+- **`npm run eval:jarvis`** (`scripts/jarvis-eval.mjs`): a phrase table
+  run on an isolated Worker with fixtures (coursework, an overdue task, a
+  fixed weekly class, a flexible session, and a note with injected orders).
+  It's a dry run: plans are proposed and checked, every pending plan is
+  cancelled, and the run fails if any task, event, session, note, project,
+  or preference changed. Result: parser 10/10, free-form 8/8 honest
+  fallback (AI off), no data changed. `JARVIS_EVAL_LIVE=1` with a `:free`
+  model runs the same table against the real provider. Model quality is
+  reported there; safety is enforced. The live run hasn't been done (no
+  key here).
+- **Found by the eval and fixed:** "Find four hours for my essay" didn't
+  match the task "Essay". The parser now drops a leading "my" or "the" (new
+  parser test).
+- **Offline audit (§12), no changes needed:** browser e2e already covers
+  offline edits that are queued, survive a reload, and sync in order
+  without duplicates (client ids, D-039), conflict choice for notes and
+  journal, and the app opening from cache with the server stopped. JARVIS
+  preferences save offline through the existing `prefs.update` outbox op.
+  Ask needs a connection and says so ("tasks and notes still save
+  offline"). There is no offline NL, and none is claimed.
+- **Docs:** DECISIONS D-048, JARVIS_ASK (the conversation, tests, iPhone
+  steps 5–7a), ARCHITECTURE (`/jarvis/chat`, execute body, schema v24),
+  STAGING (v24, AI limits), README.
 
 ### 2026-10-29 — JARVIS 2.0, slice 3: Ask UI on /jarvis/chat, screen context, preferences (D-048)
 - **Ask (`modules/Ask.tsx`, `lib/chat.ts`):** a conversation with JARVIS
