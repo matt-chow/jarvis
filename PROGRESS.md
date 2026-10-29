@@ -143,7 +143,7 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
    DIRECTORY_API_TOKEN=dir_… npm run smoke`, then docs/JARVIS_ASK.md ›
    iPhone test steps 5–7a. Free-form requests: the `OPENROUTER_API_KEY`
    staging secret exists (checked 2026-10-29, value not read), and the
-   staging config now names `google/gemma-4-31b-it:free` with a zero
+   staging config now names `nvidia/nemotron-3.5-super-vl:free` with a zero
    price cap and no fallbacks, **committed but not deployed**. Owner:
    `npm run deploy:staging` (no migration), then the live eval in
    docs/STAGING.md §4.3. Until then Ask handles direct commands and says so.
@@ -175,9 +175,10 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
   `OPENROUTER_API_KEY` and `DIRECTORY_SETUP_TOKEN` exist. No key or device
   token is available locally, so the live eval and the authenticated
   staging smoke are owner steps (docs/STAGING.md §4.3, Next task 00).
-- Model: `google/gemma-4-31b-it:free`, picked from OpenRouter's public
-  model list (one free Google AI Studio endpoint at price 0, JSON mode,
-  tools, optional reasoning). It's set in `[env.staging.vars]`, which takes
+- Model: `nvidia/nemotron-3.5-super-vl:free` (the owner's choice over the
+  first pick, `google/gemma-4-31b-it:free`). OpenRouter's public model list shows one free
+  NVIDIA endpoint at price 0, structured outputs, tools, and optional
+  reasoning (not mandatory), with 100% uptime over the last day. It's set in `[env.staging.vars]`, which takes
   effect on the next `npm run deploy:staging`. Not deployed.
 - Billing guard: the request body is built in core (`openrouter_body`) and
   sends one model, no `models` list or `route`, `provider.max_price` 0, and

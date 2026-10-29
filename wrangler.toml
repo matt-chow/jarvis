@@ -78,7 +78,7 @@ DIRECTORY_ORIGINS = "https://directory-staging.mchowcl.workers.dev"
 # Cap file storage per owner at 100 MB (default 1 GiB), far under R2's free 10 GB.
 DIRECTORY_QUOTA_BYTES = "104857600"
 # Free-form JARVIS (D-043, D-048): a free OpenRouter model, used only with the
-# OPENROUTER_API_KEY secret. Chosen 2026-10-29: one free endpoint, JSON mode,
-# optional reasoning. Requests also cap price at 0 with no fallbacks.
-# Alternative: "nvidia/nemotron-3.5-super-vl:free".
-JARVIS_AI_MODEL = "google/gemma-4-31b-it:free"
+# OPENROUTER_API_KEY secret. Owner's choice 2026-10-29: one free NVIDIA endpoint,
+# structured outputs, tools, optional reasoning. Requests also cap price at 0
+# with no fallbacks. Alternative: "google/gemma-4-31b-it:free".
+JARVIS_AI_MODEL = "nvidia/nemotron-3.5-super-vl:free"

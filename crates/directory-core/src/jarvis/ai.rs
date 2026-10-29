@@ -335,8 +335,8 @@ mod tests {
 
     #[test]
     fn requests_name_one_free_model_and_refuse_paid_endpoints() {
-        let b = openrouter_body("google/gemma-4-31b-it:free", "sys", "hi", 700);
-        assert_eq!(b["model"], "google/gemma-4-31b-it:free");
+        let b = openrouter_body("nvidia/nemotron-3.5-super-vl:free", "sys", "hi", 700);
+        assert_eq!(b["model"], "nvidia/nemotron-3.5-super-vl:free");
         assert!(
             b.get("models").is_none() && b.get("route").is_none(),
             "no fallback list or router"

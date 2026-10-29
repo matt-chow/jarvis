@@ -192,10 +192,10 @@ later, see docs/JARVIS_SHORTCUTS.md › AI:
 npx wrangler secret put OPENROUTER_API_KEY --env staging
 ```
 
-`[env.staging.vars]` sets `JARVIS_AI_MODEL = "google/gemma-4-31b-it:free"`
-(chosen 2026-10-29 from OpenRouter's public model list: one free endpoint,
-JSON mode, optional reasoning; alternative
-`nvidia/nemotron-3.5-super-vl:free`). Any id not ending in `:free` leaves
+`[env.staging.vars]` sets `JARVIS_AI_MODEL = "nvidia/nemotron-3.5-super-vl:free"`
+(the owner's choice, 2026-10-29; OpenRouter's public model list shows one
+free NVIDIA endpoint, structured outputs, tools, and optional reasoning;
+alternative `google/gemma-4-31b-it:free`). Any id not ending in `:free` leaves
 AI off. Every request also sends `provider.max_price` 0 with
 `allow_fallbacks: false` and no fallback model list, so OpenRouter refuses
 rather than bills (core `openrouter_body`, unit-tested). Reasoning is
@@ -213,7 +213,7 @@ To check the model live before (or after) deploying, run the eval on a
 local isolated Worker with your key in this shell only:
 
 ```powershell
-$env:JARVIS_EVAL_LIVE="1"; $env:OPENROUTER_API_KEY="<your key>"; $env:JARVIS_AI_MODEL="google/gemma-4-31b-it:free"; npm run eval:jarvis
+$env:JARVIS_EVAL_LIVE="1"; $env:OPENROUTER_API_KEY="<your key>"; $env:JARVIS_AI_MODEL="nvidia/nemotron-3.5-super-vl:free"; npm run eval:jarvis
 ``` Optional limits:
 `JARVIS_AI_DAILY` (calls per owner per UTC day, default 40; a JARVIS 2.0
 chat turn uses up to 3) and `JARVIS_AI_TIMEOUT_MS` (per call, default
