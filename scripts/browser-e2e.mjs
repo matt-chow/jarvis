@@ -499,21 +499,103 @@ try {
     await shot("habits");
   });
 
-  await step("Calendar: add an event on today, it shows in the month and day, then delete it", async () => {
-    await page.hash("/calendar");
-    await page.waitForText("Nothing scheduled.");
-    await page.click("+ event");
+  await step("Planner (D-047): suggest and schedule a session, drag it, undo, add an event, cancel one occurrence, quick-add a task, switch views", async () => {
+    const today = localToday();
+    const api = (method, path, body) =>
+      page.evaluate(`fetch(${JSON.stringify(path)}, { method: "${method}", headers: { "Content-Type": "application/json", Origin: location.origin }${body ? `, body: ${JSON.stringify(JSON.stringify(body))}` : ""} }).then((r) => r.status === 204 ? null : r.json())`);
+    const plus = (n) => {
+      const [y, m, d] = today.split("-").map(Number);
+      const t = new Date(y, m - 1, d + n);
+      return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+    };
+    const task = await api("POST", "/api/v1/tasks", { title: "Write the report", estimate_minutes: 120, due_date: plus(7) });
+    const series = await api("POST", "/api/v1/events", { title: "Weekly sync", start_date: today, start_time: "07:00", end_time: "07:30", repeat: "weekly" });
+
+    // The Unscheduled panel starts closed on narrow screens.
+    const openInbox = async () => {
+      await waitFor("calendar toolbar", () => page.evaluate(`!!document.querySelector('[aria-label="Calendar view"]')`));
+      await page.evaluate(`document.querySelector('aside[aria-label^="unscheduled"]') || [...document.querySelectorAll("button")].find((b) => /^unscheduled/i.test(b.innerText.trim()))?.click()`);
+    };
+    await page.hash("/calendar?view=week");
+    await page.reload();
+    console.log(`       (viewport ${await page.evaluate("innerWidth")} px)`);
+    await openInbox();
+    await page.waitForText("Write the report");
+    await page.waitForText("not enough time before it's due"); // 0 of 2 h scheduled
+    // Suggestions: deterministic free slots, nothing scheduled until one is chosen.
+    await page.click("Suggest times");
+    await page.waitForText("Nothing is scheduled until you choose");
+    await waitFor("a suggestion", () => page.evaluate(`!!document.querySelector('[aria-label^="Schedule "]')`));
+    if ((await api("GET", "/api/v1/blocks")).blocks.length !== 0) throw new Error("a suggestion scheduled itself");
+    await page.evaluate(`document.querySelector('[aria-label^="Schedule "]').click()`);
+    await page.waitForText("Scheduled a session");
+    let placed;
+    await waitFor("session saved", async () => {
+      const b = (await api("GET", "/api/v1/blocks")).blocks;
+      placed = b.length === 1 && b[0].task_id === task.id ? b[0] : undefined;
+      return placed;
+    });
+    if (placed.timezone === null) throw new Error("session saved without a time zone");
+
+    // Drag it an hour later on the week grid (48 px per hour), then undo.
+    await page.hash(`/calendar?view=week&date=${placed.date}`);
+    let box;
+    await waitFor("session on the grid", async () =>
+      (box = await page.evaluate(`(() => {
+        const el = document.querySelector('[role=button][aria-label^="Write the report"]');
+        if (!el) return false;
+        el.scrollIntoView({ block: "center" });
+        const r = el.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + Math.min(8, r.height / 2) };
+      })()`)),
+    );
+    const mouse = (type, y) => page.send("Input.dispatchMouseEvent", { type, x: box.x, y, button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1 });
+    await mouse("mousePressed", box.y);
+    for (let i = 1; i <= 6; i++) await mouse("mouseMoved", box.y + i * 8);
+    await mouse("mouseReleased", box.y + 48);
+    const later = (t) => `${String(Number(t.slice(0, 2)) + 1).padStart(2, "0")}${t.slice(2)}`;
+    await waitFor("moved an hour later", async () => (await api("GET", "/api/v1/blocks")).blocks[0].start_time === later(placed.start_time));
+    await page.waitForText("Moved “Write the report”");
+    await page.click("Undo");
+    await waitFor("undone", async () => (await api("GET", "/api/v1/blocks")).blocks[0].start_time === placed.start_time);
+
+    // A new event from the toolbar: a fixed commitment in this device's zone.
+    await page.click("+ new");
     await page.fill("Event title", "Dentist");
     await page.click("add event");
-    await waitFor("event in today's cell", () => page.evaluate(`[...document.querySelectorAll("button[aria-current=date]")].some((b) => b.getAttribute("aria-label").endsWith("1 item"))`));
-    await page.waitForText("All day");
-    const events = await page.evaluate(`fetch("/api/v1/events").then((r) => r.json())`);
-    if (!events.events.some((e) => e.title === "Dentist" && e.start_date === localToday())) throw new Error(`server events: ${JSON.stringify(events)}`);
-    await shot("calendar");
-    await page.click("Edit “Dentist”");
-    await page.click("delete");
+    await page.waitForText("Added “Dentist”");
+    let dentist;
+    await waitFor("event saved", async () => (dentist = (await api("GET", "/api/v1/events")).events.find((e) => e.title === "Dentist")));
+    if (!dentist.fixed || !dentist.timezone) throw new Error(`event: ${JSON.stringify(dentist)}`);
+
+    // Month view: cancel just today's occurrence of the repeating event.
+    await page.hash(`/calendar?view=month&date=${today}`);
+    await waitFor("month grid", () => page.evaluate(`!!document.querySelector('[aria-label="Month"]')`));
+    await page.click("Weekly sync");
+    await page.click("cancel this one");
     await page.click("confirm delete");
-    await page.waitForText("Nothing scheduled.");
+    await waitFor("occurrence skipped", async () => (await api("GET", "/api/v1/events")).events.find((e) => e.id === series.id)?.skip_dates?.includes(today));
+
+    // Day view: the summary, and the grid at phone width.
+    await page.hash(`/calendar?view=day&date=${placed.date}`);
+    await page.waitForText("PLANNED WORK");
+    await shot("planner-day");
+    await shot("planner-day-phone", { width: 390, height: 844 });
+
+    // Quick capture from the header: it shows up in Unscheduled at once.
+    await page.click("Quick add task");
+    await page.fill("Task title", "Captured fast");
+    await page.click("add task");
+    await page.hash("/calendar?view=week");
+    await openInbox();
+    await page.waitForText("Captured fast");
+    await shot("planner-week");
+
+    // Clean up (deleting a task deletes its sessions).
+    const all = (await api("GET", "/api/v1/tasks?status=all")).tasks.filter((t) => ["Write the report", "Captured fast"].includes(t.title));
+    for (const t of all) await api("DELETE", `/api/v1/tasks/${t.id}`);
+    for (const e of (await api("GET", "/api/v1/events")).events) await api("DELETE", `/api/v1/events/${e.id}`);
+    if ((await api("GET", "/api/v1/blocks")).blocks.length) throw new Error("sessions left after deleting their task");
   });
 
   await step("Dashboard: widgets show today's habit, layout changes persist across reloads", async () => {

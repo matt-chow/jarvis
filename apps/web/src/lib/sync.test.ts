@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import { LocalDb } from "./db";
 import { isLocalLink, localLinkId } from "./links";
-import { applyEventLocally, applyHabitLocally, applyInboxLocally, applyLocally, applyProjectLocally, clientId, replay, type Op, type SyncApi } from "./sync";
+import { applyBlockLocally, applyEventLocally, applyHabitLocally, applyInboxLocally, applyLocally, applyProjectLocally, clientId, replay, type Op, type SyncApi } from "./sync";
 import type { Note } from "./notes";
 import type { Task } from "./tasks";
 
@@ -68,6 +68,20 @@ function fakeApi(fail: (op: string) => unknown = () => undefined) {
       return applyEventLocally([], { kind: "event.create", event: { id, title: "", start_date: "2026-01-01" } })[0];
     },
     deleteEvent: async (id) => void (await run(`event-delete:${id}`)),
+    splitEvent: async (id, split) => {
+      await run(`event-split:${id}:${split.scope}:${split.date}${split.replacement ? `+${split.replacement.id}` : ""}`);
+      const series = applyEventLocally([], { kind: "event.create", event: { id, title: "", start_date: "2026-01-01" } })[0];
+      return { series, replacement: null };
+    },
+    createBlock: async (b) => {
+      await run(`block:${b.id}`);
+      return applyBlockLocally([], { kind: "block.create", block: b })[0];
+    },
+    updateBlock: async (id) => {
+      await run(`block-update:${id}`);
+      return applyBlockLocally([], { kind: "block.create", block: { id, title: "x", date: "2026-01-01", start_time: "09:00", end_time: "10:00" } })[0];
+    },
+    deleteBlock: async (id) => void (await run(`block-delete:${id}`)),
     setProgress: async (fileId) => {
       await run(`progress:${fileId}`);
       return { file_id: fileId, status: "reading", current_page: 1, total_pages: 2, position: null, percent: 50, started_at: 0, finished_at: null, updated_at: 0 };
@@ -327,5 +341,49 @@ describe("event ops", () => {
     list = applyEventLocally(list, { kind: "event.update", id: "e1", patch: { start_date: "2026-11-10" } }, 2);
     expect(list[0]).toMatchObject({ start_date: "2026-11-10", end_date: "2026-11-12" });
     expect(applyEventLocally(list, { kind: "event.delete", id: "e1" })).toEqual([]);
+  });
+});
+
+describe("planner ops (D-047)", () => {
+  it("replays block and split ops idempotently", async () => {
+    const db = await outboxWith([
+      { kind: "block.create", block: { id: "b1", task_id: "t1", date: "2026-11-02", start_time: "09:00", end_time: "10:00" } },
+      { kind: "block.update", id: "b1", patch: { status: "done", actual_minutes: 50 } },
+      { kind: "event.split", id: "s1", split: { date: "2026-11-09", scope: "one", replacement: { id: "r1", title: "Class", start_date: "2026-11-10" } } },
+      { kind: "event.split", id: "gone", split: { date: "2026-11-09", scope: "one" } },
+      { kind: "block.delete", id: "b0" },
+    ]);
+    const { api, calls } = fakeApi((op) =>
+      op === "block:b1" || op.startsWith("event-split:s1")
+        ? new ApiError(409, "exists")
+        : op.startsWith("event-split:gone") || op === "block-delete:b0"
+          ? new ApiError(404, "not_found")
+          : undefined,
+    );
+    expect(await replay(db, api)).toMatchObject({ applied: 5, rejected: [] });
+    expect(calls).toEqual(["block:b1", "block-update:b1", "event-split:s1:one:2026-11-09+r1", "event-split:gone:one:2026-11-09", "block-delete:b0"]);
+  });
+
+  it("applies blocks locally; deleting a task drops its sessions", () => {
+    let blocks = applyBlockLocally([], { kind: "block.create", block: { id: "b1", task_id: "t1", title: " ", date: "2026-11-02", start_time: "09:00", end_time: "10:00" } }, 1);
+    blocks = applyBlockLocally(blocks, { kind: "block.create", block: { id: "b1", task_id: "t1", date: "2026-11-02", start_time: "09:00", end_time: "10:00" } }, 1);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({ title: "", fixed: false, status: "planned", actual_minutes: null });
+    blocks = applyBlockLocally(blocks, { kind: "block.update", id: "b1", patch: { start_time: "10:00", end_time: "11:30" } }, 2);
+    expect(blocks[0]).toMatchObject({ start_time: "10:00", end_time: "11:30", updated_at: 2 });
+    expect(applyBlockLocally(blocks, { kind: "task.delete", id: "t1" })).toEqual([]);
+  });
+
+  it("splits a series locally like the server", () => {
+    let list = applyEventLocally([], { kind: "event.create", event: { id: "s", title: "Class", start_date: "2026-11-02", repeat: "weekly", repeat_count: 6 } }, 1);
+    expect(list[0]).toMatchObject({ repeat_until: "2026-12-07", fixed: true, skip_dates: [] });
+    list = applyEventLocally(list, { kind: "event.split", id: "s", split: { date: "2026-11-09", scope: "one", replacement: { id: "r", title: "Class", start_date: "2026-11-10" } } }, 2);
+    expect(list.map((e) => e.id)).toEqual(["s", "r"]);
+    expect(list[0].skip_dates).toEqual(["2026-11-09"]);
+    list = applyEventLocally(list, { kind: "event.split", id: "s", split: { date: "2026-11-30", scope: "following" } }, 3);
+    expect(list[0]).toMatchObject({ repeat_until: "2026-11-29", repeat_count: null });
+    // A one-off has no repeat fields.
+    list = applyEventLocally(list, { kind: "event.update", id: "s", patch: { repeat: "none" } }, 4);
+    expect(list[0]).toMatchObject({ repeat_until: null, skip_dates: [], repeat_interval: 1 });
   });
 });

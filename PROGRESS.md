@@ -131,6 +131,9 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to delete the retired OneDrive copy of the repo (D-040).
 
 ### Next task
+0. Owner: deploy the unified planner (D-047) to staging: migration `0023`
+   first (`npm run db:migrate:staging`), then `npm run deploy:staging`. Then
+   run docs/PLANNER.md › Manual acceptance on a computer and an iPhone.
 1. Owner: approve and deploy JARVIS Ask to staging, then run the iPhone
    steps in docs/JARVIS_ASK.md (they include a confirmed "yes" on staging).
    Decide on `microphone=(self)` (D-044). Report any phrase JARVIS
@@ -146,6 +149,40 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-10-29 — Unified planner: tasks, events, and time blocks (D-047)
+- **Model (migration 0023, additive):** `time_blocks` (work sessions, any
+  number per task, or standalone focus blocks, with status and actual
+  minutes). Events gained fixed/flexible (existing ones stay fixed), an IANA
+  zone, every-N repeats, an occurrence limit, and skipped dates. Tasks gained
+  repeat and an end date. Schema v23.
+- **API:** `/api/v1/blocks` (CRUD; a linked task must be the caller's, also
+  checked in the SQL), `POST /events/{id}/split` (one occurrence, or this
+  and following: skip or end the series and create the replacement in one D1
+  batch; replays answer 409), and working hours in preferences. Closing a
+  repeating task creates the next one with a deterministic id
+  (`INSERT OR IGNORE`), so it can't be created twice. Export and restore
+  include blocks. Deleting a task deletes its sessions.
+- **Calendar (`#/calendar`):** month, week, and day views over one item list
+  (`lib/planner.ts`). The time grid has an all-day row, overlap columns, a
+  current-time line, and configurable hours. You can create by range or tap
+  (event, task with a session, session, focus block), drag to move, resize
+  from the bottom edge, use arrow keys, and undo (Ctrl/⌘+Z). There's an
+  Unscheduled inbox (drag in, or Place then tap), allocation per task,
+  suggestions within working hours, overlap warnings, filters, a day
+  summary, and a details sheet on phones. Edits apply at once and roll back
+  if refused (`runOptimistic`); offline they queue (`block.*`,
+  `event.split`). Times convert between zones with `Intl`, and durations
+  are DST-aware.
+- **Elsewhere:** Tasks shows scheduled time and a repeat setting. "+ Task"
+  quick capture is in the header on every screen (Alt+N).
+- **Tests:** core 142 (+9), web 155 (+27, including optimistic rollback), smoke "planner (D-047)", browser
+  e2e "Planner (D-047)" (suggest → schedule, drag + undo, toolbar event,
+  cancel one occurrence, day summary, quick add); 35/35.
+- **Docs:** docs/PLANNER.md (model, use, manual acceptance, limitations);
+  DECISIONS D-047; ARCHITECTURE (API, data); MODULES; ROADMAP; STAGING (v23).
+- **Not verified:** touch dragging and the bottom sheet on a real iPhone
+  (docs/PLANNER.md › Manual acceptance). Not deployed.
 
 ### 2026-10-28 — Local 502: unmigrated local D1
 - **Cause:** the local D1 was at schema v1 (only `0001` applied), so

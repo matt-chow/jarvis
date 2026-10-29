@@ -133,6 +133,8 @@ pub fn task_from_text(text: &str) -> NewTask {
         parent_id: None,
         project_id: None,
         estimate_minutes: None,
+        repeat: Default::default(),
+        repeat_until: None,
     }
 }
 

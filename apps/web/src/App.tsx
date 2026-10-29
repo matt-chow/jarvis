@@ -3,6 +3,7 @@ import { AuthScreen } from "./components/AuthScreen";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { installGlobalErrorReporting } from "./hooks/reportError";
 import { PlayerProvider } from "./components/Player";
+import { QuickTask } from "./components/QuickTask";
 import { StageTag, StatusChip, type Tone } from "./components/ui";
 import { useHealth, type HealthState } from "./hooks/useHealth";
 import { useOnline } from "./hooks/useOnline";
@@ -250,6 +251,7 @@ export function App() {
                 </a>
               )}
             </div>
+            {active !== "ask" && <QuickTask online={online} />}
           </div>
           {sync.rejected.length > 0 && (
             <div role="alert" className="flex items-start justify-between gap-3 border-y border-line bg-panel px-4 py-2 text-sm md:px-10">

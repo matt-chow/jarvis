@@ -91,9 +91,9 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | GET / POST | `/api/v1/jarvis/presets` | session or token | Saved commands `{ name, input }` (≤ 50, validated by parsing). Running one is a normal `plan` call. |
 | DELETE | `/api/v1/jarvis/presets/{id}` | session or token | |
 | GET | `/api/v1/search?q=` | session or token | 2–100 chars. Case-insensitive substring match across tasks, notes, projects, and journal; LIKE wildcards escaped. Title matches first, then newest; snippets cut in core. |
-| GET | `/api/v1/export` | session or token | One JSON download (`format: "directory-export"`, `format_version: 1`): user, tasks, projects, notes with bodies, journal, inbox, links, habits with check-ins, events, playlists, preferences, reading progress, and file metadata. No credential material. |
+| GET | `/api/v1/export` | session or token | One JSON download (`format: "directory-export"`, `format_version: 1`): user, tasks, projects, notes with bodies, journal, inbox, links, habits with check-ins, events, time blocks, playlists, preferences, reading progress, and file metadata. No credential material. |
 | GET / POST / DELETE | `/api/v1/diagnostics/errors` | session or token | Client error reports: list the newest 50, report `{ message, module?, stack?, app_version? }` (≤ 32 KiB; cleaned and capped; newest 200 kept), or clear (D-027) |
-| POST | `/api/v1/import/{kind}` | session or token | Restore one batch `{ records: [...] }` (≤ 100; body ≤ 4 MiB) of `projects`, `tasks`, `notes`, `journal`, `inbox`, `habits`, `events`, `playlists`, `links`, or `preferences` from an export → `{ inserted, skipped, rejected: [{ id, reason }] }`. Merge-only (D-025). |
+| POST | `/api/v1/import/{kind}` | session or token | Restore one batch `{ records: [...] }` (≤ 100; body ≤ 4 MiB) of `projects`, `tasks`, `notes`, `journal`, `inbox`, `habits`, `events`, `blocks`, `playlists`, `links`, or `preferences` from an export → `{ inserted, skipped, rejected: [{ id, reason }] }`. Merge-only (D-025). |
 | GET | `/api/v1/links?kind=task|note|project|journal&id=` | session or token | Items linked to an entity, with resolved titles. Links whose other end was deleted are dropped and removed. |
 | POST | `/api/v1/links` | session or token | `{ from: {kind,id}, to: {kind,id} }` → `201 { link_id, kind, id, title }`. Idempotent and symmetric; both ends must exist and be owned. |
 | DELETE | `/api/v1/links/{id}` | session or token | Unlink |
@@ -101,10 +101,13 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | PATCH / DELETE | `/api/v1/automations/{id}` | session or token | Partial update (re-validated) / delete. `PATCH /tasks/{id}` and `POST /jarvis/plans/{id}/execute` accept `?today=` (local date) for the automations they fire. |
 | GET | `/api/v1/music` | session or token | `{ tracks, playlists }`: audio files (by content type or extension) and playlists, without tracks whose files were deleted |
 | POST / PATCH / DELETE | `/api/v1/music/playlists[/{id}]` | session or token | `{ name, tracks? }` / `{ name?, tracks? }` (tracks replace the order; each must be your audio file; ≤ 500; ≤ 100 playlists) / delete |
-| GET / PATCH | `/api/v1/preferences` | session or token | Owner preferences (`{ dashboard?: { widgets: [...] } }`). PATCH is partial; `null` resets a field. Widgets are validated against a known list. |
-| GET / POST | `/api/v1/events` | session or token | Every event (repeats not expanded, at most 2,000), or create `{ id?, title, start_date, end_date?, start_time?, end_time?, location?, notes?, repeat?, repeat_until? }` → `201` (`409 exists` on a repeated client id). Times are `HH:MM` local wall-clock; no start time = all day. |
-| GET | `/api/v1/events/agenda?from=&to=` | session or token | Occurrences overlapping the range (≤ 400 days), repeats expanded, all-day first then by time |
-| PATCH / DELETE | `/api/v1/events/{id}` | session or token | Partial update (`null` clears times / `repeat_until`; moving `start_date` keeps the length) / delete |
+| GET / PATCH | `/api/v1/preferences` | session or token | Owner preferences (`{ dashboard?: { widgets: [...] }, planner?: { day_start, day_end, work_days, session_minutes } }`). PATCH is partial; `null` resets a field. Widgets are validated against a known list; working hours (D-047) are validated (end after start, weekdays 0–6, sessions 15–480 min). |
+| GET / POST | `/api/v1/events` | session or token | Every event (repeats not expanded, at most 2,000), or create `{ id?, title, start_date, end_date?, start_time?, end_time?, location?, notes?, repeat?, repeat_until?, repeat_interval? (1–99), repeat_count? (1–500), fixed? (default true), timezone? (IANA) }` → `201` (`409 exists` on a repeated client id). Times are `HH:MM` wall-clock in `timezone` (or the viewer's zone); no start time = all day. A count sets `repeat_until`. |
+| GET | `/api/v1/events/agenda?from=&to=` | session or token | Occurrences overlapping the range (≤ 400 days), repeats expanded (skipped dates left out), all-day first then by time |
+| PATCH / DELETE | `/api/v1/events/{id}` | session or token | Partial update (`null` clears times / `repeat_until` / `repeat_count` / `timezone`; `skip_dates` replaces the list; moving `start_date` keeps the length) / delete (every occurrence) |
+| POST | `/api/v1/events/{id}/split` | session or token | `{ date, scope: one\|following, replacement? }` (D-047): skip one occurrence or end the series before `date`, and optionally create the replacement event, in one transaction → `{ series, replacement }`. A replayed replacement id → `409 exists`. |
+| GET / POST | `/api/v1/blocks` | session or token | Time blocks (work sessions, D-047; at most 5,000), or create `{ id?, task_id?, title?, date, start_time, end_time (after start; 24:00 allowed), timezone?, fixed? (default false), notes? }` → `201`. A linked task must be the caller's; a block without one needs a title. |
+| PATCH / DELETE | `/api/v1/blocks/{id}` | session or token | Partial update: any of the create fields, plus `status` (`planned`/`done`/`skipped`) and `actual_minutes` (0–1440); `null` clears `task_id`, `timezone`, `actual_minutes` / delete |
 | GET | `/api/v1/habits?today=YYYY-MM-DD&days=N` | session or token | Habits (archived too) with check-in dates from the last `days` (1–366, default 28) and the current `streak`. `today` is the caller's local date. |
 | POST | `/api/v1/habits` | session or token | `{ id?, name, days? }` (`days`: weekdays 0 = Monday … 6, default all) → `201`; a repeated client id → `409 exists` |
 | PATCH / DELETE | `/api/v1/habits/{id}` | session or token | `{ name?, days?, archived? }`; delete removes its check-ins |
@@ -122,9 +125,9 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | POST | `/api/v1/projects` | session or token | `{ id?, name, description? }` → `201` (optional client id; a repeat → `409 exists`) |
 | GET / PATCH / DELETE | `/api/v1/projects/{id}` | session or token | PATCH `name, description, status`. DELETE keeps the project's tasks and unassigns them. |
 | GET | `/api/v1/tasks?status=all|open|closed` | session or token | Owner's tasks and subtasks (max 1000) |
-| POST | `/api/v1/tasks` | session or token | `{ title, notes?, priority?, due_date?, parent_id?, project_id?, estimate_minutes? (1–1440) }` → `201`. Subtasks are one level deep and can't set `project_id`. |
+| POST | `/api/v1/tasks` | session or token | `{ title, notes?, priority?, due_date?, parent_id?, project_id?, estimate_minutes? (1–1440), repeat?, repeat_until? }` → `201`. Subtasks are one level deep and can't set `project_id` or repeat. A repeating task needs a due date. |
 | GET | `/api/v1/tasks/plan?date=&minutes=&project_id=` | session or token | Planner proposal (D-041): ranked open tasks with scored reasons; `minutes` (1–960) fills that much time in rank order. Read-only. |
-| GET / PATCH / DELETE | `/api/v1/tasks/{id}` | session or token | PATCH: any of `title, notes, status, priority, due_date, project_id, estimate_minutes` (`null` clears the due date, project, or estimate). DELETE cascades to subtasks. |
+| GET / PATCH / DELETE | `/api/v1/tasks/{id}` | session or token | PATCH: any of `title, notes, status, priority, due_date, project_id, estimate_minutes, repeat, repeat_until` (`null` clears the due date, project, estimate, or end date). Closing a repeating task creates its next occurrence once (D-047). DELETE cascades to subtasks and their time blocks. |
 | GET | `/api/v1/library` | session or token | PDF/ePub files with reading progress (reading, want, unread, finished) |
 | PUT / DELETE | `/api/v1/library/{file_id}/progress` | session or token | PUT `{ status?, current_page?, total_pages?, position? }`. Percent is derived from pages; reaching the last page finishes the document. DELETE resets it. |
 | GET | `/api/v1/files?folder=` | session or token | `{ folder, folders, files }` from D1 metadata (no R2 list operations) |
@@ -142,7 +145,7 @@ JSON bodies are capped at 64 KiB.
 ## Data
 
 - **D1** migrations live in `migrations/NNNN_name.sql` and are append-only.
-  `system_meta.schema_version` must equal `EXPECTED_SCHEMA_VERSION` (now **13**).
+  `system_meta.schema_version` must equal `EXPECTED_SCHEMA_VERSION` (now **23**).
   - `0001`: `system_meta`
   - `0002`: `users`, `passkeys`, `auth_challenges`, `sessions`, `api_tokens`.
     Times are epoch milliseconds; secrets are stored only as SHA-256 hex.
@@ -170,6 +173,10 @@ JSON bodies are capped at 64 KiB.
   - `0020`: `blob_orphans` (R2 deletes to retry, D-033).
   - `0021`: `tasks.estimate_minutes` (planner, D-041).
   - `0022`: `api_tokens.scope` (`full`/`jarvis`, D-042).
+  - `0023`: the planner (D-047): `time_blocks` (owner, optional task, date,
+    times, zone, fixed, status, actual minutes); `events.fixed`, `timezone`,
+    `repeat_interval`, `repeat_count`, `skip_dates` (JSON); `tasks.repeat`,
+    `repeat_until`. All additive; existing events stay fixed.
 - IndexedDB v3 adds a `media` store: tracks the owner chose to save for
   offline playback (blobs, explicit download; the service worker still never
   caches `/api/*`).
@@ -177,7 +184,7 @@ JSON bodies are capped at 64 KiB.
   File content lives at `u/<user_id>/f/<file_id>`; names and folders live in D1.
 - **IndexedDB** database `directory` (v2, adds `outbox`) has a `kv` store with cached
   copies for offline use: health, the last verified session user,
-  task, project, habit, event, note, and library lists, each opened note (`note:<id>`), and each
+  task, project, habit, event, time-block, note, and library lists, each opened note (`note:<id>`), and each
   journal month and day (`journal:<YYYY-MM>`, `journal:<date>`). Unresolved
   sync conflicts live at `conflict:<doc>` (D-018). Outbox entries carry an
   optional `doc` key, a `merge` key for coalesced document saves, and a `rev`

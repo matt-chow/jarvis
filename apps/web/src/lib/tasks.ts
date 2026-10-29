@@ -1,4 +1,5 @@
 /** Task types and pure presentation helpers (no I/O). */
+import type { Repeat } from "./calendar";
 
 export type TaskStatus = "todo" | "in_progress" | "done" | "cancelled";
 export type TaskPriority = "none" | "low" | "medium" | "high";
@@ -15,6 +16,9 @@ export interface Task {
   due_date: string | null;
   /** Expected minutes of work (planner, D-041). Missing in caches from before it existed. */
   estimate_minutes?: number | null;
+  /** Completing a repeating task creates the next one (D-047). Missing in older caches. */
+  repeat?: Repeat;
+  repeat_until?: string | null;
   created_at: number;
   updated_at: number;
   completed_at: number | null;
@@ -30,10 +34,15 @@ export interface NewTask {
   parent_id?: string;
   project_id?: string;
   estimate_minutes?: number | null;
+  repeat?: Repeat;
+  repeat_until?: string | null;
 }
 
 /** Fields omitted are unchanged; `due_date: null` clears. */
-export type TaskPatch = Partial<Pick<Task, "title" | "notes" | "status" | "priority" | "due_date" | "project_id" | "estimate_minutes">>;
+export type TaskPatch = Partial<Pick<Task, "title" | "notes" | "status" | "priority" | "due_date" | "project_id" | "estimate_minutes" | "repeat" | "repeat_until">>;
+
+/** Closing this task makes the server create the next occurrence. */
+export const repeats = (t: Pick<Task, "repeat" | "due_date" | "parent_id">) => !!t.due_date && !t.parent_id && (t.repeat ?? "none") !== "none";
 
 export type TaskFilter = "open" | "closed" | "all";
 
@@ -161,4 +170,15 @@ export function parseEstimate(raw: string): number | null | undefined {
   if (!/^\d+$/.test(s)) return undefined;
   const n = Number(s);
   return n >= 1 && n <= 1440 ? n : undefined;
+}
+
+/**
+ * The id the server gives a repeating task's next occurrence (mirrors
+ * directory-core `tasks::successor_id`), so undoing a completion can remove it.
+ */
+export function successorId(id: string): string {
+  const mask = (1n << 128n) - 1n;
+  const n = /^[0-9a-f]{32}$/.test(id) ? BigInt(`0x${id}`) : 0n;
+  const next = (n * 0x9e3779b97f4a7c15f39cc0605cedc835n + 0x2545f4914f6cdd1dn) & mask;
+  return next.toString(16).padStart(32, "0");
 }

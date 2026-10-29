@@ -17,6 +17,16 @@ export interface CalendarEvent {
   notes: string;
   repeat: Repeat;
   repeat_until: string | null;
+  /** A fixed commitment, or flexible time (D-047). Missing in caches from before: fixed. */
+  fixed?: boolean;
+  /** IANA zone the times are in; null = the viewer's zone. */
+  timezone?: string | null;
+  /** Every N days/weeks/months/years (default 1). */
+  repeat_interval?: number;
+  /** Stop after N occurrences (the server sets `repeat_until` from it). */
+  repeat_count?: number | null;
+  /** Cancelled or moved occurrences (start dates), sorted. */
+  skip_dates?: string[];
   created_at: number;
   updated_at: number;
 }
@@ -31,9 +41,30 @@ export interface NewEvent {
   notes?: string;
   repeat?: Repeat;
   repeat_until?: string | null;
+  fixed?: boolean;
+  timezone?: string | null;
+  repeat_interval?: number;
+  repeat_count?: number | null;
 }
 
 export type EventPatch = Partial<Omit<CalendarEvent, "id" | "created_at" | "updated_at">>;
+
+/** Which occurrences of a repeating event a change applies to. */
+export type SplitScope = "one" | "following";
+
+/** `POST /events/{id}/split` (see directory-core `calendar::Split`). */
+export interface SplitRequest {
+  date: string;
+  scope: SplitScope;
+  replacement?: NewEvent & { id: string };
+}
+
+export interface SplitResult {
+  series: CalendarEvent;
+  replacement: CalendarEvent | null;
+}
+
+export const isFixed = (e: Pick<CalendarEvent, "fixed">) => e.fixed !== false;
 
 export interface Occurrence {
   event: CalendarEvent;
@@ -69,14 +100,46 @@ function realDate(y: number, m: number, d: number): string | undefined {
   return dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d ? dt.toISOString().slice(0, 10) : undefined;
 }
 
+const months = (y: number, m: number) => y * 12 + (m - 1);
+
+/** Start of the `k`-th repeat period (0 = the first), if that day exists. */
+function periodStart(e: CalendarEvent, k: number): string | undefined {
+  const n = Math.max(e.repeat_interval ?? 1, 1);
+  switch (e.repeat) {
+    case "none":
+      return k === 0 ? e.start_date : undefined;
+    case "daily":
+    case "weekly":
+      return addDays(e.start_date, k * n * (e.repeat === "daily" ? 1 : 7));
+    case "monthly":
+    case "yearly": {
+      const [sy, sm, sd] = e.start_date.split("-").map(Number);
+      const m = months(sy, sm) + k * n * (e.repeat === "monthly" ? 1 : 12);
+      return realDate(Math.floor(m / 12), (m % 12) + 1, sd);
+    }
+  }
+}
+
+/** Start of the `n`-th occurrence (1-based; skipped dates count), as the server computes `repeat_until`. */
+export function nthStart(e: CalendarEvent, n: number): string | undefined {
+  let found = 0;
+  for (let k = 0; k < n * 8 + 8; k++) {
+    const d = periodStart(e, k);
+    if (d && d <= "9999-12-31" && ++found === n) return d;
+  }
+  return undefined;
+}
+
 /** Start dates of an event's occurrences that overlap `from..to` (inclusive). */
 export function occurrenceStarts(e: CalendarEvent, from: string, to: string): string[] {
   const span = dayNumber(e.end_date) - dayNumber(e.start_date);
   const earliest = addDays(from, -span);
   const last = e.repeat_until && e.repeat_until < to ? e.repeat_until : to;
+  const skips = new Set(e.skip_dates ?? []);
+  const n = Math.max(e.repeat_interval ?? 1, 1);
   const out: string[] = [];
   const push = (d: string) => {
-    if (d >= earliest && d <= last && d >= e.start_date) out.push(d);
+    if (d >= earliest && d <= last && d >= e.start_date && !skips.has(d)) out.push(d);
   };
   const start = dayNumber(e.start_date);
   switch (e.repeat) {
@@ -85,9 +148,9 @@ export function occurrenceStarts(e: CalendarEvent, from: string, to: string): st
       break;
     case "daily":
     case "weekly": {
-      const step = e.repeat === "daily" ? 1 : 7;
+      const step = (e.repeat === "daily" ? 1 : 7) * n;
       const skip = Math.max(dayNumber(earliest) - start, 0);
-      for (let n = start + Math.ceil(skip / step) * step; n <= dayNumber(last); n += step) push(fromDayNumber(n));
+      for (let d = start + Math.ceil(skip / step) * step; d <= dayNumber(last); d += step) push(fromDayNumber(d));
       break;
     }
     case "monthly":
@@ -95,17 +158,25 @@ export function occurrenceStarts(e: CalendarEvent, from: string, to: string): st
       const [sy, sm, sd] = e.start_date.split("-").map(Number);
       const [ey, em] = earliest.split("-").map(Number);
       const [ly, lm] = last.split("-").map(Number);
-      const months = (y: number, m: number) => y * 12 + (m - 1);
-      for (let k = Math.max(months(ey, em), months(sy, sm)); k <= months(ly, lm); k++) {
-        const [y, m] = [Math.floor(k / 12), (k % 12) + 1];
-        if (e.repeat === "yearly" && m !== sm) continue;
-        const d = realDate(y, m, sd);
+      const per = (e.repeat === "monthly" ? 1 : 12) * n;
+      const base = months(sy, sm);
+      for (let k = Math.max(months(ey, em), base); k <= months(ly, lm); k++) {
+        if ((k - base) % per !== 0) continue;
+        const d = realDate(Math.floor(k / 12), (k % 12) + 1, sd);
         if (d) push(d);
       }
       break;
     }
   }
   return out;
+}
+
+/** "Every 2 weeks", "Every month", or "Does not repeat". */
+export function repeatLabel(e: Pick<CalendarEvent, "repeat" | "repeat_interval">): string {
+  const n = e.repeat_interval ?? 1;
+  if (e.repeat === "none" || n <= 1) return REPEAT_LABELS[e.repeat];
+  const unit = { daily: "days", weekly: "weeks", monthly: "months", yearly: "years" }[e.repeat];
+  return `Every ${n} ${unit}`;
 }
 
 /** Occurrences overlapping `from..to`: by start date, all-day first, then by time. */

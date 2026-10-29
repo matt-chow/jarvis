@@ -4,9 +4,9 @@
 use super::auth::principal;
 use super::{error, error_with, json, read_json_limited};
 use crate::d1::{
-    D1EventRepository, D1FileRepository, D1HabitRepository, D1InboxRepository, D1JournalRepository,
-    D1LinkRepository, D1MusicRepository, D1NoteRepository, D1PreferencesRepository,
-    D1ProjectRepository, D1TaskRepository,
+    D1BlockRepository, D1EventRepository, D1FileRepository, D1HabitRepository, D1InboxRepository,
+    D1JournalRepository, D1LinkRepository, D1MusicRepository, D1NoteRepository,
+    D1PreferencesRepository, D1ProjectRepository, D1TaskRepository,
 };
 use crate::{bindings, try_or_respond};
 use directory_core::backup::{self, BackupError, ImportTargets};
@@ -31,6 +31,7 @@ struct Targets {
     links: D1LinkRepository,
     habits: D1HabitRepository,
     events: D1EventRepository,
+    blocks: D1BlockRepository,
     music: D1MusicRepository,
     preferences: D1PreferencesRepository,
 }
@@ -47,6 +48,7 @@ impl Targets {
             links: D1LinkRepository::new(db()?),
             habits: D1HabitRepository::new(db()?),
             events: D1EventRepository::new(db()?),
+            blocks: D1BlockRepository::new(db()?),
             music: D1MusicRepository::new(db()?, D1FileRepository::new(db()?)),
             preferences: D1PreferencesRepository::new(db()?),
         })
@@ -62,6 +64,7 @@ impl ImportTargets for Targets {
     type Links = D1LinkRepository;
     type Habits = D1HabitRepository;
     type Events = D1EventRepository;
+    type Blocks = D1BlockRepository;
     type Music = D1MusicRepository;
     type Preferences = D1PreferencesRepository;
     fn tasks(&self) -> &D1TaskRepository {
@@ -84,6 +87,9 @@ impl ImportTargets for Targets {
     }
     fn habits(&self) -> &D1HabitRepository {
         &self.habits
+    }
+    fn blocks(&self) -> &D1BlockRepository {
+        &self.blocks
     }
     fn events(&self) -> &D1EventRepository {
         &self.events

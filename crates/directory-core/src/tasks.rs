@@ -1,5 +1,6 @@
 //! Tasks and subtasks (one level deep), owned by a principal.
 
+use crate::calendar::{self, Repeat};
 use crate::entropy::{is_id, new_id, Entropy};
 use crate::identity::Principal;
 use crate::validate::{self, double_option};
@@ -95,6 +96,13 @@ pub struct Task {
     pub due_date: Option<String>,
     /// Expected minutes of work, for the planner (D-041).
     pub estimate_minutes: Option<u32>,
+    /// Completing (or cancelling) a repeating task creates the next one,
+    /// due on the next date of the pattern (D-047).
+    #[serde(default)]
+    pub repeat: Repeat,
+    /// Last possible due date of the series.
+    #[serde(default)]
+    pub repeat_until: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
     pub completed_at: Option<i64>,
@@ -122,7 +130,7 @@ impl Filter {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct NewTask {
     /// Client-chosen id (offline creates); must be a fresh 32-hex id.
     #[serde(default)]
@@ -140,6 +148,10 @@ pub struct NewTask {
     pub project_id: Option<String>,
     #[serde(default)]
     pub estimate_minutes: Option<u32>,
+    #[serde(default)]
+    pub repeat: Option<Repeat>,
+    #[serde(default)]
+    pub repeat_until: Option<String>,
 }
 
 /// Partial update. For nullable fields, `Some(None)` (JSON `null`) clears.
@@ -159,6 +171,10 @@ pub struct TaskPatch {
     pub project_id: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
     pub estimate_minutes: Option<Option<u32>>,
+    #[serde(default)]
+    pub repeat: Option<Repeat>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub repeat_until: Option<Option<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -184,6 +200,8 @@ pub trait TaskRepository {
     async fn delete(&self, owner_id: &str, id: &str) -> Result<bool, String>;
     /// Whether `project_id` is a project owned by `owner_id`.
     async fn project_exists(&self, owner_id: &str, project_id: &str) -> Result<bool, String>;
+    /// Insert unless the id exists (a repeating task's next occurrence).
+    async fn insert_if_absent(&self, task: &Task) -> Result<bool, String>;
 }
 
 fn backend(e: String) -> TaskError {
@@ -202,6 +220,67 @@ fn estimate(minutes: Option<u32>) -> Result<Option<u32>, TaskError> {
 
 fn field<T>(name: &'static str, r: Result<T, &'static str>) -> Result<T, TaskError> {
     r.map_err(|why| TaskError::Invalid(name, why))
+}
+
+/// Repeat rules: a repeating task is top-level and has a due date to repeat from.
+fn check_repeat(t: &mut Task) -> Result<(), TaskError> {
+    if t.repeat == Repeat::None {
+        t.repeat_until = None;
+        return Ok(());
+    }
+    if t.parent_id.is_some() {
+        return Err(TaskError::Invalid("repeat", "subtasks can't repeat"));
+    }
+    let Some(due) = &t.due_date else {
+        return Err(TaskError::Invalid("repeat", "needs a due date"));
+    };
+    if let Some(u) = &t.repeat_until {
+        validate::date(u).map_err(|w| TaskError::Invalid("repeat_until", w))?;
+        if u < due {
+            return Err(TaskError::Invalid("repeat_until", "before due_date"));
+        }
+    }
+    Ok(())
+}
+
+/// The id of a repeating task's next occurrence: a fixed function of its id
+/// (an odd-multiplier step over 128 bits, so chains don't cycle back), which
+/// makes creating the next occurrence idempotent.
+pub fn successor_id(id: &str) -> String {
+    let n = u128::from_str_radix(id, 16).unwrap_or(0);
+    let next = n
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15_F39C_C060_5CED_C835)
+        .wrapping_add(0x2545_F491_4F6C_DD1D);
+    format!("{next:032x}")
+}
+
+/// The next due date after `due` for this pattern, if the series continues.
+pub fn next_due(repeat: Repeat, due: &str, until: Option<&str>) -> Option<String> {
+    let series = calendar::Event {
+        id: String::new(),
+        owner_id: String::new(),
+        title: String::new(),
+        start_date: due.to_owned(),
+        end_date: due.to_owned(),
+        start_time: None,
+        end_time: None,
+        location: String::new(),
+        notes: String::new(),
+        repeat,
+        repeat_until: until.map(str::to_owned),
+        fixed: false,
+        timezone: None,
+        repeat_interval: 1,
+        repeat_count: None,
+        skip_dates: Vec::new(),
+        created_at: 0,
+        updated_at: 0,
+    };
+    // A yearly Feb 29 can be 8 years away.
+    let from = validate::add_days(due, 1);
+    calendar::occurrence_starts(&series, &from, &validate::add_days(due, 8 * 366))
+        .into_iter()
+        .next()
 }
 
 pub struct TaskService<'a, R, E: ?Sized> {
@@ -314,7 +393,7 @@ impl<'a, R: TaskRepository, E: Entropy + ?Sized> TaskService<'a, R, E> {
             Some(id) => id,
             None => new_id(self.entropy),
         };
-        let task = Task {
+        let mut task = Task {
             id,
             owner_id: p.user_id.clone(),
             parent_id: input.parent_id,
@@ -325,10 +404,13 @@ impl<'a, R: TaskRepository, E: Entropy + ?Sized> TaskService<'a, R, E> {
             priority: input.priority.unwrap_or(Priority::None),
             due_date,
             estimate_minutes: estimate(input.estimate_minutes)?,
+            repeat: input.repeat.unwrap_or_default(),
+            repeat_until: input.repeat_until,
             created_at: self.now,
             updated_at: self.now,
             completed_at: None,
         };
+        check_repeat(&mut task)?;
         self.repo.insert(&task).await.map_err(backend)?;
         Ok(task)
     }
@@ -371,8 +453,17 @@ impl<'a, R: TaskRepository, E: Entropy + ?Sized> TaskService<'a, R, E> {
             }
             task.project_id = project;
         }
+        if let Some(r) = patch.repeat {
+            task.repeat = r;
+        }
+        if let Some(u) = patch.repeat_until {
+            task.repeat_until = u;
+        }
+        check_repeat(&mut task)?;
+        let mut closing = false;
         if let Some(status) = patch.status {
             if status != task.status {
+                closing = task.status.is_open() && !status.is_open();
                 task.completed_at = (!status.is_open()).then_some(self.now);
                 task.status = status;
             }
@@ -381,7 +472,36 @@ impl<'a, R: TaskRepository, E: Entropy + ?Sized> TaskService<'a, R, E> {
         if !self.repo.update(&task).await.map_err(backend)? {
             return Err(TaskError::NotFound);
         }
+        if closing {
+            self.spawn_next(&task).await?;
+        }
         Ok(task)
+    }
+
+    /// Create a closed repeating task's next occurrence, at most once. It
+    /// replaces the closed one, so the open-task cap doesn't apply. Subtasks
+    /// and time blocks stay with the closed occurrence (its history).
+    async fn spawn_next(&self, closed: &Task) -> Result<(), TaskError> {
+        let Some(due) = closed.due_date.as_deref() else {
+            return Ok(());
+        };
+        if closed.repeat == Repeat::None {
+            return Ok(());
+        }
+        let Some(next) = next_due(closed.repeat, due, closed.repeat_until.as_deref()) else {
+            return Ok(());
+        };
+        let task = Task {
+            id: successor_id(&closed.id),
+            status: Status::Todo,
+            due_date: Some(next),
+            created_at: self.now,
+            updated_at: self.now,
+            completed_at: None,
+            ..closed.clone()
+        };
+        self.repo.insert_if_absent(&task).await.map_err(backend)?;
+        Ok(())
     }
 
     pub async fn delete(&self, p: &Principal, id: &str) -> Result<(), TaskError> {
@@ -468,6 +588,13 @@ pub(crate) mod memory {
             });
             Ok(all.len() < before)
         }
+        async fn insert_if_absent(&self, task: &Task) -> Result<bool, String> {
+            if self.0.borrow().iter().any(|t| t.id == task.id) {
+                return Ok(false);
+            }
+            self.0.borrow_mut().push(task.clone());
+            Ok(true)
+        }
         async fn project_exists(&self, owner_id: &str, project_id: &str) -> Result<bool, String> {
             Ok(self
                 .1
@@ -503,6 +630,8 @@ mod tests {
             parent_id: None,
             project_id: None,
             estimate_minutes: None,
+            repeat: Default::default(),
+            repeat_until: None,
         }
     }
 
@@ -523,6 +652,8 @@ mod tests {
             priority: Priority::None,
             due_date: None,
             estimate_minutes: None,
+            repeat: Default::default(),
+            repeat_until: None,
             created_at: i64::from(i),
             updated_at: i64::from(i),
             completed_at: (status == Status::Done).then_some(i64::from(i)),
@@ -842,5 +973,90 @@ mod tests {
             Err(TaskError::Invalid("id", _))
         ));
         assert_eq!(f.repo.0.borrow().len(), 1);
+    }
+
+    #[test]
+    fn repeating_tasks_create_the_next_occurrence_once() {
+        let f = F::new();
+        let me = owner("u1");
+        let weekly = |due: &str| NewTask {
+            due_date: Some(due.into()),
+            repeat: Some(Repeat::Weekly),
+            estimate_minutes: Some(90),
+            ..new("Report")
+        };
+        let t = block_on(f.at(1).create(&me, weekly("2026-10-30"))).unwrap();
+        let set = |id: &str, status| {
+            block_on(f.at(5).update(
+                &me,
+                id,
+                TaskPatch {
+                    status: Some(status),
+                    ..Default::default()
+                },
+            ))
+            .unwrap()
+        };
+
+        set(&t.id, Status::Done);
+        // Reopening and completing again doesn't create a second copy.
+        set(&t.id, Status::Todo);
+        set(&t.id, Status::Done);
+        let open = block_on(f.at(6).list(&me, Filter::Open)).unwrap();
+        assert_eq!(open.len(), 1);
+        let next = &open[0];
+        assert_eq!(next.id, successor_id(&t.id));
+        assert_eq!(next.due_date.as_deref(), Some("2026-11-06"));
+        assert_eq!(
+            (next.estimate_minutes, next.repeat),
+            (Some(90), Repeat::Weekly)
+        );
+        assert_ne!(successor_id(&next.id), t.id, "chains don't cycle back");
+        // The web client computes the same ids (apps/web lib/tasks.test.ts).
+        assert_eq!(
+            successor_id(&"ab".repeat(16)),
+            "9eefe192aaa3e3007be2dcf95963ff84"
+        );
+        let done = block_on(f.at(6).get(&me, &t.id)).unwrap();
+        assert_eq!(done.status, Status::Done, "the closed occurrence is kept");
+
+        // Skipping (cancelling) an occurrence also moves on; the end date stops it.
+        let last = block_on(f.at(7).update(
+            &me,
+            &next.id,
+            TaskPatch {
+                repeat_until: Some(Some("2026-11-10".into())),
+                ..Default::default()
+            },
+        ))
+        .unwrap();
+        set(&last.id, Status::Cancelled);
+        assert!(block_on(f.at(8).list(&me, Filter::Open))
+            .unwrap()
+            .is_empty());
+
+        let bad = |input: NewTask| block_on(f.at(9).create(&me, input)).unwrap_err();
+        assert_eq!(
+            bad(NewTask {
+                repeat: Some(Repeat::Daily),
+                ..new("No due")
+            }),
+            TaskError::Invalid("repeat", "needs a due date")
+        );
+        assert_eq!(
+            bad(NewTask {
+                repeat_until: Some("2026-10-01".into()),
+                ..weekly("2026-10-30")
+            }),
+            TaskError::Invalid("repeat_until", "before due_date")
+        );
+        assert_eq!(
+            next_due(Repeat::Monthly, "2026-01-31", None).as_deref(),
+            Some("2026-03-31")
+        );
+        assert_eq!(
+            next_due(Repeat::Yearly, "2024-02-29", None).as_deref(),
+            Some("2028-02-29")
+        );
     }
 }

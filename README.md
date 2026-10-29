@@ -21,7 +21,7 @@ wrangler.toml             Worker, assets, D1 and R2 configuration
 ```
 
 Docs: [VISION](docs/VISION.md) · [PRD](docs/PRD.md) · [ARCHITECTURE](docs/ARCHITECTURE.md) ·
-[MODULES](docs/MODULES.md) · [ROADMAP](docs/ROADMAP.md) · [DECISIONS](docs/DECISIONS.md) ·
+[MODULES](docs/MODULES.md) · [PLANNER](docs/PLANNER.md) · [ROADMAP](docs/ROADMAP.md) · [DECISIONS](docs/DECISIONS.md) ·
 [AGENTS](AGENTS.md) · [PROGRESS](PROGRESS.md)
 
 ## Prerequisites

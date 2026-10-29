@@ -694,3 +694,60 @@ of truth"). Supersedes D-013 for the shell, Home, and Ask.
 Screen-specific layouts for Tasks, Projects, Calendar, Habits, and the
 desktop JARVIS console wait on Paper access (docs/DESIGN_HANDOFF.md ›
 Blocked).
+
+## D-047 — The unified planner: tasks, events, and time blocks on one calendar
+**Status:** accepted (owner goal, 2026-10-29: "harmonize tasks, events,
+calendar views, and time blocking into a cohesive, reliable, polished
+personal productivity system").
+
+- **Three concepts, one source of truth each.** A *task* is work, with its
+  estimate (`estimate_minutes`, D-041) and due date. An *event* is a
+  commitment on the calendar. A *time block* (`time_blocks`, migration 0023)
+  is a scheduled work session, linked to at most one task. A task can have
+  many sessions. Totals (estimated, scheduled, actual, remaining, and how much
+  is scheduled before the due date) are computed from the rows, never stored.
+  Finishing a session doesn't finish its task. Closing a task keeps its
+  sessions (history); deleting a task deletes them.
+- **Fixed or flexible.** Events default to fixed commitments; existing events
+  became fixed. Sessions default to flexible. The flag is a display and
+  suggestion rule: suggestions treat every timed item as busy, so nothing is
+  ever moved automatically. People can still move anything themselves.
+- **Time zones.** Times stay wall-clock values (D-021), plus the IANA zone they
+  were made in (`timezone`, nullable; old rows have none and mean "the
+  viewer's zone"). The calendar converts entries from another zone to the
+  device's zone, and measures durations in real minutes (DST-aware) with
+  `Intl`, with no dependency. Repeats expand on local dates, so a 09:00
+  weekly class stays at 09:00 across DST.
+- **Recurrence stays small (still not RRULE).** Events gain every-N
+  (`repeat_interval`), an occurrence limit (`repeat_count`, which the server
+  turns into `repeat_until`; skipped dates use up the count), and
+  `skip_dates`. Changing one occurrence, or "this and following", is one
+  atomic `POST /events/{id}/split` (a D1 batch): skip the date or end the
+  series, and optionally create the replacement (a one-off or a new series).
+  The replacement's client id makes a replay answer `409 exists`, so
+  occurrences are never duplicated. Expansion is bounded to the requested
+  range on both sides.
+- **Recurring tasks** repeat from the due date. Completing or cancelling one
+  creates the next occurrence, with an id that's a fixed function of the
+  closed task's id (an odd-multiplier step over 128 bits), inserted with
+  `INSERT OR IGNORE`. So reopening and completing again, a replayed request,
+  or JARVIS completing it can't create a second copy. The next occurrence
+  copies the fields, not the subtasks or sessions.
+- **The planning engine runs on the client** (`lib/planner.ts`), like repeat
+  expansion (D-021): it works offline, every view uses the same functions,
+  and conflict warnings show while dragging. It covers items, overlap layout,
+  allocation, conflicts, free-slot suggestions within working hours, and day
+  summaries. The server validates and stores data (ownership of the linked
+  task is checked in core, and again in the `INSERT … WHERE EXISTS`).
+  Working hours are a validated `planner` field in preferences (D-023);
+  visible hours, view, and filters are per device (`localStorage`).
+- **Edits apply at once and can be undone.** Planner changes are optimistic:
+  the list changes first, rolls back if the server refuses, and queues
+  offline (D-017; new outbox ops `block.*` and `event.split`). Each change
+  shows a notice with Undo (Ctrl/⌘+Z too). Undo replays the inverse change; a
+  deleted entry is re-created with its id.
+- **Not added:** RRULE, per-occurrence overrides other than "replace with a
+  one-off", external calendars, recurring sessions, auto-scheduling, and
+  paid AI. Blocks don't cross midnight (an entry ending at midnight uses
+  `24:00`). Estimates still max out at 1,440 minutes (a CHECK constraint in
+  0021; widening it would need a table rebuild).

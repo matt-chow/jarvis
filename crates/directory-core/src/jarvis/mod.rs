@@ -1188,6 +1188,8 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     parent_id: None,
                     project_id: project_id.clone(),
                     estimate_minutes: *estimate_minutes,
+                    repeat: Default::default(),
+                    repeat_until: None,
                 };
                 match tasks.create(p, input).await {
                     Ok(task) => ActionResult {

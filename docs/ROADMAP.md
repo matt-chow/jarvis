@@ -45,6 +45,7 @@ part of every slice, not deferred to the end.
 | Voice input (Web Speech API where available; text fallback) | **needs owner approval**: browser speech services send audio to the vendor |
 | More commands: `find` ✅, projects ✅ (new, list, tasks `in project …`, also within one plan), agenda ✅, habit check-ins ✅, links ✅ | ✅ done |
 | Planner: explainable priorities and time-boxed suggestions; JARVIS `priorities`, `suggest`, task updates (D-041) | ✅ done |
+| Unified planner: month/week/day calendar, time blocks (many per task), fixed vs flexible, conflicts, slot suggestions, recurrence with per-occurrence changes, recurring tasks, quick capture (D-047, docs/PLANNER.md) | ✅ done locally; iPhone check needs staging |
 | iPhone via Apple Shortcuts: `/api/v1/jarvis/ask` with JARVIS-only tokens (D-042, docs/JARVIS_SHORTCUTS.md) | ✅ done locally; on-device check needs staging |
 | AI intent provider: optional OpenRouter free model, $0, parser first (D-043) | ✅ done; off until the owner sets a key (live call unverified) |
 

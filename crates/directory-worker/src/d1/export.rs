@@ -1,10 +1,11 @@
 //! `ExportSource` over the D1 repositories (no new SQL beyond each module's).
 
 use super::{
-    D1EventRepository, D1FileRepository, D1HabitRepository, D1InboxRepository, D1JournalRepository,
-    D1LibraryRepository, D1LinkRepository, D1MusicRepository, D1NoteRepository,
-    D1PreferencesRepository, D1ProjectRepository, D1TaskRepository,
+    D1BlockRepository, D1EventRepository, D1FileRepository, D1HabitRepository, D1InboxRepository,
+    D1JournalRepository, D1LibraryRepository, D1LinkRepository, D1MusicRepository,
+    D1NoteRepository, D1PreferencesRepository, D1ProjectRepository, D1TaskRepository,
 };
+use directory_core::blocks::{BlockRepository, TimeBlock, MAX_BLOCKS};
 use directory_core::calendar::{Event, EventRepository, MAX_EVENTS};
 use directory_core::export::ExportSource;
 use directory_core::files::FileEntry;
@@ -33,6 +34,7 @@ pub struct D1ExportSource {
     pub library: D1LibraryRepository,
     pub habits: D1HabitRepository,
     pub events: D1EventRepository,
+    pub blocks: D1BlockRepository,
     pub preferences: D1PreferencesRepository,
     pub music: D1MusicRepository,
 }
@@ -69,6 +71,9 @@ impl ExportSource for D1ExportSource {
         self.habits
             .checkins(owner_id, "0000-01-01", "9999-12-31")
             .await
+    }
+    async fn blocks(&self, owner_id: &str) -> Result<Vec<TimeBlock>, String> {
+        self.blocks.list(owner_id, MAX_BLOCKS).await
     }
     async fn events(&self, owner_id: &str) -> Result<Vec<Event>, String> {
         self.events.list(owner_id, MAX_EVENTS).await

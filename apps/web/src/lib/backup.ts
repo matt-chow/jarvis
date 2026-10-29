@@ -10,10 +10,10 @@ export const MAX_BATCH = 100;
 /** Keep each request well under the server's 4 MiB body limit. */
 const MAX_BATCH_BYTES = 1024 * 1024;
 
-export type ImportKind = "projects" | "tasks" | "notes" | "journal" | "inbox" | "habits" | "events" | "playlists" | "links" | "preferences";
+export type ImportKind = "projects" | "tasks" | "notes" | "journal" | "inbox" | "habits" | "events" | "blocks" | "playlists" | "links" | "preferences";
 
 /** Server order (directory-core `backup::KINDS`). */
-export const KINDS: ImportKind[] = ["projects", "tasks", "notes", "journal", "inbox", "habits", "events", "playlists", "links", "preferences"];
+export const KINDS: ImportKind[] = ["projects", "tasks", "notes", "journal", "inbox", "habits", "events", "blocks", "playlists", "links", "preferences"];
 
 export const KIND_LABELS: Record<ImportKind, string> = {
   projects: "Projects",
@@ -23,6 +23,7 @@ export const KIND_LABELS: Record<ImportKind, string> = {
   inbox: "Inbox items",
   habits: "Habits",
   events: "Events",
+  blocks: "Time blocks",
   playlists: "Playlists",
   links: "Links",
   preferences: "Dashboard layout",
@@ -66,6 +67,7 @@ export function planImport(doc: unknown): ExportPlan {
     inbox: list(d, "inbox"),
     habits: list(d, "habits"),
     events: list(d, "events"),
+    blocks: list(d, "blocks"),
     playlists: list(d, "playlists"),
     links: list(d, "links"),
     preferences: d.preferences && typeof d.preferences === "object" ? [d.preferences] : [],

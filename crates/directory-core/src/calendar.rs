@@ -1,5 +1,6 @@
 //! Calendar events: single or multi-day, all-day or timed, optionally
-//! repeating. Dates and times are the owner's local wall-clock values.
+//! repeating. Dates and times are wall-clock values in the event's time zone
+//! (the owner's local zone when none is recorded; DECISIONS D-021, D-047).
 
 use crate::entropy::{is_id, new_id, Entropy};
 use crate::identity::Principal;
@@ -14,6 +15,12 @@ pub const MAX_EVENTS: u32 = 2_000;
 pub const MAX_SPAN_DAYS: i64 = 366;
 /// Longest range `occurrences` expands.
 pub const MAX_RANGE_DAYS: i64 = 400;
+/// "Every N days/weeks/…": the largest N.
+pub const MAX_INTERVAL: u32 = 99;
+/// Most occurrences a counted series can have.
+pub const MAX_COUNT: u32 = 500;
+/// Most skipped dates one series keeps.
+pub const MAX_SKIPS: usize = 500;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -49,6 +56,14 @@ impl Repeat {
     }
 }
 
+const fn yes() -> bool {
+    true
+}
+
+const fn one() -> u32 {
+    1
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Event {
     pub id: String,
@@ -64,6 +79,22 @@ pub struct Event {
     pub notes: String,
     pub repeat: Repeat,
     pub repeat_until: Option<String>,
+    /// A fixed commitment (never moved by suggestions) or flexible time.
+    /// Older exports have no field: they were all commitments.
+    #[serde(default = "yes")]
+    pub fixed: bool,
+    /// IANA zone the times are in; `None` = the viewer's zone.
+    #[serde(default)]
+    pub timezone: Option<String>,
+    /// Every N days, weeks, months, or years.
+    #[serde(default = "one")]
+    pub repeat_interval: u32,
+    /// Stop after this many occurrences (sets `repeat_until`).
+    #[serde(default)]
+    pub repeat_count: Option<u32>,
+    /// Occurrence start dates that were cancelled or moved out of the series.
+    #[serde(default)]
+    pub skip_dates: Vec<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -77,6 +108,7 @@ pub struct Occurrence {
     pub end_date: String,
     pub start_time: Option<String>,
     pub end_time: Option<String>,
+    pub fixed: bool,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -100,6 +132,15 @@ pub struct NewEvent {
     pub repeat: Option<Repeat>,
     #[serde(default)]
     pub repeat_until: Option<String>,
+    /// Default: fixed.
+    #[serde(default)]
+    pub fixed: Option<bool>,
+    #[serde(default)]
+    pub timezone: Option<String>,
+    #[serde(default)]
+    pub repeat_interval: Option<u32>,
+    #[serde(default)]
+    pub repeat_count: Option<u32>,
 }
 
 /// `null` clears a nullable field; an omitted field is unchanged.
@@ -123,6 +164,45 @@ pub struct EventPatch {
     pub repeat: Option<Repeat>,
     #[serde(default, deserialize_with = "validate::double_option")]
     pub repeat_until: Option<Option<String>>,
+    #[serde(default)]
+    pub fixed: Option<bool>,
+    #[serde(default, deserialize_with = "validate::double_option")]
+    pub timezone: Option<Option<String>>,
+    #[serde(default)]
+    pub repeat_interval: Option<u32>,
+    #[serde(default, deserialize_with = "validate::double_option")]
+    pub repeat_count: Option<Option<u32>>,
+    /// Replaces the skipped dates (e.g. to restore a cancelled occurrence).
+    #[serde(default)]
+    pub skip_dates: Option<Vec<String>>,
+}
+
+/// Which occurrences of a repeating event a change applies to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SplitScope {
+    /// Just the occurrence on `date`.
+    One,
+    /// The occurrence on `date` and every later one.
+    Following,
+}
+
+/// `POST /events/{id}/split`: cancel or replace part of a series, atomically.
+/// Without a replacement, `one` skips the occurrence and `following` ends
+/// the series before `date`. With one, the replacement is created as well
+/// (a one-off event for `one`, a new series for `following`).
+#[derive(Debug, Clone, Deserialize)]
+pub struct Split {
+    pub date: String,
+    pub scope: SplitScope,
+    #[serde(default)]
+    pub replacement: Option<NewEvent>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SplitResult {
+    pub series: Event,
+    pub replacement: Option<Event>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,6 +223,8 @@ pub trait EventRepository {
     async fn count(&self, owner_id: &str) -> Result<u32, String>;
     async fn update(&self, event: &Event) -> Result<bool, String>;
     async fn delete(&self, owner_id: &str, id: &str) -> Result<bool, String>;
+    /// Update `series` and insert `replacement` in one transaction.
+    async fn split(&self, series: &Event, replacement: Option<&Event>) -> Result<bool, String>;
 }
 
 fn backend(e: String) -> CalendarError {
@@ -150,24 +232,16 @@ fn backend(e: String) -> CalendarError {
 }
 
 fn time(raw: &str, field: &'static str) -> Result<String, CalendarError> {
-    let b = raw.as_bytes();
-    let ok = b.len() == 5
-        && b[2] == b':'
-        && raw[..2].parse::<u8>().is_ok_and(|h| h < 24)
-        && raw[3..].parse::<u8>().is_ok_and(|m| m < 60)
-        && b[..2].iter().chain(&b[3..]).all(u8::is_ascii_digit);
-    if ok {
-        Ok(raw.to_owned())
-    } else {
-        Err(CalendarError::Invalid(field, "expected HH:MM"))
-    }
+    validate::clock(raw, false)
+        .map(|_| raw.to_owned())
+        .map_err(|w| CalendarError::Invalid(field, w))
 }
 
 fn date(raw: &str, field: &'static str) -> Result<String, CalendarError> {
     validate::date(raw).map_err(|w| CalendarError::Invalid(field, w))
 }
 
-/// Normalize and check an event's fields (shared by create and update).
+/// Normalize and check an event's fields (shared by create, update, and import).
 pub(crate) fn check(mut e: Event) -> Result<Event, CalendarError> {
     e.title =
         validate::line(&e.title, MAX_TITLE).map_err(|w| CalendarError::Invalid("title", w))?;
@@ -203,8 +277,35 @@ pub(crate) fn check(mut e: Event) -> Result<Event, CalendarError> {
         .to_owned();
     e.notes =
         validate::text(&e.notes, MAX_NOTES).map_err(|w| CalendarError::Invalid("notes", w))?;
+    e.timezone = e
+        .timezone
+        .as_deref()
+        .map(validate::timezone)
+        .transpose()
+        .map_err(|w| CalendarError::Invalid("timezone", w))?;
+    if !(1..=MAX_INTERVAL).contains(&e.repeat_interval) {
+        return Err(CalendarError::Invalid("repeat_interval", "must be 1 to 99"));
+    }
     if e.repeat == Repeat::None {
         e.repeat_until = None;
+        e.repeat_count = None;
+        e.repeat_interval = 1;
+        e.skip_dates.clear();
+    }
+    if e.skip_dates.len() > MAX_SKIPS {
+        return Err(CalendarError::Invalid("skip_dates", "too many"));
+    }
+    for d in &e.skip_dates {
+        date(d, "skip_dates")?;
+    }
+    e.skip_dates.sort();
+    e.skip_dates.dedup();
+    if let Some(n) = e.repeat_count {
+        if !(1..=MAX_COUNT).contains(&n) {
+            return Err(CalendarError::Invalid("repeat_count", "must be 1 to 500"));
+        }
+        // The count decides the last date (a later start moves it too).
+        e.repeat_until = nth_start(&e, n);
     }
     if let Some(u) = &e.repeat_until {
         let u = date(u, "repeat_until")?;
@@ -226,6 +327,55 @@ fn real_date(y: i64, m: i64, d: i64) -> Option<String> {
     validate::date(&format!("{y:04}-{m:02}-{d:02}")).ok()
 }
 
+/// Months since year 0 (for month arithmetic).
+fn months(y: i64, m: i64) -> i64 {
+    y * 12 + (m - 1)
+}
+
+/// The start of the `k`-th repeat period (0 = the first), if that day exists.
+fn period_start(e: &Event, k: i64) -> Option<String> {
+    let n = i64::from(e.repeat_interval.max(1));
+    match e.repeat {
+        Repeat::None => (k == 0).then(|| e.start_date.clone()),
+        Repeat::Daily | Repeat::Weekly => {
+            let step = if e.repeat == Repeat::Daily { n } else { 7 * n };
+            let d = validate::add_days(&e.start_date, k * step);
+            (d.len() == 10).then_some(d)
+        }
+        Repeat::Monthly | Repeat::Yearly => {
+            let (sy, sm, sd) = ymd(&e.start_date);
+            let per = if e.repeat == Repeat::Monthly {
+                n
+            } else {
+                12 * n
+            };
+            let m = months(sy, sm) + k * per;
+            real_date(m.div_euclid(12), m.rem_euclid(12) + 1, sd)
+        }
+    }
+}
+
+/// Start date of the `n`-th occurrence (1-based), skipped dates included:
+/// skipping an occurrence uses up one of the count.
+pub fn nth_start(e: &Event, n: u32) -> Option<String> {
+    let mut found = 0;
+    // A yearly Feb 29 exists at most every 8 years; nothing needs more.
+    for k in 0..i64::from(n) * 8 + 8 {
+        if let Some(d) = period_start(e, k) {
+            if d.as_str() > "9999-12-31" {
+                return None;
+            }
+            found += 1;
+            if found == n {
+                return Some(d);
+            }
+        } else if e.repeat == Repeat::Daily || e.repeat == Repeat::Weekly {
+            return None;
+        }
+    }
+    None
+}
+
 /// Start dates of an event's occurrences that overlap `from..=to`.
 pub fn occurrence_starts(e: &Event, from: &str, to: &str) -> Vec<String> {
     let span = validate::days_from_civil(&e.end_date) - validate::days_from_civil(&e.start_date);
@@ -237,35 +387,43 @@ pub fn occurrence_starts(e: &Event, from: &str, to: &str) -> Vec<String> {
     };
     let mut out = Vec::new();
     let mut push = |d: String| {
-        if d >= earliest && d <= last && d >= e.start_date {
+        if d >= earliest
+            && d <= last
+            && d >= e.start_date
+            && e.skip_dates.binary_search(&d).is_err()
+        {
             out.push(d);
         }
     };
     let start = validate::days_from_civil(&e.start_date);
+    let n = i64::from(e.repeat_interval.max(1));
     match e.repeat {
         Repeat::None => push(e.start_date.clone()),
         Repeat::Daily | Repeat::Weekly => {
-            let step = if e.repeat == Repeat::Daily { 1 } else { 7 };
+            let step = if e.repeat == Repeat::Daily { n } else { 7 * n };
             // Jump straight to the first step at or after `earliest`.
             let skip = (validate::days_from_civil(&earliest) - start).max(0);
-            let mut n = start + (skip + step - 1) / step * step;
-            while n <= validate::days_from_civil(&last) {
-                push(validate::civil_from_days(n));
-                n += step;
+            let mut d = start + (skip + step - 1) / step * step;
+            while d <= validate::days_from_civil(&last) {
+                push(validate::civil_from_days(d));
+                d += step;
             }
         }
         Repeat::Monthly | Repeat::Yearly => {
             let (sy, sm, sd) = ymd(&e.start_date);
             let (ey, em, _) = ymd(&earliest);
             let (ly, lm, _) = ymd(&last);
-            let months = |y: i64, m: i64| y * 12 + (m - 1);
-            let first = months(ey, em).max(months(sy, sm));
-            for k in first..=months(ly, lm) {
-                let (y, m) = (k.div_euclid(12), k.rem_euclid(12) + 1);
-                if e.repeat == Repeat::Yearly && m != sm {
+            let per = if e.repeat == Repeat::Monthly {
+                n
+            } else {
+                12 * n
+            };
+            let base = months(sy, sm);
+            for k in months(ey, em).max(base)..=months(ly, lm) {
+                if (k - base) % per != 0 {
                     continue;
                 }
-                if let Some(d) = real_date(y, m, sd) {
+                if let Some(d) = real_date(k.div_euclid(12), k.rem_euclid(12) + 1, sd) {
                     push(d);
                 }
             }
@@ -290,6 +448,7 @@ pub fn occurrences(events: &[Event], from: &str, to: &str) -> Vec<Occurrence> {
                     start_date: start,
                     start_time: e.start_time.clone(),
                     end_time: e.end_time.clone(),
+                    fixed: e.fixed,
                 })
         })
         .collect();
@@ -346,7 +505,8 @@ impl<'a, R: EventRepository, E: Entropy + ?Sized> CalendarService<'a, R, E> {
             .ok_or(CalendarError::NotFound)
     }
 
-    pub async fn create(&self, p: &Principal, input: NewEvent) -> Result<Event, CalendarError> {
+    /// A new, checked event (not saved), with its id checked for replays.
+    async fn build(&self, p: &Principal, input: NewEvent) -> Result<Event, CalendarError> {
         let id = match input.id {
             Some(id) if !is_id(&id) => {
                 return Err(CalendarError::Invalid("id", "expected 32 hex characters"))
@@ -376,6 +536,11 @@ impl<'a, R: EventRepository, E: Entropy + ?Sized> CalendarService<'a, R, E> {
             notes: input.notes.unwrap_or_default(),
             repeat: input.repeat.unwrap_or_default(),
             repeat_until: input.repeat_until,
+            fixed: input.fixed.unwrap_or(true),
+            timezone: input.timezone,
+            repeat_interval: input.repeat_interval.unwrap_or(1),
+            repeat_count: input.repeat_count,
+            skip_dates: Vec::new(),
             created_at: self.now,
             updated_at: self.now,
         })?;
@@ -385,6 +550,11 @@ impl<'a, R: EventRepository, E: Entropy + ?Sized> CalendarService<'a, R, E> {
                 "limit of 2,000 events reached; delete some first",
             ));
         }
+        Ok(event)
+    }
+
+    pub async fn create(&self, p: &Principal, input: NewEvent) -> Result<Event, CalendarError> {
+        let event = self.build(p, input).await?;
         self.repo.insert(&event).await.map_err(backend)?;
         Ok(event)
     }
@@ -430,6 +600,23 @@ impl<'a, R: EventRepository, E: Entropy + ?Sized> CalendarService<'a, R, E> {
         }
         if let Some(v) = patch.repeat_until {
             e.repeat_until = v;
+            // An explicit end date replaces a count.
+            e.repeat_count = None;
+        }
+        if let Some(v) = patch.fixed {
+            e.fixed = v;
+        }
+        if let Some(v) = patch.timezone {
+            e.timezone = v;
+        }
+        if let Some(v) = patch.repeat_interval {
+            e.repeat_interval = v;
+        }
+        if let Some(v) = patch.repeat_count {
+            e.repeat_count = v;
+        }
+        if let Some(v) = patch.skip_dates {
+            e.skip_dates = v;
         }
         e.updated_at = self.now;
         let e = check(e)?;
@@ -437,6 +624,63 @@ impl<'a, R: EventRepository, E: Entropy + ?Sized> CalendarService<'a, R, E> {
             return Err(CalendarError::NotFound);
         }
         Ok(e)
+    }
+
+    /// Change part of a repeating series (see [`Split`]). Safe to replay:
+    /// a replacement that already exists answers `Exists`, and skipping or
+    /// ending again changes nothing.
+    pub async fn split(
+        &self,
+        p: &Principal,
+        id: &str,
+        input: Split,
+    ) -> Result<SplitResult, CalendarError> {
+        let mut series = self.get(p, id).await?;
+        if series.repeat == Repeat::None {
+            return Err(CalendarError::Invalid("id", "not a repeating event"));
+        }
+        let day = date(&input.date, "date")?;
+        let replacement = match input.replacement {
+            Some(r) => Some(self.build(p, r).await?),
+            None => None,
+        };
+        match input.scope {
+            SplitScope::One => {
+                if series.skip_dates.binary_search(&day).is_err() {
+                    if !occurrence_starts(&series, &day, &day).contains(&day) {
+                        return Err(CalendarError::Invalid("date", "not an occurrence"));
+                    }
+                    series.skip_dates.push(day);
+                }
+            }
+            SplitScope::Following => {
+                if day <= series.start_date {
+                    return Err(CalendarError::Invalid(
+                        "date",
+                        "that is the first occurrence; change the whole series",
+                    ));
+                }
+                let before = validate::add_days(&day, -1);
+                if series.repeat_until.as_ref().is_none_or(|u| *u > before) {
+                    series.repeat_until = Some(before);
+                    series.repeat_count = None;
+                }
+            }
+        }
+        series.updated_at = self.now;
+        let series = check(series)?;
+        if !self
+            .repo
+            .split(&series, replacement.as_ref())
+            .await
+            .map_err(backend)?
+        {
+            return Err(CalendarError::NotFound);
+        }
+        Ok(SplitResult {
+            series,
+            replacement,
+        })
     }
 
     pub async fn delete(&self, p: &Principal, id: &str) -> Result<(), CalendarError> {
@@ -508,6 +752,15 @@ pub(crate) mod memory {
             all.retain(|e| !(e.owner_id == owner_id && e.id == id));
             Ok(all.len() < before)
         }
+        async fn split(&self, series: &Event, replacement: Option<&Event>) -> Result<bool, String> {
+            if !self.update(series).await? {
+                return Ok(false);
+            }
+            if let Some(r) = replacement {
+                self.insert(r).await?;
+            }
+            Ok(true)
+        }
     }
 }
 
@@ -539,6 +792,11 @@ mod tests {
             notes: String::new(),
             repeat,
             repeat_until: until.map(Into::into),
+            fixed: true,
+            timezone: None,
+            repeat_interval: 1,
+            repeat_count: None,
+            skip_dates: Vec::new(),
             created_at: 0,
             updated_at: 0,
         }
@@ -725,6 +983,180 @@ mod tests {
         assert_eq!(
             block_on(svc.create(&me, replay())).unwrap_err(),
             CalendarError::Exists
+        );
+    }
+
+    #[test]
+    fn intervals_counts_and_skips() {
+        let starts = |e: &Event, from, to| occurrence_starts(e, from, to);
+        // Every 2 weeks, from a Monday.
+        let mut fortnight = ev("2026-10-05", "2026-10-05", Repeat::Weekly, None);
+        fortnight.repeat_interval = 2;
+        assert_eq!(
+            starts(&fortnight, "2026-10-01", "2026-11-15"),
+            vec!["2026-10-05", "2026-10-19", "2026-11-02"]
+        );
+        // Every 3 months on the 31st: Jan, (Apr has no 31st), Jul, Oct.
+        let mut quarterly = ev("2026-01-31", "2026-01-31", Repeat::Monthly, None);
+        quarterly.repeat_interval = 3;
+        assert_eq!(
+            starts(&quarterly, "2026-01-01", "2026-12-31"),
+            vec!["2026-01-31", "2026-07-31", "2026-10-31"]
+        );
+        let mut biennial = ev("2026-03-01", "2026-03-01", Repeat::Yearly, None);
+        biennial.repeat_interval = 2;
+        assert_eq!(
+            starts(&biennial, "2026-01-01", "2031-12-31"),
+            vec!["2026-03-01", "2028-03-01", "2030-03-01"]
+        );
+
+        // A count sets the last date; skipped dates still use up the count.
+        let mut five = ev("2026-10-26", "2026-10-26", Repeat::Daily, None);
+        five.repeat_count = Some(5);
+        five.skip_dates = vec!["2026-10-28".into()];
+        let five = check(five).unwrap();
+        assert_eq!(five.repeat_until.as_deref(), Some("2026-10-30"));
+        assert_eq!(
+            starts(&five, "2026-10-01", "2026-11-30"),
+            vec!["2026-10-26", "2026-10-27", "2026-10-29", "2026-10-30"]
+        );
+        let mut leap = ev("2024-02-29", "2024-02-29", Repeat::Yearly, None);
+        leap.repeat_count = Some(2);
+        assert_eq!(
+            check(leap).unwrap().repeat_until.as_deref(),
+            Some("2028-02-29")
+        );
+
+        // Not repeating: repeat fields are cleared.
+        let mut once = ev("2026-10-26", "2026-10-26", Repeat::None, None);
+        once.repeat_count = Some(3);
+        once.repeat_interval = 4;
+        once.skip_dates = vec!["2026-10-26".into()];
+        let once = check(once).unwrap();
+        assert_eq!(
+            (
+                once.repeat_count,
+                once.repeat_interval,
+                once.skip_dates.len()
+            ),
+            (None, 1, 0)
+        );
+        let mut bad = ev("2026-10-26", "2026-10-26", Repeat::Daily, None);
+        bad.repeat_interval = 0;
+        assert!(check(bad.clone()).is_err());
+        bad.repeat_interval = 1;
+        bad.timezone = Some("not a zone".into());
+        assert_eq!(
+            check(bad).unwrap_err(),
+            CalendarError::Invalid("timezone", "expected an IANA time zone")
+        );
+    }
+
+    #[test]
+    fn split_skips_detaches_and_ends_series_once() {
+        let repo = MemoryEvents::default();
+        let e = CountingEntropy::default();
+        let svc = CalendarService::new(&repo, &e, 5);
+        let me = owner("u1");
+        let class = block_on(svc.create(
+            &me,
+            NewEvent {
+                title: "Class".into(),
+                start_date: "2026-10-05".into(),
+                start_time: Some("10:00".into()),
+                end_time: Some("11:00".into()),
+                repeat: Some(Repeat::Weekly),
+                timezone: Some("America/Toronto".into()),
+                ..Default::default()
+            },
+        ))
+        .unwrap();
+        assert!(class.fixed, "events are commitments by default");
+        let day = |d: &str, scope, replacement| Split {
+            date: d.into(),
+            scope,
+            replacement,
+        };
+        let split = |d: &str, scope, replacement| {
+            block_on(svc.split(&me, &class.id, day(d, scope, replacement)))
+        };
+
+        // Cancel one occurrence (twice: a replay changes nothing).
+        for _ in 0..2 {
+            let r = split("2026-10-12", SplitScope::One, None).unwrap();
+            assert_eq!(r.series.skip_dates, vec!["2026-10-12"]);
+        }
+        assert_eq!(
+            split("2026-10-13", SplitScope::One, None).unwrap_err(),
+            CalendarError::Invalid("date", "not an occurrence")
+        );
+
+        // Move one occurrence: skipped in the series, plus a one-off event.
+        let moved = || NewEvent {
+            id: Some("d".repeat(32)),
+            title: "Class (moved)".into(),
+            start_date: "2026-10-20".into(),
+            start_time: Some("14:00".into()),
+            end_time: Some("15:00".into()),
+            ..Default::default()
+        };
+        let r = split("2026-10-19", SplitScope::One, Some(moved())).unwrap();
+        assert_eq!(r.series.skip_dates, vec!["2026-10-12", "2026-10-19"]);
+        assert_eq!(r.replacement.unwrap().start_date, "2026-10-20");
+        assert_eq!(
+            split("2026-10-19", SplitScope::One, Some(moved())).unwrap_err(),
+            CalendarError::Exists,
+            "a replayed split doesn't create the replacement twice"
+        );
+
+        // This and following: the series ends the day before.
+        let r = split("2026-11-02", SplitScope::Following, None).unwrap();
+        assert_eq!(r.series.repeat_until.as_deref(), Some("2026-11-01"));
+        let agenda = block_on(svc.agenda(&me, "2026-10-01", "2026-11-30")).unwrap();
+        let dates: Vec<&str> = agenda.iter().map(|o| o.start_date.as_str()).collect();
+        assert_eq!(dates, vec!["2026-10-05", "2026-10-20", "2026-10-26"]);
+        assert_eq!(
+            split("2026-10-05", SplitScope::Following, None).unwrap_err(),
+            CalendarError::Invalid(
+                "date",
+                "that is the first occurrence; change the whole series"
+            )
+        );
+
+        // Owner-scoped; one-off events can't be split.
+        assert_eq!(
+            block_on(svc.split(
+                &owner("u2"),
+                &class.id,
+                day("2026-10-26", SplitScope::One, None)
+            ))
+            .unwrap_err(),
+            CalendarError::NotFound
+        );
+        let once = block_on(svc.list(&me))
+            .unwrap()
+            .into_iter()
+            .find(|x| x.repeat == Repeat::None)
+            .unwrap();
+        assert_eq!(
+            block_on(svc.split(&me, &once.id, day("2026-10-20", SplitScope::One, None)))
+                .unwrap_err(),
+            CalendarError::Invalid("id", "not a repeating event")
+        );
+    }
+
+    #[test]
+    fn old_exports_default_to_fixed_unzoned_events() {
+        let e: Event = serde_json::from_str(
+            r#"{"id":"e","title":"T","start_date":"2026-10-22","end_date":"2026-10-22",
+                "start_time":null,"end_time":null,"location":"","notes":"","repeat":"none",
+                "repeat_until":null,"created_at":1,"updated_at":1}"#,
+        )
+        .unwrap();
+        assert!(e.fixed);
+        assert_eq!(
+            (e.timezone, e.repeat_interval, e.skip_dates.len()),
+            (None, 1, 0)
         );
     }
 }

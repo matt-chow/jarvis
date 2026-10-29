@@ -1,14 +1,18 @@
 /** Owner preferences (mirrors directory-core `preferences`). */
+import type { Hours } from "./planner";
 
 export type WidgetId = "capture" | "today" | "habits" | "notes" | "status" | "modules";
 
 export interface Preferences {
   dashboard?: { widgets: WidgetId[] };
+  /** Working hours for slot suggestions (D-047). */
+  planner?: Hours;
 }
 
 /** `null` resets a field to its default; omitted fields are unchanged. */
 export interface PreferencesPatch {
   dashboard?: { widgets: WidgetId[] } | null;
+  planner?: Hours | null;
 }
 
 export const WIDGETS: readonly { id: WidgetId; label: string; summary: string }[] = [
@@ -28,6 +32,8 @@ export function applyPreferencesPatch(p: Preferences, patch: PreferencesPatch): 
   const next = { ...p };
   if (patch.dashboard === null) delete next.dashboard;
   else if (patch.dashboard) next.dashboard = patch.dashboard;
+  if (patch.planner === null) delete next.planner;
+  else if (patch.planner) next.planner = { ...patch.planner, work_days: [...new Set(patch.planner.work_days)].sort((a, b) => a - b) };
   return next;
 }
 

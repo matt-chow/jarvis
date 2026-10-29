@@ -1,8 +1,8 @@
 import { useCallback, useEffect } from "react";
 import { api } from "../lib/api";
-import type { CalendarEvent, EventPatch, NewEvent } from "../lib/calendar";
+import type { CalendarEvent, EventPatch, NewEvent, SplitRequest, SplitResult } from "../lib/calendar";
 import { applyEventLocally, clientId } from "../lib/sync";
-import { runOrQueue } from "./offline";
+import { runOptimistic, upsert } from "./offline";
 import { useCachedList } from "./useCachedList";
 import { SYNCED_EVENT } from "./useSync";
 
@@ -13,14 +13,20 @@ export interface EventsState {
   stale: boolean;
   error?: string;
   reload: () => void;
-  create: (e: NewEvent) => Promise<CalendarEvent | undefined>;
+  /** `id` re-creates a deleted event (undo). */
+  create: (e: NewEvent, id?: string) => Promise<CalendarEvent | undefined>;
   update: (id: string, patch: EventPatch) => Promise<CalendarEvent | undefined>;
   remove: (id: string) => Promise<boolean>;
+  /** Cancel, move, or end part of a repeating series (D-047). */
+  split: (id: string, split: SplitRequest) => Promise<SplitResult | undefined>;
 }
 
 const fetchAll = () => api.events();
 
-/** All calendar events (expanded per range on the client); editable offline (D-017). */
+/**
+ * All calendar events (expanded per range on the client); editable offline
+ * (D-017). Changes show at once and roll back if the server refuses (D-047).
+ */
 export function useEvents(online: boolean): EventsState {
   const list = useCachedList<CalendarEvent>("events:last", "event", fetchAll, online);
   const { reload } = list;
@@ -31,16 +37,16 @@ export function useEvents(online: boolean): EventsState {
   }, [reload]);
 
   const create = useCallback(
-    (e: NewEvent) => {
-      const event = { ...e, id: clientId() };
-      return runOrQueue({
+    (e: NewEvent, id = clientId()) => {
+      const event = { ...e, id };
+      return runOptimistic({
         list,
         noun: "event",
         op: { kind: "event.create", event },
         server: () => api.createEvent(event),
-        fromServer: (cur, created) => [...cur, created],
+        fromServer: upsert,
         applyLocal: applyEventLocally,
-        local: (cur) => cur.find((x) => x.id === event.id)!,
+        local: (cur) => cur.find((x) => x.id === id)!,
       });
     },
     [list],
@@ -48,12 +54,12 @@ export function useEvents(online: boolean): EventsState {
 
   const update = useCallback(
     (id: string, patch: EventPatch) =>
-      runOrQueue({
+      runOptimistic({
         list,
         noun: "event",
         op: { kind: "event.update", id, patch },
         server: () => api.updateEvent(id, patch),
-        fromServer: (cur, u) => cur.map((x) => (x.id === id ? u : x)),
+        fromServer: upsert,
         applyLocal: applyEventLocally,
         local: (cur) => cur.find((x) => x.id === id)!,
       }),
@@ -62,7 +68,7 @@ export function useEvents(online: boolean): EventsState {
 
   const remove = useCallback(
     async (id: string) =>
-      (await runOrQueue({
+      (await runOptimistic({
         list,
         noun: "event",
         op: { kind: "event.delete", id },
@@ -77,5 +83,22 @@ export function useEvents(online: boolean): EventsState {
     [list],
   );
 
-  return { events: list.items, loading: list.loading, stale: list.stale, error: list.error, reload: list.reload, create, update, remove };
+  const split = useCallback(
+    (id: string, s: SplitRequest) =>
+      runOptimistic<CalendarEvent, SplitResult>({
+        list,
+        noun: "event",
+        op: { kind: "event.split", id, split: s },
+        server: () => api.splitEvent(id, s),
+        fromServer: (cur, r) => (r.replacement ? upsert(upsert(cur, r.series), r.replacement) : upsert(cur, r.series)),
+        applyLocal: applyEventLocally,
+        local: (cur) => ({
+          series: cur.find((x) => x.id === id)!,
+          replacement: s.replacement ? (cur.find((x) => x.id === s.replacement!.id) ?? null) : null,
+        }),
+      }),
+    [list],
+  );
+
+  return { events: list.items, loading: list.loading, stale: list.stale, error: list.error, reload: list.reload, create, update, remove, split };
 }

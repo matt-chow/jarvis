@@ -5,7 +5,8 @@
  */
 import type { NewRule, Rule, RulePatch } from "./automations";
 import type { ImportKind, ImportReport } from "./backup";
-import type { CalendarEvent, EventPatch, NewEvent } from "./calendar";
+import type { BlockPatch, NewBlock, TimeBlock } from "./blocks";
+import type { CalendarEvent, EventPatch, NewEvent, SplitRequest, SplitResult } from "./calendar";
 import type { ClientError, ErrorReport } from "./errors";
 import type { FileEntry, Listing, Usage } from "./files";
 import { HISTORY_DAYS, type Habit, type HabitPatch, type HabitView, type NewHabit } from "./habits";
@@ -219,6 +220,14 @@ export class Api {
   createEvent = (e: NewEvent & { id?: string }) => this.call<CalendarEvent>("POST", "/api/v1/events", e);
   updateEvent = (id: string, patch: EventPatch) => this.call<CalendarEvent>("PATCH", `/api/v1/events/${encodeURIComponent(id)}`, patch);
   deleteEvent = (id: string) => this.call<void>("DELETE", `/api/v1/events/${encodeURIComponent(id)}`);
+  /** Cancel, move, or end part of a repeating series, atomically (D-047). */
+  splitEvent = (id: string, split: SplitRequest) => this.call<SplitResult>("POST", `/api/v1/events/${encodeURIComponent(id)}/split`, split);
+
+  // ---- Time blocks (D-047) ----
+  blocks = async () => (await this.call<{ blocks: TimeBlock[] }>("GET", "/api/v1/blocks")).blocks;
+  createBlock = (b: NewBlock & { id?: string }) => this.call<TimeBlock>("POST", "/api/v1/blocks", b);
+  updateBlock = (id: string, patch: BlockPatch) => this.call<TimeBlock>("PATCH", `/api/v1/blocks/${encodeURIComponent(id)}`, patch);
+  deleteBlock = (id: string) => this.call<void>("DELETE", `/api/v1/blocks/${encodeURIComponent(id)}`);
 
   // ---- Habits ----
   habits = async (today: string, days = HISTORY_DAYS) =>

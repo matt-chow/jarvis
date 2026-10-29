@@ -270,6 +270,8 @@ mod tests {
             priority: Priority::None,
             due_date: None,
             estimate_minutes: None,
+            repeat: Default::default(),
+            repeat_until: None,
             created_at: NOW,
             updated_at: NOW,
             completed_at: None,

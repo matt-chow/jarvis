@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareTasks, dueInfo, formatMinutes, localDate, parseEstimate, taskTree, type Task } from "./tasks";
+import { compareTasks, dueInfo, formatMinutes, localDate, parseEstimate, repeats, successorId, taskTree, type Task } from "./tasks";
 
 let seq = 0;
 function task(over: Partial<Task>): Task {
@@ -78,5 +78,20 @@ describe("planner helpers (D-041)", () => {
     expect(parseEstimate("1441")).toBeUndefined();
     expect(parseEstimate("1.5")).toBeUndefined();
     expect(parseEstimate("soon")).toBeUndefined();
+  });
+});
+
+describe("repeating tasks (D-047)", () => {
+  it("predicts the server's id for the next occurrence", () => {
+    // Same values as directory-core `tasks` tests.
+    expect(successorId("ab".repeat(16))).toBe("9eefe192aaa3e3007be2dcf95963ff84");
+    expect(successorId(`${"0".repeat(31)}1`)).toBe("9e3779b97f4a7c1618e2b4f1ac5aa552");
+    expect(successorId(successorId("ab".repeat(16)))).not.toBe("ab".repeat(16));
+  });
+
+  it("repeats only top-level tasks with a due date", () => {
+    expect(repeats({ repeat: "weekly", due_date: "2026-11-06", parent_id: null })).toBe(true);
+    expect(repeats({ repeat: "weekly", due_date: null, parent_id: null })).toBe(false);
+    expect(repeats({ repeat: undefined, due_date: "2026-11-06", parent_id: null })).toBe(false);
   });
 });

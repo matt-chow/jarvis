@@ -9,7 +9,8 @@
  * becomes a conflict for the owner to resolve (DECISIONS D-018).
  */
 import { ApiError, isNetworkError } from "./api";
-import { addDays, dayNumber, type CalendarEvent, type EventPatch, type NewEvent } from "./calendar";
+import { newBlock, patchBlock, type BlockPatch, type NewBlock, type TimeBlock } from "./blocks";
+import { addDays, dayNumber, nthStart, type CalendarEvent, type EventPatch, type NewEvent, type SplitRequest, type SplitResult } from "./calendar";
 import type { OutboxEntry } from "./db";
 import { withCheck, type Habit, type HabitPatch, type HabitView, type NewHabit } from "./habits";
 import type { InboxItem, Triaged, TriageTarget } from "./inbox";
@@ -47,6 +48,11 @@ export type Op =
   | { kind: "event.create"; event: NewEvent & { id: string } }
   | { kind: "event.update"; id: string; patch: EventPatch }
   | { kind: "event.delete"; id: string }
+  /** Atomic on the server; the replacement's client id makes a replay a 409 (D-047). */
+  | { kind: "event.split"; id: string; split: SplitRequest }
+  | { kind: "block.create"; block: NewBlock & { id: string } }
+  | { kind: "block.update"; id: string; patch: BlockPatch }
+  | { kind: "block.delete"; id: string }
   /** Last write wins, so replays are safe. */
   | { kind: "prefs.update"; patch: PreferencesPatch }
   /** Idempotent per pair on the server (D-037). */
@@ -108,6 +114,10 @@ export interface SyncApi {
   createEvent(e: NewEvent & { id: string }): Promise<CalendarEvent>;
   updateEvent(id: string, patch: EventPatch): Promise<CalendarEvent>;
   deleteEvent(id: string): Promise<void>;
+  splitEvent(id: string, split: SplitRequest): Promise<SplitResult>;
+  createBlock(b: NewBlock & { id: string }): Promise<TimeBlock>;
+  updateBlock(id: string, patch: BlockPatch): Promise<TimeBlock>;
+  deleteBlock(id: string): Promise<void>;
   updatePreferences(patch: PreferencesPatch): Promise<Preferences>;
   setProgress(fileId: string, patch: ProgressPatch): Promise<Progress>;
   link(from: EntityRef, to: EntityRef): Promise<Linked>;
@@ -204,6 +214,18 @@ async function apply(api: SyncApi, op: Op): Promise<number | void> {
       case "event.delete":
         await api.deleteEvent(op.id);
         return;
+      case "event.split":
+        await api.splitEvent(op.id, op.split);
+        return;
+      case "block.create":
+        await api.createBlock(op.block);
+        return;
+      case "block.update":
+        await api.updateBlock(op.id, op.patch);
+        return;
+      case "block.delete":
+        await api.deleteBlock(op.id);
+        return;
       case "prefs.update":
         await api.updatePreferences(op.patch);
         return;
@@ -213,11 +235,12 @@ async function apply(api: SyncApi, op: Op): Promise<number | void> {
     }
   } catch (e) {
     // Already applied by an earlier, interrupted replay.
-    const isCreate = op.kind.endsWith(".create") || op.kind === "inbox.capture";
+    // A split whose replacement exists was applied (the series edit is in the same transaction).
+    const isCreate = op.kind.endsWith(".create") || op.kind === "inbox.capture" || op.kind === "event.split";
     // A check-in for a habit deleted meanwhile has nothing left to do.
     // A check-in or reading progress for something deleted meanwhile has nothing left to do.
     // A 404 means it is already done (deleted, or filed from another device).
-    const isDelete = op.kind.endsWith(".delete") || ["habit.check", "library.progress", "inbox.triage"].includes(op.kind);
+    const isDelete = op.kind.endsWith(".delete") || ["habit.check", "library.progress", "inbox.triage", "event.split"].includes(op.kind);
     if (e instanceof ApiError && isCreate && e.code === "exists") return;
     if (e instanceof ApiError && isDelete && e.status === 404) return;
     throw e;
@@ -268,8 +291,16 @@ function describeOp(op: Op): string {
       return "update an event";
     case "event.delete":
       return "delete an event";
+    case "event.split":
+      return op.split.scope === "one" ? `change the ${op.split.date} occurrence of an event` : `change an event from ${op.split.date} on`;
+    case "block.create":
+      return `schedule a session on ${op.block.date}`;
+    case "block.update":
+      return "update a session";
+    case "block.delete":
+      return "delete a session";
     case "prefs.update":
-      return "save your dashboard layout";
+      return "save your preferences";
     case "library.progress":
       return "save your reading progress";
     case "link.create":
@@ -338,6 +369,8 @@ export function applyLocally(tasks: Task[], op: Op, now = Date.now()): Task[] {
         priority: t.priority ?? "none",
         due_date: t.due_date ?? null,
         estimate_minutes: t.estimate_minutes ?? null,
+        repeat: t.repeat ?? "none",
+        repeat_until: t.repeat_until ?? null,
         created_at: now,
         updated_at: now,
         completed_at: null,
@@ -410,29 +443,42 @@ export function applyHabitLocally(habits: HabitView[], op: Op, today: string, no
 }
 
 /** Apply an event op to a local event list. */
+/** The server's repeat rules: a count sets the last date; one-offs have no repeat fields. */
+function normalizeRepeat(e: CalendarEvent): CalendarEvent {
+  if (e.repeat === "none") return { ...e, repeat_until: null, repeat_count: null, repeat_interval: 1, skip_dates: [] };
+  const next = { ...e, skip_dates: [...new Set(e.skip_dates ?? [])].sort() };
+  if (next.repeat_count) next.repeat_until = nthStart(next, next.repeat_count) ?? null;
+  return next;
+}
+
+function eventFrom(e: NewEvent & { id: string }, now: number): CalendarEvent {
+  const start_time = e.start_time ?? null;
+  return normalizeRepeat({
+    id: e.id,
+    title: e.title.trim(),
+    start_date: e.start_date,
+    end_date: e.end_date ?? e.start_date,
+    start_time,
+    end_time: start_time ? (e.end_time ?? null) : null,
+    location: (e.location ?? "").trim(),
+    notes: e.notes ?? "",
+    repeat: e.repeat ?? "none",
+    repeat_until: e.repeat_until ?? null,
+    fixed: e.fixed ?? true,
+    timezone: e.timezone ?? null,
+    repeat_interval: e.repeat_interval ?? 1,
+    repeat_count: e.repeat_count ?? null,
+    skip_dates: [],
+    created_at: now,
+    updated_at: now,
+  });
+}
+
+/** Apply an event op to a local event list. */
 export function applyEventLocally(events: CalendarEvent[], op: Op, now = Date.now()): CalendarEvent[] {
   switch (op.kind) {
-    case "event.create": {
-      const e = op.event;
-      const start_time = e.start_time ?? null;
-      return [
-        ...events,
-        {
-          id: e.id,
-          title: e.title.trim(),
-          start_date: e.start_date,
-          end_date: e.end_date ?? e.start_date,
-          start_time,
-          end_time: start_time ? (e.end_time ?? null) : null,
-          location: (e.location ?? "").trim(),
-          notes: e.notes ?? "",
-          repeat: e.repeat ?? "none",
-          repeat_until: e.repeat && e.repeat !== "none" ? (e.repeat_until ?? null) : null,
-          created_at: now,
-          updated_at: now,
-        },
-      ];
-    }
+    case "event.create":
+      return [...events, eventFrom(op.event, now)];
     case "event.update":
       return events.map((e) => {
         if (e.id !== op.id) return e;
@@ -440,13 +486,40 @@ export function applyEventLocally(events: CalendarEvent[], op: Op, now = Date.no
         // Same rules as the server: moving the start keeps the length; all-day has no end time.
         if (op.patch.start_date && !op.patch.end_date) next.end_date = addDays(op.patch.start_date, dayNumber(e.end_date) - dayNumber(e.start_date));
         if (!next.start_time) next.end_time = null;
-        if (next.repeat === "none") next.repeat_until = null;
-        return next;
+        if (op.patch.repeat_until !== undefined && op.patch.repeat_count === undefined) next.repeat_count = null;
+        return normalizeRepeat(next);
       });
+    case "event.split": {
+      const { date, scope, replacement } = op.split;
+      const updated = events.map((e) => {
+        if (e.id !== op.id) return e;
+        if (scope === "one") return normalizeRepeat({ ...e, skip_dates: [...(e.skip_dates ?? []), date], updated_at: now });
+        const before = addDays(date, -1);
+        return e.repeat_until && e.repeat_until <= before ? e : { ...e, repeat_until: before, repeat_count: null, updated_at: now };
+      });
+      return replacement && !events.some((e) => e.id === replacement.id) ? [...updated, eventFrom(replacement, now)] : updated;
+    }
     case "event.delete":
       return events.filter((e) => e.id !== op.id);
     default:
       return events;
+  }
+}
+
+/** Apply a time-block op to a local block list. */
+export function applyBlockLocally(blocks: TimeBlock[], op: Op, now = Date.now()): TimeBlock[] {
+  switch (op.kind) {
+    case "block.create":
+      return blocks.some((b) => b.id === op.block.id) ? blocks : [...blocks, newBlock(op.block.id, op.block, now)];
+    case "block.update":
+      return blocks.map((b) => (b.id === op.id ? patchBlock(b, op.patch, now) : b));
+    case "block.delete":
+      return blocks.filter((b) => b.id !== op.id);
+    case "task.delete":
+      // The server deletes a task's sessions with it.
+      return blocks.filter((b) => b.task_id !== op.id);
+    default:
+      return blocks;
   }
 }
 

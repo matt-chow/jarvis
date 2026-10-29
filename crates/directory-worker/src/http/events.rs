@@ -3,7 +3,7 @@
 use super::auth::principal;
 use super::{error, error_with, json, no_content, read_json};
 use crate::{bindings, d1::D1EventRepository, entropy::WebCryptoEntropy, try_or_respond};
-use directory_core::calendar::{CalendarError, CalendarService, EventPatch, NewEvent};
+use directory_core::calendar::{CalendarError, CalendarService, EventPatch, NewEvent, Split};
 use directory_core::identity::Principal;
 use serde_json::json as body;
 use worker::{Date, Request, Response, Result, RouteContext};
@@ -99,6 +99,16 @@ pub async fn update(mut req: Request, rc: RouteContext<()>) -> Result<Response> 
         .await
     {
         Ok(e) => json(200, &e),
+        Err(e) => calendar_error(e),
+    }
+}
+
+/// Cancel, move, or end part of a repeating series in one transaction.
+pub async fn split(mut req: Request, rc: RouteContext<()>) -> Result<Response> {
+    let c = try_or_respond!(ctx(&req, &rc).await?);
+    let input: Split = try_or_respond!(read_json(&mut req).await?);
+    match c.service().split(&c.principal, &id_param(&rc), input).await {
+        Ok(r) => json(200, &r),
         Err(e) => calendar_error(e),
     }
 }

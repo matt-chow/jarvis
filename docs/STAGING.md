@@ -211,9 +211,9 @@ targeting production.
 ## 5. Migrations, safely
 
 The database schema comes from the append-only files in `migrations/`
-(`0001` … `0022`). The app expects **schema v22**.
+(`0001` … `0023`). The app expects **schema v23**.
 
-💻 See what will be applied (for a brand-new database, all 22 are listed):
+💻 See what will be applied (for a brand-new database, all 23 are listed):
 
 ```powershell
 npx wrangler d1 migrations list DB --remote --env staging
@@ -277,7 +277,7 @@ $base = "https://directory-staging.<subdomain>.workers.dev"
    ```powershell
    Invoke-RestMethod "$base/api/v1/health" | ConvertTo-Json -Depth 4
    ```
-   `schema vN, expected v22` means migrations are missing (§5). The
+   `schema vN, expected v23` means migrations are missing (§5). The
    endpoint returns HTTP 503 while degraded.
 2. **Data needs sign-in.** This should print `401`:
    ```powershell

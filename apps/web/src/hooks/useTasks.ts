@@ -1,7 +1,7 @@
 import { useCallback, useEffect } from "react";
 import { api } from "../lib/api";
 import { applyLocally, clientId } from "../lib/sync";
-import type { NewTask, Task, TaskPatch } from "../lib/tasks";
+import { isOpen, repeats, type NewTask, type Task, type TaskPatch } from "../lib/tasks";
 import { runOrQueue } from "./offline";
 import { useCachedList } from "./useCachedList";
 import { SYNCED_EVENT } from "./useSync";
@@ -20,15 +20,23 @@ export interface TasksState {
 
 const fetchAll = () => api.tasks("all");
 
+/** Dispatched after a task is added outside a task list (quick capture). */
+export const TASKS_CHANGED_EVENT = "directory:tasks-changed";
+
 /** Server-backed task list that keeps working offline (DECISIONS D-017). */
 export function useTasks(online: boolean): TasksState {
   const list = useCachedList<Task>("tasks:last", "task", fetchAll, online);
   const { reload } = list;
 
-  // Server data changed by a replay: refresh from the source of truth.
+  // Server data changed by a replay, or a task was added elsewhere (quick
+  // capture): refresh. Offline, this reads the device copy the change went to.
   useEffect(() => {
     window.addEventListener(SYNCED_EVENT, reload);
-    return () => window.removeEventListener(SYNCED_EVENT, reload);
+    window.addEventListener(TASKS_CHANGED_EVENT, reload);
+    return () => {
+      window.removeEventListener(SYNCED_EVENT, reload);
+      window.removeEventListener(TASKS_CHANGED_EVENT, reload);
+    };
   }, [reload]);
 
   const create = useCallback(
@@ -48,8 +56,9 @@ export function useTasks(online: boolean): TasksState {
   );
 
   const update = useCallback(
-    (id: string, patch: TaskPatch) =>
-      runOrQueue({
+    async (id: string, patch: TaskPatch) => {
+      const before = list.latest().find((t) => t.id === id);
+      const updated = await runOrQueue({
         list,
         noun: "task",
         op: { kind: "task.update", id, patch },
@@ -57,8 +66,12 @@ export function useTasks(online: boolean): TasksState {
         fromServer: (cur, u) => cur.map((t) => (t.id === id ? u : t)),
         applyLocal: applyLocally,
         local: (cur) => cur.find((t) => t.id === id)!,
-      }),
-    [list],
+      });
+      // Closing a repeating task created its next occurrence on the server (D-047).
+      if (updated && before && repeats(before) && isOpen(before) && !isOpen(updated)) reload();
+      return updated;
+    },
+    [list, reload],
   );
 
   const remove = useCallback(

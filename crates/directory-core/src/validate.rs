@@ -95,6 +95,44 @@ pub fn weekday(date: &str) -> u32 {
     (days_from_civil(date) + 3).rem_euclid(7) as u32
 }
 
+/// Minutes since midnight for `HH:MM` (00:00–23:59); `24:00` too when
+/// `midnight_end` (the end of a block that runs to midnight).
+pub fn clock(raw: &str, midnight_end: bool) -> Result<u32, &'static str> {
+    let b = raw.as_bytes();
+    let ok = b.len() == 5 && b[2] == b':' && b[..2].iter().chain(&b[3..]).all(u8::is_ascii_digit);
+    if !ok {
+        return Err("expected HH:MM");
+    }
+    let (h, m) = (
+        raw[..2].parse::<u32>().unwrap_or(99),
+        raw[3..].parse::<u32>().unwrap_or(99),
+    );
+    match (h, m) {
+        (24, 0) if midnight_end => Ok(1_440),
+        (0..=23, 0..=59) => Ok(h * 60 + m),
+        _ => Err("expected HH:MM"),
+    }
+}
+
+/// An IANA time-zone name such as `Europe/London`, `America/Argentina/Salta`,
+/// or `UTC` (shape only; the client resolves it).
+pub fn timezone(raw: &str) -> Result<String, &'static str> {
+    let ok = !raw.is_empty()
+        && raw.len() <= 64
+        && raw.split('/').all(|part| {
+            !part.is_empty()
+                && part.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+                && part
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '+'))
+        });
+    if ok {
+        Ok(raw.to_owned())
+    } else {
+        Err("expected an IANA time zone")
+    }
+}
+
 /// Deserialize helper for PATCH bodies: distinguishes a missing field (`None`)
 /// from an explicit `null` (`Some(None)`) so nullable fields can be cleared.
 pub fn double_option<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
@@ -157,6 +195,36 @@ mod tests {
         assert_eq!(weekday("2026-10-25"), 6, "a Sunday");
         for d in ["1900-03-01", "2000-02-29", "2099-12-31"] {
             assert_eq!(civil_from_days(days_from_civil(d)), d);
+        }
+    }
+
+    #[test]
+    fn clocks_and_zones() {
+        assert_eq!(clock("00:00", false), Ok(0));
+        assert_eq!(clock("09:30", false), Ok(570));
+        assert_eq!(clock("23:59", false), Ok(1_439));
+        assert_eq!(clock("24:00", true), Ok(1_440));
+        for bad in ["24:00", "9:30", "12:60", "ab:cd", "25:00", "12-30"] {
+            assert!(clock(bad, false).is_err(), "{bad}");
+        }
+        assert!(clock("24:01", true).is_err());
+        for good in [
+            "UTC",
+            "Europe/London",
+            "America/Argentina/Salta",
+            "Etc/GMT+5",
+        ] {
+            assert!(timezone(good).is_ok(), "{good}");
+        }
+        for bad in [
+            "",
+            "Europe/",
+            "/London",
+            "Europe/Lon don",
+            "../etc",
+            "1Zone",
+        ] {
+            assert!(timezone(bad).is_err(), "{bad}");
         }
     }
 

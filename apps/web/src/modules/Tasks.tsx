@@ -7,6 +7,9 @@ import { useHashParam } from "../hooks/useHashParam";
 import { reportIfUnauthorized } from "../hooks/useSession";
 import { useProjects } from "../hooks/useProjects";
 import { useTasks, type TasksState } from "../hooks/useTasks";
+import { useBlocks } from "../hooks/useBlocks";
+import { allocationLabel, allocations, atRisk, type Allocation } from "../lib/planner";
+import { REPEAT_LABELS, type Repeat } from "../lib/calendar";
 import { api } from "../lib/api";
 import { hashParam } from "../lib/modules";
 import type { Project } from "../lib/projects";
@@ -58,6 +61,9 @@ function useProjectFilter(): [string, (v: string) => void] {
 export function Tasks({ online }: ModuleProps) {
   const state = useTasks(online);
   const { projects } = useProjects(online);
+  // Work sessions, for estimated vs scheduled time (D-047).
+  const { blocks } = useBlocks(online);
+  const allocs = useMemo(() => allocations(state.tasks ?? [], blocks ?? []), [state.tasks, blocks]);
   const [project, setProject] = useProjectFilter();
   const [filter, setFilter] = useState<TaskFilter>("open");
   const [selected, setSelected] = useState<string>();
@@ -198,6 +204,7 @@ export function Tasks({ online }: ModuleProps) {
           node={selectedNode}
           state={state}
           projects={activeProjects}
+          allocation={allocs.get(selectedNode.task.id)}
           readOnly={readOnly}
           onClose={() => setSelected(undefined)}
         />
@@ -411,7 +418,7 @@ function TaskRow(props: {
   );
 }
 
-function TaskDetail(props: { node: TaskNode; state: TasksState; projects: Project[]; readOnly: boolean; onClose: () => void }) {
+function TaskDetail(props: { node: TaskNode; state: TasksState; projects: Project[]; allocation?: Allocation; readOnly: boolean; onClose: () => void }) {
   const { node, state, readOnly, onClose } = props;
   const { task, subtasks } = node;
   const [title, setTitle] = useState(task.title);
@@ -546,6 +553,45 @@ function TaskDetail(props: { node: TaskNode; state: TasksState; projects: Projec
           />
           {estimateValue === undefined && <span className="text-xs text-bad">Whole minutes from 1 to 1440, or empty.</span>}
         </label>
+
+        {/* Time planning (D-047): sessions live on the calendar. */}
+        <div className="flex flex-col gap-1 rounded-sm border border-line px-3 py-2">
+          <span className="label">scheduled time</span>
+          <span className={`text-sm ${atRisk(task, props.allocation) ? "text-warn" : ""}`}>
+            {props.allocation ? allocationLabel(props.allocation) : "No sessions yet"}
+            {props.allocation?.actual ? ` · ${formatMinutes(props.allocation.actual)} worked` : ""}
+          </span>
+          {atRisk(task, props.allocation) && <span className="text-xs text-warn">Not enough time is scheduled before it's due.</span>}
+          {isOpen(task) && !task.parent_id && (
+            <a href={`#/calendar?view=week${task.due_date ? `&date=${task.due_date}` : ""}`} className="text-xs text-accent underline-offset-2 hover:underline">
+              Plan time on the calendar
+            </a>
+          )}
+        </div>
+
+        {!task.parent_id && (
+          <label className="flex flex-col gap-1">
+            <span className="label">repeat</span>
+            <select
+              value={task.repeat ?? "none"}
+              disabled={readOnly || (!task.due_date && (task.repeat ?? "none") === "none")}
+              onChange={(e) => void state.update(task.id, { repeat: e.target.value as Repeat })}
+              aria-describedby={`repeat-help-${task.id}`}
+              className={inputClass}
+            >
+              {(Object.keys(REPEAT_LABELS) as Repeat[]).map((r) => (
+                <option key={r} value={r}>
+                  {REPEAT_LABELS[r]}
+                </option>
+              ))}
+            </select>
+            <span id={`repeat-help-${task.id}`} className="text-xs text-muted">
+              {task.due_date
+                ? "Completing it adds the next one, due on the next date. Cancelling skips to the next."
+                : "Set a due date to make it repeat."}
+            </span>
+          </label>
+        )}
 
         <label className="flex flex-col gap-1">
           <span className="label">notes</span>

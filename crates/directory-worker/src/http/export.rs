@@ -3,9 +3,10 @@
 use super::auth::{identity_error, principal, Identity};
 use super::{error, harden};
 use crate::d1::{
-    D1EventRepository, D1ExportSource, D1FileRepository, D1HabitRepository, D1InboxRepository,
-    D1JournalRepository, D1LibraryRepository, D1LinkRepository, D1MusicRepository,
-    D1NoteRepository, D1PreferencesRepository, D1ProjectRepository, D1TaskRepository,
+    D1BlockRepository, D1EventRepository, D1ExportSource, D1FileRepository, D1HabitRepository,
+    D1InboxRepository, D1JournalRepository, D1LibraryRepository, D1LinkRepository,
+    D1MusicRepository, D1NoteRepository, D1PreferencesRepository, D1ProjectRepository,
+    D1TaskRepository,
 };
 use crate::{bindings, try_or_respond};
 use directory_core::export::export as build_export;
@@ -31,6 +32,7 @@ pub async fn export(req: Request, rc: RouteContext<()>) -> Result<Response> {
         library: D1LibraryRepository::new(db()?, D1FileRepository::new(db()?)),
         habits: D1HabitRepository::new(db()?),
         events: D1EventRepository::new(db()?),
+        blocks: D1BlockRepository::new(db()?),
         preferences: D1PreferencesRepository::new(db()?),
         music: D1MusicRepository::new(db()?, D1FileRepository::new(db()?)),
     };

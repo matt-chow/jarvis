@@ -3,6 +3,7 @@
 //! importing owner's, and are validated like ordinary creates. A record whose
 //! id already exists is skipped, never overwritten. List caps (D-022) apply.
 
+use crate::blocks::{self, BlockRepository, TimeBlock};
 use crate::calendar::{self, Event, EventRepository};
 use crate::entropy::is_id;
 use crate::export::{HabitRecord, LinkRecord, FORMAT_VERSION};
@@ -34,6 +35,7 @@ pub const KINDS: &[&str] = &[
     "inbox",
     "habits",
     "events",
+    "blocks",
     "playlists",
     "links",
     "preferences",
@@ -49,6 +51,7 @@ pub trait ImportTargets {
     type Links: LinkRepository;
     type Habits: HabitRepository;
     type Events: EventRepository;
+    type Blocks: BlockRepository;
     type Music: MusicRepository;
     type Preferences: PreferencesRepository;
     fn tasks(&self) -> &Self::Tasks;
@@ -59,6 +62,7 @@ pub trait ImportTargets {
     fn links(&self) -> &Self::Links;
     fn habits(&self) -> &Self::Habits;
     fn events(&self) -> &Self::Events;
+    fn blocks(&self) -> &Self::Blocks;
     fn music(&self) -> &Self::Music;
     fn preferences(&self) -> &Self::Preferences;
 }
@@ -153,6 +157,7 @@ pub async fn import<T: ImportTargets>(
             "inbox" => one(v, |r| inbox_item(t, p, r)).await,
             "habits" => one(v, |r| habit(t, p, r)).await,
             "events" => one(v, |r| event(t, p, r)).await,
+            "blocks" => one(v, |r| block(t, p, r)).await,
             "playlists" => one(v, |r| playlist(t, p, r)).await,
             "links" => one(v, |r| link(t, p, r)).await,
             _ => one(v, |r| prefs(t, p, r)).await,
@@ -396,6 +401,37 @@ async fn event<T: ImportTargets>(t: &T, p: &Principal, mut r: Event) -> Result<O
     Ok(Inserted)
 }
 
+async fn block<T: ImportTargets>(
+    t: &T,
+    p: &Principal,
+    mut r: TimeBlock,
+) -> Result<Outcome, String> {
+    if !is_id(&r.id) {
+        return reject("id: malformed");
+    }
+    let repo = t.blocks();
+    if repo.get(&p.user_id, &r.id).await?.is_some() {
+        return Ok(Skipped);
+    }
+    r.owner_id = p.user_id.clone();
+    try_reject!(timestamps(r.created_at, r.updated_at));
+    let r = match blocks::check(r) {
+        Ok(b) => b,
+        Err(blocks::BlockError::Invalid(f, w)) => return reject(format!("{f}: {w}")),
+        Err(_) => return reject("invalid time block"),
+    };
+    if let Some(task) = &r.task_id {
+        if !repo.task_exists(&p.user_id, task).await? {
+            return reject("task_id: isn't in this account (restore tasks first)");
+        }
+    }
+    if repo.count(&p.user_id).await? >= blocks::MAX_BLOCKS {
+        return reject("blocks: limit reached");
+    }
+    repo.insert(&r).await?;
+    Ok(Inserted)
+}
+
 async fn playlist<T: ImportTargets>(
     t: &T,
     p: &Principal,
@@ -480,6 +516,7 @@ async fn prefs<T: ImportTargets>(t: &T, p: &Principal, r: Preferences) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::blocks::memory::MemoryBlocks;
     use crate::calendar::memory::MemoryEvents;
     use crate::habits::memory::MemoryHabits;
     use crate::identity::AuthMethod;
@@ -505,6 +542,7 @@ mod tests {
         links: MemoryLinks,
         habits: MemoryHabits,
         events: MemoryEvents,
+        blocks: MemoryBlocks,
         music: MemoryMusic,
         prefs: MemoryPreferences,
     }
@@ -518,6 +556,7 @@ mod tests {
         type Links = MemoryLinks;
         type Habits = MemoryHabits;
         type Events = MemoryEvents;
+        type Blocks = MemoryBlocks;
         type Music = MemoryMusic;
         type Preferences = MemoryPreferences;
         fn tasks(&self) -> &MemoryTasks {
@@ -543,6 +582,9 @@ mod tests {
         }
         fn events(&self) -> &MemoryEvents {
             &self.events
+        }
+        fn blocks(&self) -> &MemoryBlocks {
+            &self.blocks
         }
         fn music(&self) -> &MemoryMusic {
             &self.music
@@ -637,6 +679,27 @@ mod tests {
             "start_time": null, "end_time": null, "location": "", "notes": "", "repeat": "none", "repeat_until": null, "created_at": 1, "updated_at": 1});
         let r = run(&t, "events", vec![bad_event]);
         assert_eq!(r.rejected[0].reason, "end_date: before start_date");
+
+        // Sessions need their task in this account; focus blocks don't.
+        let block = |bid: char, task: Option<String>| {
+            json!({"id": id(bid), "task_id": task, "title": "Focus",
+            "date": "2026-11-02", "start_time": "09:00", "end_time": "10:00", "timezone": null, "fixed": false,
+            "status": "done", "actual_minutes": 50, "notes": "", "created_at": 1, "updated_at": 1})
+        };
+        let r = run(
+            &t,
+            "blocks",
+            vec![block('5', Some(id('9'))), block('6', None)],
+        );
+        assert_eq!((r.inserted, r.rejected.len()), (1, 1));
+        assert!(r.rejected[0].reason.starts_with("task_id"));
+        t.blocks.1.borrow_mut().push(("u2".into(), id('a')));
+        assert_eq!(
+            run(&t, "blocks", vec![block('5', Some(id('a')))]).inserted,
+            1
+        );
+        assert_eq!(run(&t, "blocks", vec![block('6', None)]).skipped, 1);
+        assert_eq!(t.blocks.0.borrow()[0].owner_id, "u2");
     }
 
     #[test]

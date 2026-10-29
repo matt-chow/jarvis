@@ -1,6 +1,7 @@
 //! Full data export: one JSON document with every record the owner has.
 //! Contains no credential material (sessions, passkeys, device tokens).
 
+use crate::blocks::TimeBlock;
 use crate::calendar::Event;
 use crate::files::FileEntry;
 use crate::habits::{CheckIn, Habit};
@@ -65,6 +66,8 @@ pub struct Export {
     pub reading_progress: Vec<Progress>,
     pub habits: Vec<HabitRecord>,
     pub events: Vec<Event>,
+    /// Time blocks (work sessions), D-047.
+    pub blocks: Vec<TimeBlock>,
     pub preferences: Preferences,
     pub playlists: Vec<Playlist>,
 }
@@ -82,6 +85,7 @@ pub trait ExportSource {
     async fn habits(&self, owner_id: &str) -> Result<Vec<Habit>, String>;
     async fn habit_checkins(&self, owner_id: &str) -> Result<Vec<CheckIn>, String>;
     async fn events(&self, owner_id: &str) -> Result<Vec<Event>, String>;
+    async fn blocks(&self, owner_id: &str) -> Result<Vec<TimeBlock>, String>;
     async fn preferences(&self, owner_id: &str) -> Result<Preferences, String>;
     async fn playlists(&self, owner_id: &str) -> Result<Vec<Playlist>, String>;
 }
@@ -128,6 +132,7 @@ pub async fn export<S: ExportSource>(
         reading_progress: source.reading_progress(&owner).await?,
         habits,
         events: source.events(&owner).await?,
+        blocks: source.blocks(&owner).await?,
         preferences: source.preferences(&owner).await?,
         playlists: source.playlists(&owner).await?,
         user,
@@ -156,6 +161,8 @@ mod tests {
                 priority: Priority::None,
                 due_date: None,
                 estimate_minutes: None,
+                repeat: Default::default(),
+                repeat_until: None,
                 created_at: 1,
                 updated_at: 1,
                 completed_at: None,
@@ -209,6 +216,9 @@ mod tests {
                 date: date.into(),
             };
             Ok(vec![c("2026-10-21"), c("2026-10-19")])
+        }
+        async fn blocks(&self, _: &str) -> Result<Vec<TimeBlock>, String> {
+            Ok(vec![])
         }
         async fn events(&self, _: &str) -> Result<Vec<Event>, String> {
             Ok(vec![])

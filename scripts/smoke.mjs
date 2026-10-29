@@ -453,6 +453,66 @@ async function local() {
       expect((await api.req("GET", "/api/v1/events")).json.events.length === 0, "empty");
     });
 
+    await check("planner (D-047): sessions per task, split a series, recurring task, working hours, export", async () => {
+      const task = (await api.req("POST", "/api/v1/tasks", { body: { title: "Write report", estimate_minutes: 180, due_date: "2026-11-06" } })).json;
+      const block = (body) => api.req("POST", "/api/v1/blocks", { body });
+      const a = await block({ task_id: task.id, date: "2026-11-02", start_time: "09:00", end_time: "10:30", timezone: "Europe/London" });
+      expect(a.status === 201 && a.json.fixed === false && a.json.status === "planned", `session 1 → ${a.text}`);
+      const b = await block({ task_id: task.id, date: "2026-11-03", start_time: "14:00", end_time: "24:00" });
+      expect(b.status === 201, `session 2 → ${b.text}`);
+      expect((await block({ task_id: "0".repeat(32), date: "2026-11-02", start_time: "09:00", end_time: "10:00" })).status === 400, "unknown task");
+      expect((await block({ title: "x", date: "2026-11-02", start_time: "10:00", end_time: "09:00" })).status === 400, "end before start");
+      expect((await block({ date: "2026-11-02", start_time: "10:00", end_time: "11:00" })).status === 400, "focus block needs a title");
+      const focus = await block({ title: "Deep work", date: "2026-11-02", start_time: "11:00", end_time: "12:00", fixed: true });
+      expect(focus.status === 201 && focus.json.task_id === null && focus.json.fixed, `focus → ${focus.text}`);
+
+      // Finishing a session records time; the task stays open.
+      const done = await api.req("PATCH", `/api/v1/blocks/${a.json.id}`, { body: { status: "done", actual_minutes: 80 } });
+      expect(done.json.status === "done" && done.json.actual_minutes === 80, `done → ${done.text}`);
+      expect((await api.req("GET", `/api/v1/tasks/${task.id}`)).json.status === "todo", "task still open");
+      const moved = await api.req("PATCH", `/api/v1/blocks/${b.json.id}`, { body: { date: "2026-11-04", start_time: "08:00", end_time: "09:30" } });
+      expect(moved.json.date === "2026-11-04" && moved.json.task_id === task.id, `move → ${moved.text}`);
+      expect((await api.req("GET", "/api/v1/blocks")).json.blocks.length === 3, "list");
+
+      // Repeating events: skip one, move one (atomic), end the rest.
+      const series = (await api.req("POST", "/api/v1/events", { body: { title: "Class", start_date: "2026-11-02", start_time: "10:00", end_time: "11:00", repeat: "weekly", repeat_count: 6, timezone: "America/Toronto" } })).json;
+      expect(series.repeat_until === "2026-12-07" && series.fixed === true, `count → ${JSON.stringify(series)}`);
+      const split = (body) => api.req("POST", `/api/v1/events/${series.id}/split`, { body });
+      expect((await split({ date: "2026-11-09", scope: "one" })).json.series.skip_dates.join() === "2026-11-09", "skip one");
+      const movedId = "5e".repeat(16);
+      const detach = await split({ date: "2026-11-16", scope: "one", replacement: { id: movedId, title: "Class", start_date: "2026-11-17", start_time: "10:00", end_time: "11:00" } });
+      expect(detach.status === 200 && detach.json.replacement.id === movedId, `move one → ${detach.text}`);
+      expect((await split({ date: "2026-11-16", scope: "one", replacement: { id: movedId, title: "Class", start_date: "2026-11-17" } })).status === 409, "replayed move");
+      expect((await split({ date: "2026-11-30", scope: "following" })).json.series.repeat_until === "2026-11-29", "end the rest");
+      const agenda = (await api.req("GET", "/api/v1/events/agenda?from=2026-11-01&to=2026-12-31")).json.occurrences.map((o) => o.start_date);
+      expect(agenda.join() === "2026-11-02,2026-11-17,2026-11-23", `agenda → ${agenda}`);
+
+      // Recurring task: completing it creates the next one, once.
+      const weekly = (await api.req("POST", "/api/v1/tasks", { body: { title: "Timesheet", due_date: "2026-11-06", repeat: "weekly" } })).json;
+      expect((await api.req("POST", "/api/v1/tasks", { body: { title: "x", repeat: "daily" } })).status === 400, "repeat needs a due date");
+      for (const status of ["done", "todo", "done"]) await api.req("PATCH", `/api/v1/tasks/${weekly.id}`, { body: { status } });
+      const next = (await api.req("GET", "/api/v1/tasks?status=open")).json.tasks.filter((t) => t.title === "Timesheet");
+      expect(next.length === 1 && next[0].due_date === "2026-11-13" && next[0].repeat === "weekly", `next → ${JSON.stringify(next)}`);
+
+      const hours = await api.req("PATCH", "/api/v1/preferences", { body: { planner: { day_start: "08:00", day_end: "18:00", work_days: [0, 1, 2, 3, 4], session_minutes: 50 } } });
+      expect(hours.status === 200 && hours.json.planner.session_minutes === 50, `hours → ${hours.text}`);
+      expect((await api.req("PATCH", "/api/v1/preferences", { body: { planner: { day_start: "18:00", day_end: "08:00", work_days: [], session_minutes: 50 } } })).status === 400, "bad hours");
+
+      const doc = (await api.req("GET", "/api/v1/export")).json;
+      expect(doc.blocks.length === 3 && doc.blocks.every((x) => x.owner_id === undefined), "blocks in export");
+      expect((await fetch(`${baseUrl}/api/v1/blocks`)).status === 401, "anonymous → 401");
+
+      // Deleting a task deletes its sessions; the focus block stays.
+      expect((await api.req("DELETE", `/api/v1/tasks/${task.id}`)).status === 204, "delete task");
+      const left = (await api.req("GET", "/api/v1/blocks")).json.blocks;
+      expect(left.length === 1 && left[0].id === focus.json.id, `left → ${JSON.stringify(left)}`);
+      expect((await api.req("DELETE", `/api/v1/blocks/${focus.json.id}`)).status === 204, "delete block");
+      expect((await api.req("DELETE", `/api/v1/blocks/${focus.json.id}`)).status === 404, "deleted twice");
+      for (const id of [series.id, movedId]) await api.req("DELETE", `/api/v1/events/${id}`);
+      for (const t of (await api.req("GET", "/api/v1/tasks?status=all")).json.tasks.filter((t) => t.title === "Timesheet")) await api.req("DELETE", `/api/v1/tasks/${t.id}`);
+      await api.req("PATCH", "/api/v1/preferences", { body: { planner: null } });
+    });
+
     await check("preferences: dashboard layout validated, patched, reset, exported", async () => {
       expect(JSON.stringify((await api.req("GET", "/api/v1/preferences")).json) === "{}", "default is empty");
       const set = await api.req("PATCH", "/api/v1/preferences", { body: { dashboard: { widgets: ["today", "capture"] } } });
