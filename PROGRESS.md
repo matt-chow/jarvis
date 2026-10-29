@@ -131,9 +131,13 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to delete the retired OneDrive copy of the repo (D-040).
 
 ### Next task
-0. Owner: deploy the unified planner (D-047) to staging: migration `0023`
-   first (`npm run db:migrate:staging`), then `npm run deploy:staging`. Then
-   run docs/PLANNER.md › Manual acceptance on a computer and an iPhone.
+0. Owner: run docs/PLANNER.md › Manual acceptance on a computer and an
+   iPhone. The unified planner (D-047, d5a5bc7) is on staging since
+   2026-10-29: migration 0023 applied, Worker version
+   45ce805f-a341-4e20-a1bb-a400509824fe, health reports schema v23, and the
+   new routes refuse anonymous callers (401). Restore point before the
+   migration: bookmark
+   `00000014-00000000-00005113-b2354a34b6ac8dd86f02a7d3e5fabbc0`.
 1. Owner: approve and deploy JARVIS Ask to staging, then run the iPhone
    steps in docs/JARVIS_ASK.md (they include a confirmed "yes" on staging).
    Decide on `microphone=(self)` (D-044). Report any phrase JARVIS
