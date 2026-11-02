@@ -260,6 +260,47 @@ async function local() {
       expect((await fetch(`${baseUrl}/api/v1/tasks`)).status === 401, "anonymous → 401");
     });
 
+    await check("categories (D-049): CRUD, unique names, assign (idempotent), foreign ids refused, delete keeps the task", async () => {
+      const post = (body) => api.req("POST", "/api/v1/categories", { body });
+      const school = await post({ name: "School", color: "#2C7" });
+      expect(school.status === 201 && school.json.color === "#22cc77" && school.json.icon === null && !("owner_id" in school.json), `create → ${school.text}`);
+      expect((await post({ name: " school " })).json.message?.includes("name"), "duplicate name (any case) refused");
+      expect((await post({ name: "x", color: "red" })).status === 400, "bad colour");
+      expect((await post({ name: "y".repeat(41) })).status === 400, "long name");
+      const replay = await post({ id: "a".repeat(32), name: "Important" });
+      expect(replay.status === 201 && (await post({ id: "a".repeat(32), name: "Important" })).status === 409, "replayed create → 409");
+      const important = replay.json;
+
+      const task = (await api.req("POST", "/api/v1/tasks", { body: { title: "Essay" } })).json;
+      const put = (id, ids) => api.req("PUT", `/api/v1/tasks/${id}/categories`, { body: { category_ids: ids } });
+      const set = await put(task.id, [school.json.id, important.id, school.json.id]);
+      expect(set.status === 200 && set.json.category_ids.join() === `${school.json.id},${important.id}`, `assign → ${set.text}`);
+      expect((await put(task.id, [school.json.id, important.id])).status === 200, "same set again (idempotent)");
+      expect((await put(task.id, ["b".repeat(32)])).status === 400, "unknown category id refused");
+      expect((await put("c".repeat(32), [school.json.id])).status === 404, "unknown task → 404");
+      let list = (await api.req("GET", "/api/v1/categories")).json;
+      expect(list.categories.map((c) => c.name).join() === "Important,School" && list.tasks.length === 2, `list → ${JSON.stringify(list)}`);
+
+      const renamed = await api.req("PATCH", `/api/v1/categories/${important.id}`, { body: { name: "Urgent", icon: "⚡" } });
+      expect(renamed.status === 200 && renamed.json.name === "Urgent" && renamed.json.icon === "⚡", `rename → ${renamed.text}`);
+      expect((await api.req("PATCH", `/api/v1/categories/${important.id}`, { body: { name: "SCHOOL" } })).status === 400, "rename to a used name");
+
+      expect((await api.req("DELETE", `/api/v1/categories/${school.json.id}`)).status === 204, "delete");
+      expect((await api.req("DELETE", `/api/v1/categories/${school.json.id}`)).status === 404, "deleted twice → 404");
+      expect((await api.req("GET", `/api/v1/tasks/${task.id}`)).status === 200, "the task stays");
+      list = (await api.req("GET", "/api/v1/categories")).json;
+      expect(list.tasks.length === 1 && list.tasks[0].category_id === important.id, "only its assignments went");
+      const doc = (await api.req("GET", "/api/v1/export")).json;
+      expect(doc.categories.length === 1 && doc.task_categories.length === 1, "in export");
+
+      expect((await api.req("DELETE", `/api/v1/tasks/${task.id}`)).status === 204, "delete task");
+      expect((await api.req("GET", "/api/v1/categories")).json.tasks.length === 0, "task delete drops its assignments");
+      await api.req("DELETE", `/api/v1/categories/${important.id}`);
+      for (const [m, p] of [["GET", "/api/v1/categories"], ["PUT", `/api/v1/tasks/${task.id}/categories`]]) {
+        expect((await fetch(`${baseUrl}${p}`, { method: m })).status === 401, `anonymous ${m} → 401`);
+      }
+    });
+
     await check("projects: create, assign tasks (top-level only), archive, delete unassigns tasks", async () => {
       expect((await api.req("POST", "/api/v1/projects", { body: { name: "" } })).status === 400, "blank name");
       const proj = await api.req("POST", "/api/v1/projects", { body: { name: "Kitchen remodel", description: "Q1" } });

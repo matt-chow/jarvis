@@ -10,6 +10,7 @@
  */
 import { ApiError, isNetworkError } from "./api";
 import { newBlock, patchBlock, type BlockPatch, type NewBlock, type TimeBlock } from "./blocks";
+import { sortCategories, withTaskCategories, type Category, type CategoryItem, type CategoryPatch, type NewCategory } from "./categories";
 import { addDays, dayNumber, nthStart, type CalendarEvent, type EventPatch, type NewEvent, type SplitRequest, type SplitResult } from "./calendar";
 import type { OutboxEntry } from "./db";
 import { withCheck, type Habit, type HabitPatch, type HabitView, type NewHabit } from "./habits";
@@ -26,6 +27,11 @@ export type Op =
   | { kind: "task.create"; task: NewTask & { id: string } }
   | { kind: "task.update"; id: string; patch: TaskPatch }
   | { kind: "task.delete"; id: string }
+  /** Replaces the task's whole set (a PUT), so replays are safe (D-049). */
+  | { kind: "task.categories"; task_id: string; category_ids: string[] }
+  | { kind: "category.create"; category: NewCategory & { id: string } }
+  | { kind: "category.update"; id: string; patch: CategoryPatch }
+  | { kind: "category.delete"; id: string }
   | { kind: "inbox.capture"; item: { id: string; text: string } }
   | { kind: "inbox.delete"; id: string }
   /** Filed into another module on replay; the journal date is fixed when queued (D-036). */
@@ -96,6 +102,10 @@ export interface SyncApi {
   createTask(t: NewTask & { id: string }): Promise<Task>;
   updateTask(id: string, patch: TaskPatch): Promise<Task>;
   deleteTask(id: string): Promise<void>;
+  setTaskCategories(taskId: string, ids: string[]): Promise<unknown>;
+  createCategory(c: NewCategory & { id: string }): Promise<Category>;
+  updateCategory(id: string, patch: CategoryPatch): Promise<Category>;
+  deleteCategory(id: string): Promise<void>;
   capture(text: string, id?: string): Promise<InboxItem>;
   deleteInboxItem(id: string): Promise<void>;
   triage(id: string, to: TriageTarget, date?: string): Promise<Triaged>;
@@ -155,6 +165,18 @@ async function apply(api: SyncApi, op: Op): Promise<number | void> {
         return;
       case "task.delete":
         await api.deleteTask(op.id);
+        return;
+      case "task.categories":
+        await api.setTaskCategories(op.task_id, op.category_ids);
+        return;
+      case "category.create":
+        await api.createCategory(op.category);
+        return;
+      case "category.update":
+        await api.updateCategory(op.id, op.patch);
+        return;
+      case "category.delete":
+        await api.deleteCategory(op.id);
         return;
       case "inbox.capture":
         await api.capture(op.item.text, op.item.id);
@@ -240,7 +262,7 @@ async function apply(api: SyncApi, op: Op): Promise<number | void> {
     // A check-in for a habit deleted meanwhile has nothing left to do.
     // A check-in or reading progress for something deleted meanwhile has nothing left to do.
     // A 404 means it is already done (deleted, or filed from another device).
-    const isDelete = op.kind.endsWith(".delete") || ["habit.check", "library.progress", "inbox.triage", "event.split"].includes(op.kind);
+    const isDelete = op.kind.endsWith(".delete") || ["habit.check", "task.categories", "library.progress", "inbox.triage", "event.split"].includes(op.kind);
     if (e instanceof ApiError && isCreate && e.code === "exists") return;
     if (e instanceof ApiError && isDelete && e.status === 404) return;
     throw e;
@@ -255,6 +277,14 @@ function describeOp(op: Op): string {
       return "update a task";
     case "task.delete":
       return "delete a task";
+    case "task.categories":
+      return "change a task's categories";
+    case "category.create":
+      return `create category “${op.category.name}”`;
+    case "category.update":
+      return "update a category";
+    case "category.delete":
+      return "delete a category";
     case "inbox.capture":
       return `capture “${op.item.text.slice(0, 40)}”`;
     case "inbox.delete":
@@ -391,6 +421,47 @@ export function applyLocally(tasks: Task[], op: Op, now = Date.now()): Task[] {
       return tasks.filter((t) => t.id !== op.id && t.parent_id !== op.id);
     default:
       return tasks;
+  }
+}
+
+/** Apply a category op (or a task's category set) to the local category list. */
+export function applyCategoryLocally(items: CategoryItem[], op: Op, now = Date.now()): CategoryItem[] {
+  switch (op.kind) {
+    case "category.create": {
+      const c = op.category;
+      const item: CategoryItem = {
+        id: c.id,
+        name: c.name.trim(),
+        color: c.color ?? "#3b3fa8",
+        icon: c.icon?.trim() || null,
+        created_at: now,
+        updated_at: now,
+        task_ids: [],
+      };
+      return sortCategories([...items, item]);
+    }
+    case "category.update":
+      return sortCategories(
+        items.map((c) =>
+          c.id === op.id
+            ? {
+                ...c,
+                name: op.patch.name?.trim() ?? c.name,
+                color: op.patch.color ?? c.color,
+                icon: op.patch.icon === undefined ? c.icon : op.patch.icon?.trim() || null,
+                updated_at: now,
+              }
+            : c,
+        ),
+      );
+    case "category.delete":
+      return items.filter((c) => c.id !== op.id);
+    case "task.categories":
+      return withTaskCategories(items, op.task_id, op.category_ids);
+    case "task.delete":
+      return items.map((c) => (c.task_ids.includes(op.id) ? { ...c, task_ids: c.task_ids.filter((t) => t !== op.id) } : c));
+    default:
+      return items;
   }
 }
 

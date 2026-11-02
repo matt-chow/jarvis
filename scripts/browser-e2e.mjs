@@ -320,6 +320,65 @@ try {
     await page.click("Complete “Plan e2e quick”");
   });
 
+  await step("Categories (D-049): manage, assign in task details, create inline, filter, group, delete keeps the task", async () => {
+    const listing = () => page.evaluate(`fetch("/api/v1/categories").then((r) => r.json())`);
+    const until = async (what, ok) => {
+      for (let i = 0; ; i++) {
+        const l = await listing();
+        if (ok(l)) return l;
+        if (i > 50) throw new Error(`${what}: ${JSON.stringify(l)}`);
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    };
+    const selectCategory = (value) =>
+      page.evaluate(`(() => {
+        const el = document.querySelector('select[aria-label="Category filter"]');
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(el, ${JSON.stringify(value)});
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      })()`);
+    await page.hash("/tasks");
+    await page.fill("New task", "Essay draft");
+    await page.click("add");
+    await page.waitForText("Essay draft");
+    await page.click("categories");
+    await page.waitForText("No categories yet");
+    await page.fill("New category name", "School");
+    await page.evaluate(`document.querySelector('input[aria-label="New category name"]').form.requestSubmit()`);
+    await until("created", (l) => l.categories.some((c) => c.name === "School"));
+    await shot("categories-manage");
+    await page.click("Close categories");
+
+    await page.click("Essay draft");
+    await page.click("School");
+    await until("assigned", (l) => l.tasks.length === 1);
+    await page.fill("New category", "Important");
+    await page.evaluate(`document.querySelector('input[aria-label="New category"]').form.requestSubmit()`);
+    const both = await until("created inline and assigned", (l) => l.tasks.length === 2 && l.categories.length === 2);
+    const essay = both.tasks[0].task_id;
+    await shot("categories-task");
+    await page.click("Close task details");
+
+    await selectCategory("none");
+    await page.waitForText("Nothing open");
+    await selectCategory(both.categories.find((c) => c.name === "School").id);
+    await page.waitForText("Essay draft");
+    await selectCategory("");
+    await page.click("group");
+    await waitFor("grouped", () => page.evaluate(`document.body.innerText.split("Essay draft").length === 3`));
+    await page.click("ungroup");
+
+    await page.click("categories");
+    await page.click("Delete School");
+    await page.click("Confirm delete School");
+    await until("deleted", (l) => l.categories.length === 1 && l.tasks.length === 1);
+    const task = await page.evaluate(`fetch("/api/v1/tasks/${essay}").then((r) => r.status)`);
+    if (task !== 200) throw new Error(`task gone after deleting its category: ${task}`);
+    await page.click("Close categories");
+    const left = await listing();
+    await page.evaluate(`fetch("/api/v1/categories/${left.categories[0].id}", { method: "DELETE", headers: { Origin: location.origin } })`);
+    await page.evaluate(`fetch("/api/v1/tasks/${essay}", { method: "DELETE", headers: { Origin: location.origin } })`);
+  });
+
   await step("Links: link a note to a task via the picker, follow the deep link, see the back-link", async () => {
     await page.hash("/notes");
     await page.click("Meeting notes");

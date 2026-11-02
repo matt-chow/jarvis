@@ -14,8 +14,9 @@ mod http;
 mod r2;
 
 use http::{
-    auth, automations, backup, blocks, diagnostics, events, export, files, habits, health, inbox,
-    jarvis, journal, library, links, music, notes, preferences, projects, search, tasks,
+    auth, automations, backup, blocks, categories, diagnostics, events, export, files, habits,
+    health, inbox, jarvis, journal, library, links, music, notes, preferences, projects, search,
+    tasks,
 };
 
 #[event(fetch)]
@@ -74,6 +75,12 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get_async("/api/v1/diagnostics/errors", diagnostics::list)
         .post_async("/api/v1/diagnostics/errors", diagnostics::report)
         .delete_async("/api/v1/diagnostics/errors", diagnostics::clear)
+        // Categories (tasks and reminders, D-049)
+        .get_async("/api/v1/categories", categories::list)
+        .post_async("/api/v1/categories", categories::create)
+        .patch_async("/api/v1/categories/:id", categories::update)
+        .delete_async("/api/v1/categories/:id", categories::delete)
+        .put_async("/api/v1/tasks/:id/categories", categories::set_task)
         // Calendar
         .get_async("/api/v1/events", events::list)
         .post_async("/api/v1/events", events::create)

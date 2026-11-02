@@ -12,6 +12,7 @@ pub mod automations;
 pub mod backup;
 pub mod blocks;
 pub mod calendar;
+pub mod categories;
 pub mod diagnostics;
 pub mod encoding;
 pub mod entropy;

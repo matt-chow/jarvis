@@ -129,6 +129,10 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | POST | `/api/v1/tasks` | session or token | `{ title, notes?, priority?, due_date?, parent_id?, project_id?, estimate_minutes? (1–1440), repeat?, repeat_until? }` → `201`. Subtasks are one level deep and can't set `project_id` or repeat. A repeating task needs a due date. |
 | GET | `/api/v1/tasks/plan?date=&minutes=&project_id=` | session or token | Planner proposal (D-041): ranked open tasks with scored reasons; `minutes` (1–960) fills that much time in rank order. Read-only. |
 | GET / PATCH / DELETE | `/api/v1/tasks/{id}` | session or token | PATCH: any of `title, notes, status, priority, due_date, project_id, estimate_minutes, repeat, repeat_until` (`null` clears the due date, project, estimate, or end date). Closing a repeating task creates its next occurrence once (D-047). DELETE cascades to subtasks and their time blocks. |
+| GET | `/api/v1/categories` | session or token | Categories (D-049) by name, and every task assignment: `{ categories: [{ id, name, color, icon, created_at, updated_at }], tasks: [{ task_id, category_id }] }` |
+| POST | `/api/v1/categories` | session or token | `{ id?, name (≤ 40, unique ignoring case), color? (#rgb or #rrggbb, default #3b3fa8), icon? (≤ 8) }` → `201`; a repeated client id → `409 exists`. At most 200 per owner. |
+| PATCH / DELETE | `/api/v1/categories/{id}` | session or token | `{ name?, color?, icon? }` (`null` clears the icon). DELETE removes only its assignments. |
+| PUT | `/api/v1/tasks/{id}/categories` | session or token | `{ category_ids }` replaces the task's set (≤ 12, deduplicated, all owned or `400`) → `{ task_id, category_ids }`. Idempotent. |
 | GET | `/api/v1/library` | session or token | PDF/ePub files with reading progress (reading, want, unread, finished) |
 | PUT / DELETE | `/api/v1/library/{file_id}/progress` | session or token | PUT `{ status?, current_page?, total_pages?, position? }`. Percent is derived from pages; reaching the last page finishes the document. DELETE resets it. |
 | GET | `/api/v1/files?folder=` | session or token | `{ folder, folders, files }` from D1 metadata (no R2 list operations) |
@@ -178,6 +182,10 @@ JSON bodies are capped at 64 KiB.
     times, zone, fixed, status, actual minutes); `events.fixed`, `timezone`,
     `repeat_interval`, `repeat_count`, `skip_dates` (JSON); `tasks.repeat`,
     `repeat_until`. All additive; existing events stay fixed.
+  - `0025`: categories (D-049): `categories` (owner, name unique per owner
+    ignoring case, `#rrggbb` colour, optional icon) and `task_categories`
+    (task, category, owner, position). Deleting a category or a task removes
+    only its assignments.
 - IndexedDB v3 adds a `media` store: tracks the owner chose to save for
   offline playback (blobs, explicit download; the service worker still never
   caches `/api/*`).
@@ -185,7 +193,7 @@ JSON bodies are capped at 64 KiB.
   File content lives at `u/<user_id>/f/<file_id>`; names and folders live in D1.
 - **IndexedDB** database `directory` (v2, adds `outbox`) has a `kv` store with cached
   copies for offline use: health, the last verified session user,
-  task, project, habit, event, time-block, note, and library lists, each opened note (`note:<id>`), and each
+  task, project, habit, event, time-block, category, note, and library lists, each opened note (`note:<id>`), and each
   journal month and day (`journal:<YYYY-MM>`, `journal:<date>`). Unresolved
   sync conflicts live at `conflict:<doc>` (D-018). Outbox entries carry an
   optional `doc` key, a `merge` key for coalesced document saves, and a `rev`

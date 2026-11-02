@@ -3,6 +3,7 @@
 
 use crate::blocks::TimeBlock;
 use crate::calendar::Event;
+use crate::categories::{Assignment, Category};
 use crate::files::FileEntry;
 use crate::habits::{CheckIn, Habit};
 use crate::identity::User;
@@ -70,6 +71,9 @@ pub struct Export {
     pub blocks: Vec<TimeBlock>,
     pub preferences: Preferences,
     pub playlists: Vec<Playlist>,
+    /// Shared categories and which tasks carry them (D-049).
+    pub categories: Vec<Category>,
+    pub task_categories: Vec<Assignment>,
 }
 
 /// Everything owned by `owner_id`, per module.
@@ -88,6 +92,8 @@ pub trait ExportSource {
     async fn blocks(&self, owner_id: &str) -> Result<Vec<TimeBlock>, String>;
     async fn preferences(&self, owner_id: &str) -> Result<Preferences, String>;
     async fn playlists(&self, owner_id: &str) -> Result<Vec<Playlist>, String>;
+    async fn categories(&self, owner_id: &str) -> Result<Vec<Category>, String>;
+    async fn task_categories(&self, owner_id: &str) -> Result<Vec<Assignment>, String>;
 }
 
 pub async fn export<S: ExportSource>(
@@ -135,6 +141,8 @@ pub async fn export<S: ExportSource>(
         blocks: source.blocks(&owner).await?,
         preferences: source.preferences(&owner).await?,
         playlists: source.playlists(&owner).await?,
+        categories: source.categories(&owner).await?,
+        task_categories: source.task_categories(&owner).await?,
         user,
     })
 }
@@ -227,6 +235,12 @@ mod tests {
             Ok(Preferences::default())
         }
         async fn playlists(&self, _: &str) -> Result<Vec<Playlist>, String> {
+            Ok(vec![])
+        }
+        async fn categories(&self, _: &str) -> Result<Vec<Category>, String> {
+            Ok(vec![])
+        }
+        async fn task_categories(&self, _: &str) -> Result<Vec<Assignment>, String> {
             Ok(vec![])
         }
     }

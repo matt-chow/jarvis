@@ -6,6 +6,7 @@
 import type { NewRule, Rule, RulePatch } from "./automations";
 import type { ImportKind, ImportReport } from "./backup";
 import type { BlockPatch, NewBlock, TimeBlock } from "./blocks";
+import type { Category, CategoryListing, CategoryPatch, NewCategory } from "./categories";
 import type { CalendarEvent, EventPatch, NewEvent, SplitRequest, SplitResult } from "./calendar";
 import type { ClientError, ErrorReport } from "./errors";
 import type { FileEntry, Listing, Usage } from "./files";
@@ -261,6 +262,18 @@ export class Api {
       "GET",
       `/api/v1/tasks/plan?date=${date}${minutes ? `&minutes=${minutes}` : ""}${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ""}`,
     );
+
+  // ---- Categories (D-049) ----
+  categories = () => this.call<CategoryListing>("GET", "/api/v1/categories");
+  createCategory = (c: NewCategory & { id?: string }) => this.call<Category>("POST", "/api/v1/categories", c);
+  updateCategory = (id: string, patch: CategoryPatch) =>
+    this.call<Category>("PATCH", `/api/v1/categories/${encodeURIComponent(id)}`, patch);
+  deleteCategory = (id: string) => this.call<void>("DELETE", `/api/v1/categories/${encodeURIComponent(id)}`);
+  /** Replace the task's categories (idempotent). */
+  setTaskCategories = (taskId: string, ids: string[]) =>
+    this.call<{ task_id: string; category_ids: string[] }>("PUT", `/api/v1/tasks/${encodeURIComponent(taskId)}/categories`, {
+      category_ids: ids,
+    });
 
   // ---- JARVIS ----
   /** Preview a command. Read-only plans come back already executed. */

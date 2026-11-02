@@ -2,6 +2,7 @@
 
 mod automations;
 mod blocks;
+mod categories;
 mod diagnostics;
 mod events;
 mod export;
@@ -24,6 +25,7 @@ mod tasks;
 
 pub use automations::D1AutomationRepository;
 pub use blocks::D1BlockRepository;
+pub use categories::D1CategoryRepository;
 pub use diagnostics::D1DiagnosticsRepository;
 pub use events::D1EventRepository;
 pub use export::D1ExportSource;

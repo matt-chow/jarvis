@@ -1,12 +1,14 @@
 //! `ExportSource` over the D1 repositories (no new SQL beyond each module's).
 
 use super::{
-    D1BlockRepository, D1EventRepository, D1FileRepository, D1HabitRepository, D1InboxRepository,
-    D1JournalRepository, D1LibraryRepository, D1LinkRepository, D1MusicRepository,
-    D1NoteRepository, D1PreferencesRepository, D1ProjectRepository, D1TaskRepository,
+    D1BlockRepository, D1CategoryRepository, D1EventRepository, D1FileRepository,
+    D1HabitRepository, D1InboxRepository, D1JournalRepository, D1LibraryRepository,
+    D1LinkRepository, D1MusicRepository, D1NoteRepository, D1PreferencesRepository,
+    D1ProjectRepository, D1TaskRepository,
 };
 use directory_core::blocks::{BlockRepository, TimeBlock, MAX_BLOCKS};
 use directory_core::calendar::{Event, EventRepository, MAX_EVENTS};
+use directory_core::categories::{Assignment, Category, CategoryRepository};
 use directory_core::export::ExportSource;
 use directory_core::files::FileEntry;
 use directory_core::habits::{CheckIn, Habit, HabitRepository};
@@ -37,6 +39,7 @@ pub struct D1ExportSource {
     pub blocks: D1BlockRepository,
     pub preferences: D1PreferencesRepository,
     pub music: D1MusicRepository,
+    pub categories: D1CategoryRepository,
 }
 
 impl ExportSource for D1ExportSource {
@@ -88,5 +91,11 @@ impl ExportSource for D1ExportSource {
     }
     async fn playlists(&self, owner_id: &str) -> Result<Vec<Playlist>, String> {
         self.music.playlists(owner_id, MAX_PLAYLISTS).await
+    }
+    async fn categories(&self, owner_id: &str) -> Result<Vec<Category>, String> {
+        self.categories.list(owner_id).await
+    }
+    async fn task_categories(&self, owner_id: &str) -> Result<Vec<Assignment>, String> {
+        self.categories.task_assignments(owner_id).await
     }
 }

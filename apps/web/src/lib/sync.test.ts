@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import { LocalDb } from "./db";
 import { isLocalLink, localLinkId } from "./links";
-import { applyBlockLocally, applyEventLocally, applyHabitLocally, applyInboxLocally, applyLocally, applyProjectLocally, clientId, replay, type Op, type SyncApi } from "./sync";
+import { applyBlockLocally, applyCategoryLocally, applyEventLocally, applyHabitLocally, applyInboxLocally, applyLocally, applyProjectLocally, clientId, replay, type Op, type SyncApi } from "./sync";
 import type { Note } from "./notes";
 import type { Task } from "./tasks";
 
@@ -36,6 +36,16 @@ function fakeApi(fail: (op: string) => unknown = () => undefined) {
     createTask: (t) => run(`create:${t.id}`),
     updateTask: (id) => run(`update:${id}`),
     deleteTask: async (id) => void (await run(`delete:${id}`)),
+    setTaskCategories: (id, ids) => run(`task-cats:${id}:${ids.join(",")}`),
+    createCategory: async (c) => {
+      await run(`category:${c.id}`);
+      return { id: c.id, name: c.name, color: c.color ?? "#3b3fa8", icon: null, created_at: 0, updated_at: 0 };
+    },
+    updateCategory: async (id) => {
+      await run(`category-update:${id}`);
+      return { id, name: "", color: "#3b3fa8", icon: null, created_at: 0, updated_at: 0 };
+    },
+    deleteCategory: async (id) => void (await run(`category-delete:${id}`)),
     capture: async (_text, id) => ({ id: (await run(`capture:${id}`)).id, text: "", created_at: 0 }),
     deleteInboxItem: async (id) => void (await run(`discard:${id}`)),
     createProject: async (p) => ({ ...(await run(`project:${p.id}`)), name: p.name, description: "", status: "active" }),
@@ -385,5 +395,35 @@ describe("planner ops (D-047)", () => {
     // A one-off has no repeat fields.
     list = applyEventLocally(list, { kind: "event.update", id: "s", patch: { repeat: "none" } }, 4);
     expect(list[0]).toMatchObject({ repeat_until: null, skip_dates: [], repeat_interval: 1 });
+  });
+});
+
+describe("category ops", () => {
+  it("replays idempotently; a deleted task's category set is done", async () => {
+    const db = await outboxWith([
+      { kind: "category.create", category: { id: "c1", name: "School" } },
+      { kind: "task.categories", task_id: "t1", category_ids: ["c1"] },
+      { kind: "task.categories", task_id: "gone", category_ids: [] },
+      { kind: "category.delete", id: "c0" },
+    ]);
+    const { api, calls } = fakeApi((op) =>
+      op === "category:c1" ? new ApiError(409, "exists") : op.startsWith("task-cats:gone") || op === "category-delete:c0" ? new ApiError(404, "not_found") : undefined,
+    );
+    expect(await replay(db, api)).toMatchObject({ applied: 4, rejected: [] });
+    expect(calls).toEqual(["category:c1", "task-cats:t1:c1", "task-cats:gone:", "category-delete:c0"]);
+  });
+
+  it("applies locally like the server", () => {
+    let list = applyCategoryLocally([], { kind: "category.create", category: { id: "c2", name: " Work ", icon: " " } }, 1);
+    list = applyCategoryLocally(list, { kind: "category.create", category: { id: "c1", name: "art", color: "#2c7445" } }, 1);
+    expect(list.map((c) => c.name)).toEqual(["art", "Work"]);
+    expect(list[1]).toMatchObject({ color: "#3b3fa8", icon: null, task_ids: [] });
+    list = applyCategoryLocally(list, { kind: "task.categories", task_id: "t1", category_ids: ["c1", "c2"] });
+    expect(list.every((c) => c.task_ids.includes("t1"))).toBe(true);
+    list = applyCategoryLocally(list, { kind: "category.update", id: "c2", patch: { name: "Admin", icon: "📎" } }, 2);
+    expect(list[0]).toMatchObject({ id: "c2", name: "Admin", icon: "📎", updated_at: 2 });
+    list = applyCategoryLocally(list, { kind: "task.delete", id: "t1" });
+    expect(list.every((c) => c.task_ids.length === 0)).toBe(true);
+    expect(applyCategoryLocally(list, { kind: "category.delete", id: "c1" }).map((c) => c.id)).toEqual(["c2"]);
   });
 });

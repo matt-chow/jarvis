@@ -806,3 +806,42 @@ previewed and approved).
 - **Not added:** paid models or fallbacks, streaming, model-written
   preferences, delete-task tools, and offline NL. Auth and security headers
   are unchanged; the microphone policy stays an owner decision (D-044).
+
+## D-049 — Reminders and shared categories
+
+Status: in progress (2026-11-01). Owner brief: *Directory Reminders & Shared
+Task Categories v1.0*. Tasks, reminders, categories, the calendar, and JARVIS
+stay separate modules that refer to each other. This entry grows one section
+per slice.
+
+### Categories (slice 1)
+
+- **Model.** A category has an id, a name (≤ 40 characters, unique per owner
+  ignoring case), a colour (`#rrggbb`; `#rgb` is expanded; default
+  `#3b3fa8`), and an optional icon (≤ 8 characters, e.g. an emoji). At most
+  200 per owner. Categories are independent of projects.
+- **Normalized tables** (migration 0025): `categories` and
+  `task_categories` (task, category, owner, position). The `tasks` table and
+  the `Task` JSON are unchanged, so older clients keep working. Reminders
+  get their own join table in their migration.
+- **Assignment** is a whole-set replace (`PUT /tasks/{id}/categories`): at
+  most 12, deduplicated, and every id must belong to the caller (`400`
+  otherwise). The D1 insert also checks the owner in its `SELECT`, so a
+  foreign id can never be attached. A replace is idempotent, which makes
+  offline replays safe.
+- **Deleting** a category removes only its assignments. Deleting a task
+  removes its (and its subtasks') assignments. Both are explicit statements in
+  the same D1 batch, with no reliance on cascades.
+- **Reads.** `GET /categories` returns the categories and every task
+  assignment in one response; the web caches it as `categories:last`
+  (each category with its `task_ids`).
+- **Offline.** `category.create/update/delete` and `task.categories` ops
+  join the outbox (D-017). A replayed create is `409 exists`, and a category
+  set for a deleted task is `404`; both count as done.
+- **UI** (provisional, D-013): Tasks gains a category filter (all, none, or
+  one), a *group* toggle (an item with several categories appears under
+  each; uncategorised last), coloured chips in each row's meta line, a picker
+  in task details with inline create, and a *categories* panel to rename,
+  recolour, set an icon, or delete (with confirmation).
+- **Export** includes `categories` and `task_categories`. Restore does not
+  import them yet.

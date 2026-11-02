@@ -1,4 +1,4 @@
-//! D1 implementation of `TaskRepository` (migrations 0004, 0005, 0021, 0023).
+//! D1 implementation of `TaskRepository` (migrations 0004, 0005, 0021, 0023, 0025).
 
 use super::{changes, count, err, int, opt_int, opt_text, stmt, text};
 use directory_core::calendar::Repeat;
@@ -180,6 +180,13 @@ impl TaskRepository for D1TaskRepository {
                         (SELECT id FROM tasks WHERE owner_id = ?1 AND parent_id = ?2))",
                     &[text(owner_id), text(id)],
                 )?,
+                // Category assignments of it and its subtasks (0025).
+                stmt(
+                    &self.db,
+                    "DELETE FROM task_categories WHERE owner_id = ?1 AND (task_id = ?2 OR task_id IN
+                        (SELECT id FROM tasks WHERE owner_id = ?1 AND parent_id = ?2))",
+                    &[text(owner_id), text(id)],
+                )?,
                 stmt(
                     &self.db,
                     "DELETE FROM tasks WHERE owner_id = ?1 AND parent_id = ?2",
@@ -193,7 +200,7 @@ impl TaskRepository for D1TaskRepository {
             ])
             .await
             .map_err(err)?;
-        Ok(results.get(2).is_some_and(|r| changes(r) > 0))
+        Ok(results.get(3).is_some_and(|r| changes(r) > 0))
     }
 
     async fn project_exists(&self, owner_id: &str, project_id: &str) -> Result<bool, String> {

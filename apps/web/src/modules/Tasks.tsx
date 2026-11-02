@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useShown } from "../lib/focus";
 import type { ModuleProps } from "../App";
+import { CategoryChips, CategoryManager, CategoryPicker } from "../components/Categories";
 import { LinkedSection } from "../components/LinkedSection";
+import { useCategories, type CategoriesState } from "../hooks/useCategories";
+import { NO_CATEGORY, groupByCategory, matchesCategory, taskCategories, type Category } from "../lib/categories";
 import { Button, Panel, inputClass } from "../components/ui";
 import { describeError } from "../hooks/useCachedList";
 import { useHashParam } from "../hooks/useHashParam";
@@ -65,17 +68,36 @@ export function Tasks({ online }: ModuleProps) {
   // Work sessions, for estimated vs scheduled time (D-047).
   const { blocks } = useBlocks(online);
   const allocs = useMemo(() => allocations(state.tasks ?? [], blocks ?? []), [state.tasks, blocks]);
+  const cats = useCategories(online);
   const [project, setProject] = useProjectFilter();
   const [filter, setFilter] = useState<TaskFilter>("open");
+  const [category, setCategory] = useState("");
+  const [grouped, setGrouped] = useState(false);
+  const [managing, setManaging] = useState(false);
   const [selected, setSelected] = useState<string>();
   useShown("tasks", { task_id: selected });
   const today = localDate();
+  const categoryIds = useMemo(() => {
+    const m = new Map<string, Category[]>();
+    for (const c of cats.categories ?? []) for (const t of c.task_ids) m.set(t, [...(m.get(t) ?? []), c]);
+    return m;
+  }, [cats.categories]);
+  const categoriesOf = (taskId: string) => categoryIds.get(taskId) ?? [];
   const tree = useMemo(
     () =>
       taskTree(state.tasks ?? [], filter).filter(
-        ({ task }) => !project || (project === NO_PROJECT ? !task.project_id : task.project_id === project),
+        ({ task }) =>
+          (!project || (project === NO_PROJECT ? !task.project_id : task.project_id === project)) &&
+          matchesCategory(
+            category,
+            (categoryIds.get(task.id) ?? []).map((c) => c.id),
+          ),
       ),
-    [state.tasks, filter, project],
+    [state.tasks, filter, project, category, categoryIds],
+  );
+  const groups = useMemo(
+    () => (grouped ? groupByCategory(tree, cats.categories, (n) => (categoryIds.get(n.task.id) ?? []).map((c) => c.id)) : [{ category: undefined, items: tree }]),
+    [grouped, tree, cats.categories, categoryIds],
   );
   const projectName = useMemo(() => new Map((projects ?? []).map((p) => [p.id, p.name])), [projects]);
   const activeProjects = useMemo(() => (projects ?? []).filter((p) => p.status === "active" || p.id === project), [projects, project]);
@@ -143,6 +165,31 @@ export function Tasks({ online }: ModuleProps) {
             ))}
           </select>
         </label>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <label className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="label shrink-0">category</span>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              aria-label="Category filter"
+              className={`${inputClass} min-w-0 flex-1`}
+            >
+              <option value="">All categories</option>
+              <option value={NO_CATEGORY}>No category</option>
+              {(cats.categories ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Button className={small} aria-pressed={grouped} onClick={() => setGrouped(!grouped)}>
+            {grouped ? "ungroup" : "group"}
+          </Button>
+          <Button className={small} aria-pressed={managing} onClick={() => setManaging(!managing)}>
+            categories
+          </Button>
+        </div>
         <QuickAdd
           disabled={readOnly}
           onAdd={(title) => state.create({ title, project_id: project && project !== NO_PROJECT ? project : undefined })}
@@ -167,27 +214,50 @@ export function Tasks({ online }: ModuleProps) {
             {filter === "open" ? "Nothing open. Add a task above." : filter === "closed" ? "No completed tasks yet." : "No tasks yet."}
           </p>
         ) : (
-          <ul className="-mx-2 mt-3 flex flex-col">
-            {tree.map((node) => (
-              <TaskRow
-                key={node.task.id}
-                node={node}
-                today={today}
-                selected={node.task.id === selected}
-                readOnly={readOnly}
-                projectName={project ? undefined : projectName.get(node.task.project_id ?? "")}
-                onSelect={() => setSelected(node.task.id === selected ? undefined : node.task.id)}
-                onToggle={() => void state.update(node.task.id, { status: isOpen(node.task) ? "done" : "todo" })}
-              />
-            ))}
-          </ul>
+          groups.map((g) => (
+            <div key={g.category?.id ?? "rest"}>
+              {grouped && (
+                <p className="label mt-4 flex items-center gap-1.5">
+                  {g.category ? <CategoryChips categories={[g.category]} /> : "no category"}
+                  <span className="text-muted">· {g.items.length}</span>
+                </p>
+              )}
+              <ul className="-mx-2 mt-3 flex flex-col">
+                {g.items.map((node) => (
+                  <TaskRow
+                    key={node.task.id}
+                    node={node}
+                    today={today}
+                    selected={node.task.id === selected}
+                    readOnly={readOnly}
+                    projectName={project ? undefined : projectName.get(node.task.project_id ?? "")}
+                    categories={grouped ? [] : categoriesOf(node.task.id)}
+                    onSelect={() => setSelected(node.task.id === selected ? undefined : node.task.id)}
+                    onToggle={() => void state.update(node.task.id, { status: isOpen(node.task) ? "done" : "todo" })}
+                  />
+                ))}
+              </ul>
+            </div>
+          ))
         )}
         {filter !== "open" && (state.tasks ?? []).filter((t) => !isOpen(t)).length >= RECENT_CLOSED_SHOWN && (
           <p className="mt-3 text-xs text-muted">Showing the {RECENT_CLOSED_SHOWN} most recently completed tasks. Older ones are in your data export.</p>
         )}
       </Panel>
 
-      {!selectedNode && (
+      {!selectedNode && managing && (
+        <Panel
+          title="categories"
+          actions={
+            <Button onClick={() => setManaging(false)} className={small} aria-label="Close categories">
+              close
+            </Button>
+          }
+        >
+          <CategoryManager state={cats} disabled={!cats.categories} />
+        </Panel>
+      )}
+      {!selectedNode && !managing && (
         <PlanPanel
           online={online}
           today={today}
@@ -207,6 +277,7 @@ export function Tasks({ online }: ModuleProps) {
           state={state}
           projects={activeProjects}
           allocation={allocs.get(selectedNode.task.id)}
+          cats={cats}
           readOnly={readOnly}
           onClose={() => setSelected(undefined)}
         />
@@ -386,6 +457,7 @@ function TaskRow(props: {
   selected: boolean;
   readOnly: boolean;
   projectName?: string;
+  categories: Category[];
   onSelect: () => void;
   onToggle: () => void;
 }) {
@@ -401,6 +473,7 @@ function TaskRow(props: {
         <span className={`block truncate text-sm ${isOpen(task) ? "" : "text-muted line-through"}`}>{task.title}</span>
         <span className="flex flex-wrap gap-x-3 font-mono text-[11px] text-muted">
           {props.projectName && <span>▦ {props.projectName}</span>}
+          <CategoryChips categories={props.categories} />
           {task.status === "in_progress" && <span className="text-accent">in progress</span>}
           {due && <span className={DUE_TONE[due.tone]}>{due.label}</span>}
           {task.priority !== "none" && (
@@ -420,7 +493,15 @@ function TaskRow(props: {
   );
 }
 
-function TaskDetail(props: { node: TaskNode; state: TasksState; projects: Project[]; allocation?: Allocation; readOnly: boolean; onClose: () => void }) {
+function TaskDetail(props: {
+  node: TaskNode;
+  state: TasksState;
+  projects: Project[];
+  allocation?: Allocation;
+  cats: CategoriesState;
+  readOnly: boolean;
+  onClose: () => void;
+}) {
   const { node, state, readOnly, onClose } = props;
   const { task, subtasks } = node;
   const [title, setTitle] = useState(task.title);
@@ -607,6 +688,13 @@ function TaskDetail(props: { node: TaskNode; state: TasksState; projects: Projec
             className={`${inputClass} resize-y py-2 leading-relaxed`}
           />
         </label>
+
+        <CategoryPicker
+          state={props.cats}
+          selected={taskCategories(props.cats.categories, task.id).map((c) => c.id)}
+          disabled={readOnly}
+          onChange={(ids) => void props.cats.setTask(task.id, ids)}
+        />
 
         <LinkedSection entity={{ kind: "task", id: task.id }} disabled={readOnly} />
 

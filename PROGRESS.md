@@ -170,6 +170,23 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-11-01 — Reminders & categories, slice 1: shared categories (D-049)
+- Owner brief *Directory Reminders & Shared Task Categories v1.0*, built
+  in slices: categories, reminder domain, Reminders UI, Web Push, calendar,
+  task, and JARVIS integration, offline, then a final verification pass.
+- Migration 0025 (schema v25): `categories` and `task_categories`. Core
+  `categories` module (validation, unique names, ≤ 200 per owner, ≤ 12 per
+  item, owner-checked set replace). D1 adapter, routes `/categories` and
+  `PUT /tasks/{id}/categories`, and export. Task delete drops its
+  assignments.
+- Web: `useCategories` (offline outbox ops), Tasks filter, group toggle,
+  row chips, a picker with inline create in task details, and a categories
+  panel (rename, recolour, icon, delete with confirmation).
+- Not yet: restore of categories from an export; reminder categories
+  (next slice).
+- Gate: verify ✅ (core 187, Vitest 175), smoke ✅ (new categories check),
+  browser e2e ✅ (new categories step).
+
 ### 2026-10-29 — JARVIS 2.0 staging activation prep: free model, billing guard
 - Staging secrets checked with `wrangler secret list` (names only):
   `OPENROUTER_API_KEY` and `DIRECTORY_SETUP_TOKEN` exist. No key or device
