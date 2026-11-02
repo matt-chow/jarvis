@@ -63,6 +63,40 @@ pub enum UndoOp {
         before: Option<JarvisPrefs>,
         after: Option<JarvisPrefs>,
     },
+    /// Remove (recoverably) a reminder the step created.
+    DeleteReminder {
+        id: String,
+        title: String,
+        updated_at: i64,
+    },
+    /// Reopen the occurrence the step completed.
+    UncompleteReminder {
+        id: String,
+        title: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        occurrence: Option<String>,
+        updated_at: i64,
+    },
+    /// Put back a reminder's schedule, priority, flag, and list.
+    RestoreReminder {
+        id: String,
+        title: String,
+        due_date: Option<String>,
+        due_time: Option<String>,
+        priority: Priority,
+        flagged: bool,
+        list_id: Option<String>,
+        updated_at: i64,
+    },
+    /// Put back a task's or reminder's categories (`after` is what the step
+    /// saved; a later change stops the reversal).
+    RestoreCategories {
+        target: super::CategoryTarget,
+        id: String,
+        title: String,
+        before: Vec<String>,
+        after: Vec<String>,
+    },
 }
 
 impl UndoOp {
@@ -70,7 +104,10 @@ impl UndoOp {
     pub fn deletes(&self) -> bool {
         matches!(
             self,
-            Self::DeleteTask { .. } | Self::DeleteBlock { .. } | Self::DeleteEvent { .. }
+            Self::DeleteTask { .. }
+                | Self::DeleteBlock { .. }
+                | Self::DeleteEvent { .. }
+                | Self::DeleteReminder { .. }
         )
     }
 
@@ -107,6 +144,12 @@ impl UndoOp {
             Self::RestorePrefs {
                 before: Some(p), ..
             } => format!("Restore preferences: {}", describe_prefs(p)),
+            Self::DeleteReminder { title, .. } => format!("Delete the reminder “{title}”"),
+            Self::UncompleteReminder { title, .. } => format!("Reopen the reminder “{title}”"),
+            Self::RestoreReminder { title, .. } => format!("Restore the reminder “{title}”"),
+            Self::RestoreCategories { target, title, .. } => {
+                format!("Put back the categories on the {} “{title}”", target.noun())
+            }
         }
     }
 }

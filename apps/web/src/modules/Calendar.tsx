@@ -9,6 +9,7 @@ import { Unscheduled } from "../components/planner/Unscheduled";
 import { Button } from "../components/ui";
 import { useHashParam } from "../hooks/useHashParam";
 import { usePlanner, type Spot } from "../hooks/usePlanner";
+import { useReminders } from "../hooks/useReminders";
 import { addDays, monthGrid } from "../lib/calendar";
 import { monthLabel, monthOf, shiftMonth } from "../lib/journal";
 import { ALL_FILTERS, applyFilters, buildItems, daySummary, unscheduled, weekDates, type CalItem, type Filters, type InboxSort } from "../lib/planner";
@@ -37,6 +38,7 @@ const FILTER_LABELS: [keyof Omit<Filters, "project">, string][] = [
   ["fixed", "Commitments"],
   ["flexible", "Flexible"],
   ["deadlines", "Deadlines"],
+  ["reminders", "Reminders"],
   ["completed", "Completed"],
 ];
 
@@ -78,6 +80,7 @@ function useNow(zone: string) {
 export function Calendar({ online }: ModuleProps) {
   const planner = usePlanner(online);
   const { events, blocks, tasks } = planner;
+  const { reminders } = useReminders(online);
   const now = useNow(planner.zone);
   const today = now.date;
 
@@ -111,7 +114,11 @@ export function Calendar({ online }: ModuleProps) {
   }, [view, month, days]);
 
   const sources = { events: events.events ?? [], blocks: blocks.blocks ?? [], tasks: tasks.tasks ?? [] };
-  const allItems = useMemo(() => buildItems({ ...sources, from, to, zone: planner.zone }), [sources.events, sources.blocks, sources.tasks, from, to, planner.zone]);
+  // Reminders are markers only: they stay out of `ahead`, so never shape suggestions (D-049).
+  const allItems = useMemo(
+    () => buildItems({ ...sources, reminders: reminders ?? [], from, to, zone: planner.zone }),
+    [sources.events, sources.blocks, sources.tasks, reminders, from, to, planner.zone],
+  );
   const shown = useMemo(() => applyFilters(allItems, filters), [allItems, filters]);
   // Suggestions look ahead from today, whatever is on screen.
   const ahead = useMemo(
@@ -136,6 +143,11 @@ export function Calendar({ online }: ModuleProps) {
     setView("day");
   };
   const close = () => setPanel(isPhone() ? undefined : { kind: "inbox" });
+  // A reminder opens in Reminders; everything else in the side panel.
+  const select = (i: CalItem) => {
+    if (i.kind === "reminder") location.hash = `/reminders?reminder=${i.id}`;
+    else setPanel({ kind: "item", key: i.key });
+  };
 
   const place = async (t: Task, date: string, start: number) => {
     const a = planner.allocs.get(t.id);
@@ -266,7 +278,7 @@ export function Calendar({ online }: ModuleProps) {
             <DayAgenda
               date={panel.date}
               items={shown}
-              onSelect={(i) => setPanel({ kind: "item", key: i.key })}
+              onSelect={select}
               onNew={() => setPanel({ kind: "create", spot: { date: panel.date, start: 9 * 60, end: 9 * 60 + planner.hours.session_minutes } })}
               onOpenDay={() => openDay(panel.date)}
             />
@@ -376,6 +388,7 @@ export function Calendar({ online }: ModuleProps) {
             <span className="inline-block h-3 w-4 rounded-sm border border-dashed border-accent" /> flexible event
             <span className="inline-block h-3 w-4 rounded-sm border border-dashed border-violet bg-violet/10" /> work session
             <span className="inline-block h-3 w-4 rounded-sm border border-line" /> ◆ deadline
+            <span className="inline-block h-3 w-4 rounded-sm border border-dotted border-warn bg-warn/10" /> 🔔 reminder
           </span>
         </div>
       )}
@@ -436,7 +449,7 @@ export function Calendar({ online }: ModuleProps) {
                 setPanel({ kind: "day", date: d });
               }}
               onOpenDay={openDay}
-              onSelect={(i) => setPanel({ kind: "item", key: i.key })}
+              onSelect={select}
             />
           ) : (
             <TimeGrid
@@ -450,7 +463,7 @@ export function Calendar({ online }: ModuleProps) {
               allocs={planner.allocs}
               projectNames={projectNames}
               defaultMinutes={planner.hours.session_minutes}
-              onSelect={(i: CalItem) => setPanel({ kind: "item", key: i.key })}
+              onSelect={select}
               onCreate={(spot) => setPanel({ kind: "create", spot })}
               onMove={(i, spot) => void planner.move(i, spot, allItems)}
               onDropTask={(id, date, start) => {

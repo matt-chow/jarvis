@@ -5,9 +5,11 @@ import { LinkedSection } from "../components/LinkedSection";
 import { Button, Panel, inputClass } from "../components/ui";
 import { useHashParam } from "../hooks/useHashParam";
 import { useProjects, type ProjectsState } from "../hooks/useProjects";
+import { useReminders } from "../hooks/useReminders";
 import { useTasks } from "../hooks/useTasks";
 import { percent, projectProgress, type Progress, type Project } from "../lib/projects";
-import type { Task } from "../lib/tasks";
+import { dueLabel, isOverdue, PRIORITY_MARK, projectReminders, type Reminder } from "../lib/reminders";
+import { localDate, type Task } from "../lib/tasks";
 
 // Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
 
@@ -36,6 +38,7 @@ function ProgressBar({ progress }: { progress: Progress }) {
 export function Projects({ online }: ModuleProps) {
   const state = useProjects(online);
   const { tasks } = useTasks(online);
+  const { reminders } = useReminders(online);
   const [selected, setSelected] = useState<string>();
   useShown("projects", { project_id: selected });
   const [showArchived, setShowArchived] = useState(false);
@@ -121,12 +124,50 @@ export function Projects({ online }: ModuleProps) {
           key={current.id}
           project={current}
           tasks={tasks ?? []}
+          reminders={reminders}
           state={state}
           readOnly={readOnly}
           offline={offline}
           onClose={() => setSelected(undefined)}
           onViewTasks={() => (location.hash = `/tasks?project=${current.id}`)}
         />
+      )}
+    </div>
+  );
+}
+
+/** Open reminders linked to the project or its tasks (D-049); each opens in Reminders. */
+function ProjectReminders(props: { projectId: string; tasks: Task[]; reminders?: Reminder[] }) {
+  const today = localDate();
+  const list = useMemo(
+    () => projectReminders(props.reminders ?? [], props.projectId, new Set(props.tasks.filter((t) => t.project_id === props.projectId).map((t) => t.id))),
+    [props.reminders, props.tasks, props.projectId],
+  );
+  const now = Date.now();
+  return (
+    <div>
+      <p className="label mb-1">reminders{props.reminders ? ` · ${list.length}` : ""}</p>
+      {!props.reminders ? (
+        <p className="cursor font-mono text-[11px] text-muted">loading</p>
+      ) : list.length === 0 ? (
+        <p className="text-sm text-muted">No open reminders. Link one from its details in Reminders.</p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {list.slice(0, 20).map((r) => (
+            <li key={r.id}>
+              <a href={`#/reminders?reminder=${r.id}`} className="flex items-baseline gap-2 py-1.5 text-sm hover:text-accent">
+                <span className="min-w-0 flex-1 truncate">
+                  {r.flagged ? "⚑ " : ""}
+                  {r.title}
+                  {PRIORITY_MARK[r.priority] && <span className="ml-1 font-mono text-[11px] text-warn">{PRIORITY_MARK[r.priority]}</span>}
+                </span>
+                <span className={`shrink-0 font-mono text-[11px] ${isOverdue(r, now, today) ? "text-bad" : "text-muted"}`}>
+                  {dueLabel(r, today) ?? "no date"}
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
@@ -163,6 +204,8 @@ function NewProjectForm({ disabled, onCreate }: { disabled: boolean; onCreate: (
 function ProjectDetail(props: {
   project: Project;
   tasks: Task[];
+  /** Undefined while loading. */
+  reminders?: Reminder[];
   state: ProjectsState;
   readOnly: boolean;
   /** Links need a connection. */
@@ -222,6 +265,7 @@ function ProjectDetail(props: {
           <p className="mt-1 font-mono text-[11px] text-muted">{progress.open} open</p>
         </div>
         <Button onClick={props.onViewTasks}>view tasks →</Button>
+        <ProjectReminders projectId={project.id} tasks={props.tasks} reminders={props.reminders} />
         <LinkedSection entity={{ kind: "project", id: project.id }} />
 
         <div className="flex items-center justify-between gap-2 border-t border-line pt-3">

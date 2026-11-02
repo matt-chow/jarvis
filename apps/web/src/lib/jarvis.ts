@@ -16,7 +16,7 @@ export interface PlannedAction {
 
 /** A session or event a step made or moved (open it on the calendar). */
 export interface PlanItem {
-  kind: "block" | "event";
+  kind: "block" | "event" | "reminder";
   id: string;
   date: string;
 }

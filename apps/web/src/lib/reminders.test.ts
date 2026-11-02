@@ -11,6 +11,7 @@ import {
   newReminderFrom,
   nextAfter,
   patchReminder,
+  projectReminders,
   ruleSummary,
   selectReminders,
   snoozeUntil,
@@ -118,6 +119,20 @@ describe("local edits", () => {
     expect(rem("b", { due_date: "2026-11-02", due_time: "08:00" }).alerts).toEqual([{ kind: "before", minutes: 0 }]);
     expect(alertLabel({ kind: "at", time: "18:00", days_before: 1 })).toBe("At 18:00, 1 day before");
     expect(alertLabel({ kind: "before", minutes: 2880 })).toBe("2 days before");
+  });
+});
+
+describe("project reminders", () => {
+  it("are open reminders linked to the project or one of its tasks, by due date", () => {
+    const all = [
+      rem("late", { project_id: "p", due_date: "2026-11-09" }),
+      rem("viaTask", { task_id: "t1", due_date: "2026-11-02" }),
+      rem("undated", { project_id: "p" }),
+      rem("done", { project_id: "p" }, { completed_at: 1 }),
+      rem("deleted", { project_id: "p" }, { deleted_at: 1 }),
+      rem("other", { project_id: "q", task_id: "t9" }),
+    ];
+    expect(projectReminders(all, "p", new Set(["t1"])).map((r) => r.id)).toEqual(["viaTask", "late", "undated"]);
   });
 });
 

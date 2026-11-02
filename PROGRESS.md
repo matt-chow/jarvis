@@ -170,6 +170,26 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-11-02 — Reminders & categories, slice 5: Calendar, projects, JARVIS (D-049)
+- Calendar shows scheduled reminders (🔔, own tone, *Reminders* filter,
+  recurring ones expanded to their occurrences); a click opens the
+  reminder. They never feed time blocking. Projects list their open
+  reminders.
+- JARVIS (deterministic parser): create (date, time, "in N hours",
+  repeats with weekdays, linked task or "this project"), list overdue /
+  today / upcoming / search, snooze, complete, move, add or remove
+  categories on a task or reminder (creating missing ones), create a
+  category, and propose reminders for task deadlines (≤ 10). Every change
+  is a confirmed plan step with undo; a gentle nudge for reminders overdue
+  over 7 days. "remind me to" now makes a reminder, not a task. Ask sends
+  the device's time zone. The free model has no reminder actions yet.
+- Fixed a Notes race found by browser e2e: a click on a note right after
+  the list painted could be overwritten by the "select the first note"
+  effect (`Notes.tsx`, functional update).
+- Gate: verify ✅ (core 239, Vitest 208, handoff 50), smoke ✅, browser e2e
+  40/40 ✅ (new Reminders × JARVIS, Calendar, Projects step), eval:jarvis ✅
+  (parser 13/13, free-form 8/8, no data changed).
+
 ### 2026-11-01 — Reminders & categories, slice 4: notifications (D-049)
 - Core `notifications`: VAPID ES256 JWT, push-service endpoint allowlist,
   devices (≤ 20, renew, remove), notices written in the reminder's save

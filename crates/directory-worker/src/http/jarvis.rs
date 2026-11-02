@@ -69,6 +69,8 @@ pub(crate) struct Targets {
     links: D1LinkRepository,
     blocks: D1BlockRepository,
     preferences: D1PreferencesRepository,
+    reminders: crate::d1::D1ReminderRepository,
+    categories: crate::d1::D1CategoryRepository,
 }
 
 impl Targets {
@@ -86,6 +88,8 @@ impl Targets {
             links: D1LinkRepository::new(db()?),
             blocks: D1BlockRepository::new(db()?),
             preferences: D1PreferencesRepository::new(db()?),
+            reminders: crate::d1::D1ReminderRepository::new(db()?),
+            categories: crate::d1::D1CategoryRepository::new(db()?),
         })
     }
 }
@@ -102,6 +106,18 @@ impl CommandTargets for Targets {
     type Links = D1LinkRepository;
     type Blocks = D1BlockRepository;
     type Preferences = D1PreferencesRepository;
+    type Reminders = crate::d1::D1ReminderRepository;
+    type Categories = crate::d1::D1CategoryRepository;
+    type Zones = crate::zone::IntlZones;
+    fn reminders(&self) -> &Self::Reminders {
+        &self.reminders
+    }
+    fn categories(&self) -> &Self::Categories {
+        &self.categories
+    }
+    fn zones(&self) -> &Self::Zones {
+        &crate::zone::IntlZones
+    }
     fn blocks(&self) -> &D1BlockRepository {
         &self.blocks
     }
@@ -422,6 +438,7 @@ pub async fn ask(mut req: Request, rc: RouteContext<()>) -> Result<Response> {
         input: body.text,
         today,
         time: None,
+        zone: None,
     };
     let (model, budget) = ai_parts(&rc.env, &c.principal)?;
     let provider = ParserThenModel {

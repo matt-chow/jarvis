@@ -41,6 +41,7 @@ pub enum RefKind {
     Block,
     Project,
     Note,
+    Reminder,
 }
 
 impl RefKind {
@@ -51,6 +52,7 @@ impl RefKind {
             Self::Block => 'b',
             Self::Project => 'p',
             Self::Note => 'n',
+            Self::Reminder => 'r',
         }
     }
 
@@ -61,6 +63,7 @@ impl RefKind {
             Self::Block => "block",
             Self::Project => "project",
             Self::Note => "note",
+            Self::Reminder => "reminder",
         }
     }
 
@@ -71,6 +74,7 @@ impl RefKind {
             "block" | "session" => Self::Block,
             "project" | "active project" => Self::Project,
             "note" => Self::Note,
+            "reminder" => Self::Reminder,
             _ => return None,
         })
     }
@@ -304,6 +308,41 @@ impl State {
                     ..
                 } => (RefKind::Task, id, title, None),
                 Command::AddSubtask { id, title, .. } => (RefKind::Task, id, title, None),
+                Command::CreateReminder {
+                    id: Some(id),
+                    title,
+                    due_date,
+                    ..
+                } => (RefKind::Reminder, id, title, due_date.clone()),
+                Command::CompleteReminder {
+                    reminder_id: Some(id),
+                    title: Some(title),
+                    ..
+                }
+                | Command::SnoozeReminder {
+                    reminder_id: Some(id),
+                    title: Some(title),
+                    ..
+                }
+                | Command::UpdateReminder {
+                    reminder_id: Some(id),
+                    title: Some(title),
+                    ..
+                } => (RefKind::Reminder, id, title, None),
+                Command::SetCategories {
+                    target,
+                    id: Some(id),
+                    title: Some(title),
+                    ..
+                } => (
+                    match target {
+                        super::CategoryTarget::Task => RefKind::Task,
+                        super::CategoryTarget::Reminder => RefKind::Reminder,
+                    },
+                    id,
+                    title,
+                    None,
+                ),
                 Command::CreateBlock {
                     id,
                     title,
@@ -354,6 +393,7 @@ impl State {
                 a.command,
                 Command::CreateTask { .. }
                     | Command::AddSubtask { .. }
+                    | Command::CreateReminder { .. }
                     | Command::CreateBlock { .. }
                     | Command::CreateEvent { .. }
             );
@@ -365,6 +405,7 @@ impl State {
                 let kind = match item.kind {
                     ItemKind::Block => RefKind::Block,
                     ItemKind::Event => RefKind::Event,
+                    ItemKind::Reminder => RefKind::Reminder,
                 };
                 let title = r
                     .message
@@ -476,6 +517,44 @@ pub fn apply_choice(commands: &mut [Command], choice: &Choice) -> bool {
                 | Command::UpdateTask { task_id, .. }
                 | Command::ScheduleTask { task_id, .. },
             ) if task_id.is_none() => task_id,
+            (
+                Some(RefKind::Reminder),
+                Command::CompleteReminder { reminder_id, .. }
+                | Command::SnoozeReminder { reminder_id, .. }
+                | Command::UpdateReminder { reminder_id, .. },
+            ) if reminder_id.is_none() => reminder_id,
+            (
+                Some(RefKind::Task),
+                Command::SetCategories {
+                    target: super::CategoryTarget::Task,
+                    id,
+                    ..
+                },
+            )
+            | (
+                Some(RefKind::Reminder),
+                Command::SetCategories {
+                    target: super::CategoryTarget::Reminder,
+                    id,
+                    ..
+                },
+            ) if id.is_none() => id,
+            (
+                Some(RefKind::Task),
+                Command::CreateReminder {
+                    task: Some(_),
+                    task_id,
+                    ..
+                },
+            ) if task_id.is_none() => task_id,
+            (
+                Some(RefKind::Project),
+                Command::CreateReminder {
+                    project: Some(_),
+                    project_id,
+                    ..
+                },
+            ) if project_id.is_none() => project_id,
             _ => continue,
         };
         *slot = Some(choice.id.clone());
@@ -497,6 +576,45 @@ pub fn bind_pronouns(state: &State, commands: &mut [Command]) {
                     *task_id = Some(r.id.clone());
                 }
             }
+        }
+        let bind = |kind: RefKind, query: &str, slot: &mut Option<String>| {
+            if slot.is_none() {
+                if let Some(r) = state.pronoun(kind, query) {
+                    *slot = Some(r.id.clone());
+                }
+            }
+        };
+        match c {
+            Command::CompleteReminder {
+                query, reminder_id, ..
+            }
+            | Command::SnoozeReminder {
+                query, reminder_id, ..
+            }
+            | Command::UpdateReminder {
+                query, reminder_id, ..
+            } => bind(RefKind::Reminder, query, reminder_id),
+            Command::SetCategories {
+                target, query, id, ..
+            } => match target {
+                super::CategoryTarget::Task => bind(RefKind::Task, query, id),
+                super::CategoryTarget::Reminder => bind(RefKind::Reminder, query, id),
+            },
+            Command::CreateReminder {
+                task,
+                task_id,
+                project,
+                project_id,
+                ..
+            } => {
+                if let Some(q) = task {
+                    bind(RefKind::Task, q, task_id);
+                }
+                if let Some(q) = project {
+                    bind(RefKind::Project, q, project_id);
+                }
+            }
+            _ => {}
         }
     }
 }

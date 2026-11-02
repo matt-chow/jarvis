@@ -24,6 +24,9 @@ pub struct ChatRequest {
     pub today: String,
     #[serde(default)]
     pub time: Option<String>,
+    /// The device's IANA zone (see [`PlanRequest`]).
+    #[serde(default)]
+    pub zone: Option<String>,
     #[serde(default)]
     pub conversation_id: Option<String>,
     #[serde(default)]
@@ -146,7 +149,9 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
         let mut conv = self
             .open_conversation(p, convs, req.conversation_id.as_deref())
             .await?;
-        let outcome = match Clock::new(&req.today, req.time.as_deref()) {
+        let outcome = match Clock::new(&req.today, req.time.as_deref())
+            .map(|c| c.with_zone(req.zone.as_deref()))
+        {
             Err(e) => Err(e),
             Ok(_) if input.chars().count() > MAX_INPUT => {
                 Err(JarvisError::Invalid("text", "too long"))

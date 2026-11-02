@@ -13,12 +13,15 @@ pub mod conversation;
 mod expand;
 pub mod parser;
 pub mod presets;
+mod remind;
+mod remind_parse;
 pub mod schedule;
 pub mod undo;
 pub mod voice;
 
 use crate::blocks::BlockRepository;
 use crate::calendar::{CalendarService, EventRepository, Occurrence};
+use crate::categories::CategoryRepository;
 use crate::entropy::{is_id, new_id, Entropy};
 use crate::habits::{HabitError, HabitRepository, HabitService, HabitView};
 use crate::identity::Principal;
@@ -29,11 +32,14 @@ use crate::notes::{NewNote, NoteError, NoteRepository, NoteService};
 use crate::planner::{self, Constraints};
 use crate::preferences::PreferencesRepository;
 use crate::projects::{NewProject, ProjectError, ProjectRepository, ProjectService};
+use crate::reminders::recurrence::Rule;
+use crate::reminders::{ReminderRepository, ZoneClock};
 use crate::search::{self, SearchError, SearchSource};
 use crate::tasks::{
     self, Filter, NewTask, Priority, Status, TaskError, TaskPatch, TaskRepository, TaskService,
 };
 use crate::validate;
+pub use remind::{CategoryTarget, ReminderChange, ReminderView};
 use serde::{Deserialize, Serialize};
 
 pub const MAX_INPUT: usize = 1_000;
@@ -266,6 +272,93 @@ pub enum Command {
     Remember {
         prefs: crate::preferences::JarvisPrefs,
     },
+    /// "Remind me to …" (D-049): a reminder, not a task.
+    CreateReminder {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        title: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        due_date: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        due_time: Option<String>,
+        /// "in 2 hours": turned into a date and time when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        after_minutes: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        repeat: Option<Rule>,
+        /// A task named by the user ("this task" binds to the one on screen).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        task: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        task_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        priority: Option<Priority>,
+        /// The caller's zone, filled in when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        timezone: Option<String>,
+        /// Complete it when the linked task is completed.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        with_task: bool,
+    },
+    CompleteReminder {
+        query: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reminder_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+    },
+    SnoozeReminder {
+        query: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        minutes: Option<u32>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        tomorrow: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reminder_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+    },
+    UpdateReminder {
+        query: String,
+        change: ReminderChange,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reminder_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+    },
+    ListReminders {
+        view: ReminderView,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        query: Option<String>,
+        today: String,
+    },
+    /// Add or remove categories (by name) on a task or reminder.
+    SetCategories {
+        target: CategoryTarget,
+        query: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        add: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        remove: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+    },
+    CreateCategory {
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+    },
+    /// Propose reminders for open tasks due by `by` (expands to
+    /// CreateReminder steps; nothing happens without approval).
+    RemindDeadlines {
+        by: String,
+    },
 }
 
 const fn yes() -> bool {
@@ -395,7 +488,8 @@ impl Command {
             | Self::Suggest { .. }
             | Self::Unscheduled { .. }
             | Self::FreeTime { .. }
-            | Self::Missed { .. } => Risk::Read,
+            | Self::Missed { .. }
+            | Self::ListReminders { .. } => Risk::Read,
             Self::DeleteBlock { .. } => Risk::Destructive,
             Self::Revert { op, .. } if op.deletes() => Risk::Destructive,
             _ => Risk::Write,
@@ -564,6 +658,99 @@ impl Command {
             Self::Undo { .. } => "Undo the last change".into(),
             Self::Revert { op, .. } => op.summary(),
             Self::Remember { prefs } => format!("Remember: {}", undo::describe_prefs(prefs)),
+            Self::CreateReminder {
+                title,
+                due_date,
+                due_time,
+                after_minutes,
+                repeat,
+                ..
+            } => {
+                let mut s = format!("Remind you: {}", quote(title, 80));
+                match (due_date, due_time, after_minutes) {
+                    (Some(d), Some(t), _) => s.push_str(&format!(" on {} at {t}", day_label(d))),
+                    (Some(d), None, _) => s.push_str(&format!(" on {}", day_label(d))),
+                    (None, Some(t), _) => s.push_str(&format!(" at {t}")),
+                    (None, None, Some(m)) => s.push_str(&format!(" in {}", planner::duration(*m))),
+                    _ => s.push_str(" (no date)"),
+                }
+                if let Some(r) = repeat {
+                    s.push_str(&format!(", {}", remind::describe_rule(r)));
+                }
+                s
+            }
+            Self::CompleteReminder { query, title, .. } => format!(
+                "Complete the reminder {}",
+                quote(title.as_deref().unwrap_or(query), 80)
+            ),
+            Self::SnoozeReminder {
+                query,
+                title,
+                minutes,
+                ..
+            } => format!(
+                "Snooze {} {}",
+                quote(title.as_deref().unwrap_or(query), 80),
+                match minutes {
+                    Some(m) => format!("for {}", planner::duration(*m)),
+                    None => "until tomorrow".into(),
+                }
+            ),
+            Self::UpdateReminder {
+                query,
+                title,
+                change,
+                ..
+            } => format!(
+                "Reminder {}: {}",
+                quote(title.as_deref().unwrap_or(query), 80),
+                change.describe()
+            ),
+            Self::ListReminders { view, query, .. } => match view {
+                ReminderView::Open => "Show your open reminders".into(),
+                ReminderView::Overdue => "Show your overdue reminders".into(),
+                ReminderView::Today => "Show today's reminders".into(),
+                ReminderView::Upcoming => "Show reminders for the next week".into(),
+                ReminderView::Search => format!(
+                    "Find reminders matching {}",
+                    quote(query.as_deref().unwrap_or(""), 60)
+                ),
+            },
+            Self::SetCategories {
+                target,
+                query,
+                title,
+                add,
+                remove,
+                ..
+            } => {
+                let what = format!(
+                    "the {} {}",
+                    target.noun(),
+                    quote(title.as_deref().unwrap_or(query), 60)
+                );
+                let list = |v: &[String]| {
+                    v.iter()
+                        .map(|n| quote(n, 40))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+                match (add.is_empty(), remove.is_empty()) {
+                    (false, true) => format!("Add {} to {what}", list(add)),
+                    (true, false) => format!("Remove {} from {what}", list(remove)),
+                    _ => format!(
+                        "Add {} to and remove {} from {what}",
+                        list(add),
+                        list(remove)
+                    ),
+                }
+            }
+            Self::CreateCategory { name, .. } => {
+                format!("Create the category {}", quote(name, 40))
+            }
+            Self::RemindDeadlines { by } => {
+                format!("Suggest reminders for tasks due by {}", day_label(by))
+            }
         }
     }
 }
@@ -642,6 +829,7 @@ pub struct Item {
 pub enum ItemKind {
     Block,
     Event,
+    Reminder,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -744,6 +932,9 @@ pub struct PlanRequest {
     /// Without it the whole of today counts as ahead.
     #[serde(default)]
     pub time: Option<String>,
+    /// The device's IANA zone, for reminders (UTC when absent).
+    #[serde(default)]
+    pub zone: Option<String>,
 }
 
 /// Most steps one plan may have (after expansion).
@@ -756,6 +947,8 @@ pub struct Clock {
     pub today: String,
     /// Minutes since local midnight.
     pub minutes: u32,
+    /// The caller's IANA zone, when the device sent one.
+    pub zone: Option<String>,
 }
 
 impl Clock {
@@ -765,11 +958,29 @@ impl Clock {
             Some(t) => validate::clock(t, false).map_err(|w| JarvisError::Invalid("time", w))?,
             None => 0,
         };
-        Ok(Self { today, minutes })
+        Ok(Self {
+            today,
+            minutes,
+            zone: None,
+        })
+    }
+
+    /// The zone the device sent, if it's a plausible IANA name (the
+    /// Reminders service checks it again against the zone database).
+    pub fn with_zone(mut self, zone: Option<&str>) -> Self {
+        self.zone = zone
+            .map(str::trim)
+            .filter(|z| !z.is_empty() && z.len() <= 64)
+            .filter(|z| {
+                z.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "/_-+".contains(c))
+            })
+            .map(str::to_owned);
+        self
     }
 
     pub fn from_request(req: &PlanRequest) -> Result<Self, JarvisError> {
-        Self::new(&req.today, req.time.as_deref())
+        Ok(Self::new(&req.today, req.time.as_deref())?.with_zone(req.zone.as_deref()))
     }
 
     pub fn now(&self) -> schedule::Now {
@@ -786,6 +997,7 @@ impl PlanRequest {
             input: input.into(),
             today: today.into(),
             time: None,
+            zone: None,
         }
     }
 }
@@ -840,6 +1052,9 @@ pub trait CommandTargets {
     type Links: LinkRepository;
     type Blocks: BlockRepository;
     type Preferences: PreferencesRepository;
+    type Reminders: ReminderRepository;
+    type Categories: CategoryRepository;
+    type Zones: ZoneClock;
     fn tasks(&self) -> &Self::Tasks;
     fn notes(&self) -> &Self::Notes;
     fn journal(&self) -> &Self::Journal;
@@ -851,6 +1066,9 @@ pub trait CommandTargets {
     fn links(&self) -> &Self::Links;
     fn blocks(&self) -> &Self::Blocks;
     fn preferences(&self) -> &Self::Preferences;
+    fn reminders(&self) -> &Self::Reminders;
+    fn categories(&self) -> &Self::Categories;
+    fn zones(&self) -> &Self::Zones;
 }
 
 fn backend(e: String) -> JarvisError {

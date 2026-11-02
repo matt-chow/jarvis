@@ -22,7 +22,8 @@ same parser, plans, and approval.
 
 - **Understanding.** Direct commands go to the deterministic parser first
   (`via: parser`): add, complete, move, find time, unscheduled, rearrange,
-  "what did I forget", undo, "from now on …". Anything else goes to the
+  "what did I forget", undo, "from now on …", and reminders and categories
+  (below). Anything else goes to the
   optional free model (`via: model`, shown as *ai*), which may look things
   up read-only and then propose steps, ask one question, or answer. With
   the model off, out of budget, or failing, JARVIS says so and lists
@@ -47,6 +48,15 @@ same parser, plans, and approval.
   time, breaks, default task length, a daily cap, and earliest-first. They
   refine the working hours set in Calendar. "From now on …" proposes a
   change to them; a one-off request never does.
+- **Reminders and categories** (D-049 slice 5, parser only): "remind me
+  to submit my assignment tomorrow at 8 PM", "remind me every Monday and
+  Wednesday to review my notes", "show me my overdue reminders", "snooze
+  my assignment reminder for one hour", "mark my dentist reminder as
+  complete", "add School and Important to my assignment task", "remind me
+  to follow up on this project in three days", "remind me about task
+  deadlines this week". Ask sends the device's time zone; reminders made
+  here use it. Lists run at once; every change needs Confirm and can be
+  undone. The free model can't act on reminders yet.
 - **Auth:** your passkey session cookie. The page never stores or sends a
   device token. If the session has ended, Ask says so, then the app shows
   sign-in.

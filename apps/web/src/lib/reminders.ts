@@ -415,6 +415,45 @@ export function afterCompletion(rule: Rule, completed: string): string | null {
   return next && (!rule.until || next <= rule.until) ? next : null;
 }
 
+export interface Occurrence {
+  date: string;
+  done: boolean;
+}
+
+/**
+ * A dated reminder's occurrences in `from..=to`, for the calendar. Mirrors
+ * core `schedule::occurrences`: the current one, then (calendar advance) the
+ * next open ones, skipping those completed ahead, which show as done. A
+ * completed one-time reminder shows done on its date. Past completions of a
+ * series aren't cached on the device, so they aren't shown.
+ */
+export function occurrencesIn(r: Reminder, from: string, to: string, max = 500): Occurrence[] {
+  if (r.deleted_at !== null || !r.due_date) return [];
+  const inRange = (d: string) => from <= d && d <= to;
+  const out: Occurrence[] = r.completed_ahead.filter(inRange).map((date) => ({ date, done: true }));
+  if (r.completed_at !== null) return inRange(r.due_date) ? [...out, { date: r.due_date, done: true }] : out;
+  const rule = r.advance === "calendar" ? r.recurrence : null;
+  let d: string | null = r.due_date;
+  for (let step = 0; d && d <= to && out.length < max && step < 5000; step++) {
+    if (inRange(d)) out.push({ date: d, done: false });
+    if (!rule) break;
+    let next = nextAfter(rule, rule.anchor ?? r.due_date, d);
+    while (next && r.completed_ahead.includes(next)) next = nextAfter(rule, rule.anchor ?? r.due_date, next);
+    d = next;
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
+ * Open reminders related to a project: linked to it, or to one of its tasks.
+ * Undated last; otherwise by due time.
+ */
+export function projectReminders(all: Reminder[], projectId: string, taskIds: Set<string>): Reminder[] {
+  return all
+    .filter((r) => isOpen(r) && (r.project_id === projectId || (r.task_id !== null && taskIds.has(r.task_id))))
+    .sort(compareReminders("due"));
+}
+
 /** The UTC instant of a local wall time in an IANA zone (DST-aware, like the server). */
 export function zonedMs(date: string, minute: number, zone: string): number | null {
   let fmt: Intl.DateTimeFormat;

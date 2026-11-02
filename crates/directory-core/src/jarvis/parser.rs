@@ -2,7 +2,7 @@
 //!
 //! Grammar (case-insensitive keywords, content kept verbatim):
 //!   add task <title> [in|to|for project <name>] [due|by <date>]
-//!                                      · also: task, todo, remind me to
+//!                                      · also: task, todo
 //!   new project <name>                 · also: add project, create project
 //!   list projects                      · also: projects, show projects
 //!   agenda [<date>]                    · also: what's on [<date>], schedule
@@ -50,6 +50,11 @@ pub const EXAMPLES: &[&str] = &[
     "I have 30 minutes",
     "move call the dentist to monday",
     "set priority of call the dentist to high",
+    "remind me to submit my assignment tomorrow at 8 pm",
+    "remind me every monday and wednesday to review my notes",
+    "show me my overdue reminders",
+    "snooze my assignment reminder for one hour",
+    "add school and important to my assignment task",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -218,7 +223,7 @@ fn parse_link(rest: &str, today: &str) -> Result<Command, ParseError> {
     })
 }
 
-fn word_number(w: &str) -> Option<f64> {
+pub(super) fn word_number(w: &str) -> Option<f64> {
     if let Ok(n) = w.parse::<f64>() {
         return (n.is_finite() && n > 0.0).then_some(n);
     }
@@ -985,6 +990,9 @@ fn parse_step(step: &str, today: &str) -> Result<Command, ParseError> {
     ) {
         return Ok(Command::ListProjects);
     }
+    if let Some(c) = super::remind_parse::parse(step, today)? {
+        return Ok(c);
+    }
     if let Some(c) = parse_planning(step, lower, today) {
         return Ok(c);
     }
@@ -1053,14 +1061,7 @@ fn parse_step(step: &str, today: &str) -> Result<Command, ParseError> {
     }
     if let Some(rest) = strip(
         step,
-        &[
-            "add task",
-            "new task",
-            "create task",
-            "remind me to",
-            "task",
-            "todo",
-        ],
+        &["add task", "new task", "create task", "task", "todo"],
     ) {
         let (rest, priority, estimate_minutes) = split_extras(require(rest, "task title")?);
         let (rest, project) = split_project(&rest);
@@ -1191,7 +1192,7 @@ mod tests {
             }
         );
         assert_eq!(
-            one("remind me to water plants due tomorrow"),
+            one("todo water plants due tomorrow"),
             Command::CreateTask {
                 id: None,
                 title: "water plants".into(),

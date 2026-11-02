@@ -985,6 +985,33 @@ try {
     await page.waitForText("CANCELLED");
   });
 
+  await step("Reminders × JARVIS, Calendar, Projects (D-049): JARVIS sets a reminder after approval; it shows on the calendar and opens in Reminders; the project lists its reminder", async () => {
+    const json = (path, init) => page.evaluate(`fetch(${JSON.stringify(path)}, ${JSON.stringify(init ?? {})}).then((r) => r.json())`);
+    await page.hash("/jarvis");
+    await page.fill("Command", "remind me to water the garden tomorrow at 9 am");
+    await page.click("run");
+    await page.waitForText("Remind you: “water the garden”");
+    if ((await json("/api/v1/reminders")).some((r) => r.title === "water the garden")) throw new Error("reminder created before approval");
+    await page.click("approve");
+    await page.waitForText("Reminder “water the garden” set");
+    const r = (await json("/api/v1/reminders")).find((x) => x.title === "water the garden");
+    if (!r || r.due_time !== "09:00") throw new Error(`jarvis reminder: ${JSON.stringify(r)}`);
+
+    await page.hash(`/calendar?date=${r.due_date}&view=day`);
+    await page.waitForText("water the garden");
+    await shot("calendar-reminder");
+    await page.evaluate(`[...document.querySelectorAll("button, a, [role=button]")].find((b) => b.innerText.includes("water the garden")).click()`);
+    await waitFor("reminder opened", () => page.evaluate(`location.hash.startsWith("#/reminders") && location.hash.includes(${JSON.stringify(r.id)})`));
+
+    const garden = (await json("/api/v1/projects")).projects?.find?.((p) => p.name === "Garden") ?? (await json("/api/v1/projects")).find?.((p) => p.name === "Garden");
+    if (!garden) throw new Error("Garden project missing");
+    await page.evaluate(`fetch("/api/v1/reminders", { method: "POST", headers: { "Content-Type": "application/json", Origin: location.origin }, body: JSON.stringify({ title: "Buy seeds", project_id: ${JSON.stringify(garden.id)} }) })`);
+    await page.hash("/projects");
+    await page.click("Garden");
+    await page.waitForText("Buy seeds");
+    await shot("project-reminders");
+  });
+
   await step("Ask (phone): full screen, keyboard-dictation fallback, ask, confirm, undo, screen context, cancel over /jarvis/chat (D-044, D-048)", async () => {
     await page.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
     try {

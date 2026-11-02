@@ -6,7 +6,7 @@ import { allocationLabel, atRisk, conflicts, conflictText, isTimed, suggestSlots
 import { dueInfo, isOpen, parseEstimate, PRIORITY_LABELS, type Task, type TaskPriority } from "../../lib/tasks";
 import { clockLabel, durationLabel, fromMinutes, toMinutes } from "../../lib/time";
 import { Button, inputClass } from "../ui";
-import { itemKindLabel, longDay, shortDate } from "./format";
+import { itemKindLabel, itemMark, longDay, shortDate } from "./format";
 
 const small = "min-h-8 px-3 text-xs";
 
@@ -794,11 +794,11 @@ export function DayAgenda(props: { date: string; items: CalItem[]; onSelect: (i:
             <li key={i.key}>
               <button type="button" onClick={() => props.onSelect(i)} className="w-full rounded-sm px-2 py-1.5 text-left hover:bg-sunken">
                 <span className={`block text-sm ${i.done ? "line-through" : ""}`}>
-                  {i.kind === "deadline" ? "◆ " : ""}
+                  {itemMark(i)}
                   {i.title}
                 </span>
                 <span className="font-mono text-[11px] text-muted">
-                  {isTimed(i) ? `${clockLabel(i.start)}–${clockLabel(i.end)} · ` : i.kind === "deadline" ? "due · " : "all day · "}
+                  {isTimed(i) ? `${clockLabel(i.start)}–${clockLabel(i.end)} · ` : i.kind === "deadline" ? "due · " : i.kind === "reminder" ? "" : "all day · "}
                   {itemKindLabel(i)}
                 </span>
               </button>

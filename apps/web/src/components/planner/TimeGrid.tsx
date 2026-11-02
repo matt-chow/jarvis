@@ -3,7 +3,7 @@ import type { Spot } from "../../hooks/usePlanner";
 import { allocationLabel, isTimed, layoutDay, type Allocation, type CalItem } from "../../lib/planner";
 import { clockLabel, snap } from "../../lib/time";
 import { dueInfo, PRIORITY_LABELS } from "../../lib/tasks";
-import { itemTone, itemKindLabel, longDay, shortDay } from "./format";
+import { itemTone, itemKindLabel, itemMark, longDay, shortDay } from "./format";
 
 /** MIME type for an unscheduled task dragged from the inbox. */
 export const TASK_DRAG = "application/x-directory-task";
@@ -237,7 +237,7 @@ export function TimeGrid(props: TimeGridProps) {
                     aria-label={`${x.title}, ${itemKindLabel(x)}${x.done ? ", done" : ""}`}
                     className={`block w-full truncate rounded-sm px-1.5 py-0.5 text-left text-[11px] leading-4 ${itemTone(x)} ${props.selectedKey === x.key ? "outline-2 outline-accent" : ""}`}
                   >
-                    {x.kind === "deadline" ? "◆ " : ""}
+                    {itemMark(x)}
                     <span className={x.done ? "line-through" : ""}>{x.title}</span>
                   </button>
                 </li>

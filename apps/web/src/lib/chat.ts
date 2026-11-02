@@ -27,10 +27,20 @@ export interface Screen {
   date?: string;
 }
 
+function deviceZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export interface ChatRequest {
   text: string;
   today: string;
   time?: string;
+  /** The device's IANA zone, so reminders are set in local time. */
+  zone?: string;
   conversation_id?: string;
   screen?: Screen;
   skip?: number[];
@@ -270,7 +280,7 @@ export async function say(
   let s = add({ ...c, busy: true }, { who: "you", text: opts.shown ?? said });
   update(s);
   try {
-    const req: ChatRequest = { text: said, today: ctx.today, time: ctx.time, conversation_id: c.conversationId, screen: ctx.screen };
+    const req: ChatRequest = { text: said, today: ctx.today, time: ctx.time, zone: deviceZone(), conversation_id: c.conversationId, screen: ctx.screen };
     if (opts.undo) req.undo = opts.undo;
     s = replied(s, await api.chat(req));
   } catch (e) {
@@ -325,6 +335,7 @@ export async function decide(c: Chat, yes: boolean, api: Api, update: (c: Chat) 
 
 /** A link that opens what a step created or changed. */
 export function itemHref(r: Plan["results"][number]): string | undefined {
+  if (r.item?.kind === "reminder") return `#/reminders?reminder=${r.item.id}`;
   if (r.item) return `#/calendar?date=${r.item.date}&view=day`;
   return r.entity ? entityRoute(r.entity) : undefined;
 }

@@ -865,6 +865,14 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
             Command::Missed { date } => one(Command::Missed {
                 date: checked_date("date", &date)?,
             }),
+            c @ (Command::CreateReminder { .. }
+            | Command::CompleteReminder { .. }
+            | Command::SnoozeReminder { .. }
+            | Command::UpdateReminder { .. }
+            | Command::ListReminders { .. }
+            | Command::SetCategories { .. }
+            | Command::CreateCategory { .. }
+            | Command::RemindDeadlines { .. }) => self.expand_reminder(p, c, clock, t).await,
             other => one(self.resolve(p, other, earlier, t).await?),
         }
     }
@@ -1506,6 +1514,14 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
             | Command::ScheduleDue { .. }
             | Command::Rearrange { .. }
             | Command::Undo { .. } => failure("This step wasn't prepared; ask again.".into()),
+            c @ (Command::CreateReminder { .. }
+            | Command::CompleteReminder { .. }
+            | Command::SnoozeReminder { .. }
+            | Command::UpdateReminder { .. }
+            | Command::ListReminders { .. }
+            | Command::SetCategories { .. }
+            | Command::CreateCategory { .. }
+            | Command::RemindDeadlines { .. }) => self.run_reminder(p, c, t).await,
             other => self.run_one(p, other, t).await,
         }
     }
@@ -1716,6 +1732,10 @@ impl<'a, R: JarvisRepository, E: Entropy + ?Sized> JarvisService<'a, R, E> {
                     }
                 }
             },
+            UndoOp::DeleteReminder { .. }
+            | UndoOp::UncompleteReminder { .. }
+            | UndoOp::RestoreReminder { .. }
+            | UndoOp::RestoreCategories { .. } => self.revert_reminder(p, op, t).await,
             UndoOp::RestorePrefs { before, after } => {
                 let service = PreferencesService::new(t.preferences(), self.now);
                 match service.get(p).await {

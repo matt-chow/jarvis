@@ -87,3 +87,15 @@ Clean after each commit. No stashes.
   is fixed in D-039; not yet proven.
 
 ## Handoff log
+
+## 2026-11-02: Reminders v1.0, M6 committed
+M1 to M6 are committed (d88dedb, f982f21, 866d0db, 42fc7b9, and the M6
+commit: Calendar and project reminders, JARVIS reminder and category
+commands, device zone, Notes selection race fix). Gate for M6: verify ✅,
+smoke ✅, browser e2e 40/40 ✅, eval:jarvis ✅ (PROGRESS.md log).
+Next steps:
+1. M7: conflict recovery UI and occurrence reconciliation.
+2. M8: final verification, and the §15 report (live push pending manual
+   verification).
+3. Optional: agent.rs/ai.rs model actions for reminders (only the
+   deterministic parser handles them now).

@@ -974,3 +974,38 @@ Guide: docs/NOTIFICATIONS.md.
 - **Local cron trigger:** `wrangler dev --test-scheduled` exposes
   `/cdn-cgi/handler/scheduled` (the legacy `/__scheduled` is caught by the
   static-asset routing, since only `/api/*` runs the Worker first).
+
+### Calendar, projects, JARVIS (slice 5)
+
+- **Calendar** shows only scheduled reminders (a date; a time places them
+  in the grid, otherwise all-day), marked 🔔 in their own tone, with a
+  *Reminders* filter. Recurring reminders expand to their occurrences in
+  the visible range. Clicking one opens `#/reminders?reminder=<id>`.
+  Reminders are never inputs to time blocking or "find time": the planner
+  only reads tasks, events, and blocks.
+- **Projects** list a project's open reminders (*reminders · N*), each
+  linking to the reminder.
+- **JARVIS** (deterministic parser only; the free model has no reminder
+  actions yet): "remind me to … [date] [at time] [every …]", "remind me in
+  N minutes/hours …", "remind me to follow up on this project in three
+  days", "show my overdue / today's / upcoming reminders", "find my …
+  reminder", "snooze my … reminder for an hour / until tomorrow", "mark my
+  … reminder as complete", "move my … reminder to Friday at 9", "add
+  School and Important to my … task" (creates missing categories), "create
+  category …", and "remind me about task deadlines this week". "remind me
+  to" now makes a reminder, not a task.
+- **Same approval and undo rules as D-048.** Listing runs directly; every
+  change is a plan step the user confirms, with an undo op (delete the new
+  reminder, reopen the completed occurrence, restore the previous fields
+  or categories) that refuses if the item changed since. Ambiguous names
+  ask; a past time on a non-repeating reminder asks for another; no date
+  is allowed and the plan says it won't notify.
+- **Deadline reminders** are proposals: at most 10 open tasks due by the
+  date and not already covered by an open linked reminder, each with the
+  task and its project linked and *complete with task* on. Nothing is
+  created until confirmed.
+- **Zone.** Ask sends the device's IANA zone (`zone`); new reminders use
+  it. Without one they use UTC and the plan says so. The zone is only a
+  label validated for shape; the zone clock resolves it.
+- **Neglect nudge.** Lists gently ask about reminders overdue for more than
+  7 days (complete, snooze, or reschedule). No automatic briefings.

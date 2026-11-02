@@ -31,8 +31,11 @@ export function Notes({ online }: ModuleProps) {
   }, [deepNote]);
 
   useEffect(() => {
-    if (!selected && state.notes?.length) setSelected(state.notes[0].id);
-    if (selected && state.notes && !state.notes.some((n) => n.id === selected)) setSelected(state.notes[0]?.id);
+    const notes = state.notes;
+    if (!notes) return;
+    // Functional update: a click can land between the list's first paint and
+    // this effect, and a stale `selected` would overwrite it with the first note.
+    setSelected((s) => (s && notes.some((n) => n.id === s) ? s : notes[0]?.id));
   }, [selected, state.notes]);
 
   const create = async (title?: string) => {

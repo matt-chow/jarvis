@@ -1,7 +1,7 @@
 import { monthGrid } from "../../lib/calendar";
 import type { CalItem } from "../../lib/planner";
 import { clockLabel } from "../../lib/time";
-import { itemKindLabel, itemTone, longDay } from "./format";
+import { itemKindLabel, itemMark, itemTone, longDay } from "./format";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 /** Items listed in a cell before "+N more". */
@@ -56,7 +56,7 @@ export function MonthView(props: {
                 className={`truncate rounded-sm px-1 text-left text-[10px] leading-4 ${itemTone(i)} ${props.selectedKey === i.key ? "outline-2 outline-accent" : ""} ${i.skipped ? "opacity-50" : ""}`}
               >
                 <span className={i.done ? "line-through" : ""}>
-                  {i.kind === "deadline" ? "◆ " : i.start !== null ? `${clockLabel(i.start)} ` : ""}
+                  {i.start !== null ? `${clockLabel(i.start)} ` : itemMark(i)}
                   {i.title}
                 </span>
               </button>

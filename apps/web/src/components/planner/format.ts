@@ -1,4 +1,12 @@
 import type { CalItem } from "../../lib/planner";
+import { clockLabel } from "../../lib/time";
+
+/** The prefix that marks an all-day row item: "◆ " for a deadline, "🔔 9:00 " for a reminder. */
+export function itemMark(i: CalItem): string {
+  if (i.kind === "deadline") return "◆ ";
+  if (i.kind === "reminder") return `🔔 ${i.at !== undefined ? `${clockLabel(i.at)} ` : ""}`;
+  return "";
+}
 
 /** "Monday 2 November" */
 export const longDay = (date: string) =>
@@ -19,6 +27,8 @@ export function itemKindLabel(i: CalItem): string {
       return i.taskId ? (i.fixed ? "fixed work session" : "work session") : i.fixed ? "fixed focus block" : "focus block";
     case "deadline":
       return "task deadline";
+    case "reminder":
+      return `reminder${i.repeating ? ", repeats" : ""}`;
   }
 }
 
@@ -27,6 +37,7 @@ export function itemKindLabel(i: CalItem): string {
  * work sessions are violet, deadlines are outlined. Tokens only (D-046).
  */
 export function itemTone(i: CalItem): string {
+  if (i.kind === "reminder") return `border border-dotted border-warn bg-warn/10 ${i.done ? "text-muted" : "text-ink"}`;
   if (i.kind === "deadline") return `border border-line bg-panel ${i.done ? "text-muted" : "text-ink"}`;
   if (i.kind === "event") return i.fixed ? "border-l-[3px] border-accent bg-accent/15 text-ink" : "border border-dashed border-accent bg-accent/[0.07] text-ink";
   return i.fixed ? "border-l-[3px] border-violet bg-violet/20 text-ink" : "border border-dashed border-violet bg-violet/10 text-ink";

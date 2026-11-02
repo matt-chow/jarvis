@@ -19,6 +19,7 @@ import {
   weekDates,
   type CalItem,
 } from "./planner";
+import { newReminderFrom, type NewReminder, type Reminder } from "./reminders";
 import type { Task } from "./tasks";
 
 const ZONE = "America/New_York";
@@ -120,6 +121,45 @@ describe("buildItems", () => {
     const list = items({ events: [weekly] }, "2026-11-01", "2026-11-30");
     expect(list.map((i) => i.occurrence)).toEqual(["2026-11-02", "2026-11-16", "2026-11-23", "2026-11-30"]);
     expect(new Set(list.map((i) => i.key)).size).toBe(4);
+  });
+});
+
+describe("reminders on the calendar (D-049)", () => {
+  const rem = (id: string, n: Partial<NewReminder> = {}, over: Partial<Reminder> = {}): Reminder => ({
+    ...newReminderFrom(id, { title: id, timezone: ZONE, due_date: "2026-11-03", due_time: "09:30", ...n }, 0),
+    ...over,
+  });
+  const withRems = (reminders: Reminder[], from = "2026-11-02", to = "2026-11-08") =>
+    buildItems({ events: [], blocks: [], tasks: [], reminders, from, to, zone: ZONE });
+
+  it("are markers with a time, never on the grid, so they never conflict or take a slot", () => {
+    const list = withRems([rem("call")]);
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ kind: "reminder", date: "2026-11-03", start: null, end: null, at: 570, occurrence: "2026-11-03" });
+    expect(conflicts({ date: "2026-11-03", start: 540, end: 600 }, list)).toEqual([]);
+    expect(freeGaps(list, "2026-11-03", [540, 600])).toEqual([[540, 600]]);
+  });
+
+  it("show each repeat in range, skip undated, deleted, and ones completed ahead", () => {
+    const daily = rem("d", { recurrence: { freq: "daily", interval: 2, weekdays: [], until: null } }, { completed_ahead: ["2026-11-05"] });
+    const list = withRems([daily, rem("undated", { due_date: null, due_time: null }), rem("gone", {}, { deleted_at: 1 })]);
+    expect(list.map((i) => `${i.occurrence}${i.done ? "✓" : ""}`)).toEqual(["2026-11-03", "2026-11-05✓", "2026-11-07"]);
+    expect(new Set(list.map((i) => i.key)).size).toBe(3);
+    expect(list[0].repeating).toBe(true);
+  });
+
+  it("convert the reminder's zone to this device's, moving the date if needed", () => {
+    // 01:00 Tokyo on the 4th is 11:00 New York on the 3rd.
+    const [i] = withRems([rem("t", { timezone: "Asia/Tokyo", due_date: "2026-11-04", due_time: "01:00" })]);
+    expect(i).toMatchObject({ date: "2026-11-03", at: 660, occurrence: "2026-11-04", zone: "Asia/Tokyo" });
+    const [allDay] = withRems([rem("a", { due_time: null })]);
+    expect(allDay.at).toBeUndefined();
+  });
+
+  it("have their own filter, and completed ones follow the completed filter", () => {
+    const list = withRems([rem("open"), rem("done", {}, { completed_at: 5 })]);
+    expect(applyFilters(list, { ...ALL_FILTERS, reminders: false })).toEqual([]);
+    expect(applyFilters(list, { ...ALL_FILTERS, completed: false }).map((i) => i.id)).toEqual(["open"]);
   });
 });
 

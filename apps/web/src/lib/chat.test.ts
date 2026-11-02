@@ -201,6 +201,7 @@ describe("chat state", () => {
     expect(replyLabel(reply({ plan: partly }))).toBe("partly done");
     expect(replyLabel(reply({ status: "ask" }))).toBe("question");
     expect(itemHref({ ok: true, message: "", item: { kind: "block", id: P1, date: "2026-10-30" } })).toBe("#/calendar?date=2026-10-30&view=day");
+    expect(itemHref({ ok: true, message: "", item: { kind: "reminder", id: P1, date: "2026-10-30" } })).toBe(`#/reminders?reminder=${P1}`);
     expect(itemHref({ ok: true, message: "", entity: { kind: "task", id: P1 } })).toBe(`#/tasks?task=${P1}`);
     expect(itemHref({ ok: true, message: "" })).toBeUndefined();
   });

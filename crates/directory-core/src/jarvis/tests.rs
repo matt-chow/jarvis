@@ -3,6 +3,7 @@ use crate::blocks::memory::MemoryBlocks;
 use crate::blocks::{BlockRepository, TimeBlock};
 use crate::calendar::memory::MemoryEvents;
 use crate::calendar::{CalendarService, NewEvent};
+use crate::categories::memory::MemoryCategories;
 use crate::entropy::testing::CountingEntropy;
 use crate::habits::memory::MemoryHabits;
 use crate::habits::{HabitService, NewHabit};
@@ -13,6 +14,8 @@ use crate::links::testing::MemoryLinks;
 use crate::notes::testing::MemoryNotes;
 use crate::preferences::testing::MemoryPreferences;
 use crate::projects::memory::MemoryProjects;
+use crate::reminders::memory::MemoryReminders;
+use crate::reminders::zone::testing::FakeZones;
 use crate::search::{Candidate, SearchKind, SearchSource};
 use crate::tasks::memory::MemoryTasks;
 use crate::test_util::block_on;
@@ -157,6 +160,8 @@ struct F {
     links: MemoryLinks,
     blocks: MemoryBlocks,
     prefs: MemoryPreferences,
+    reminders: MemoryReminders,
+    cats: MemoryCategories,
     e: CountingEntropy,
 }
 
@@ -172,6 +177,18 @@ impl CommandTargets for F {
     type Links = MemoryLinks;
     type Blocks = F;
     type Preferences = MemoryPreferences;
+    type Reminders = MemoryReminders;
+    type Categories = MemoryCategories;
+    type Zones = FakeZones;
+    fn reminders(&self) -> &MemoryReminders {
+        &self.reminders
+    }
+    fn categories(&self) -> &MemoryCategories {
+        &self.cats
+    }
+    fn zones(&self) -> &FakeZones {
+        &FakeZones
+    }
     fn blocks(&self) -> &F {
         self
     }
@@ -238,6 +255,33 @@ impl BlockRepository for F {
 }
 
 impl F {
+    /// The reminder and category fakes keep their own tables of what
+    /// exists (for link checks); copy the other fakes' rows into them.
+    fn sync(&self) {
+        let tasks: Vec<(String, String)> = self
+            .tasks
+            .0
+            .borrow()
+            .iter()
+            .map(|t| (t.owner_id.clone(), t.id.clone()))
+            .collect();
+        *self.reminders.tasks.borrow_mut() = tasks.clone();
+        *self.cats.2.borrow_mut() = tasks;
+        *self.reminders.projects.borrow_mut() = self
+            .projects
+            .0
+            .borrow()
+            .iter()
+            .map(|p| (p.owner_id.clone(), p.id.clone()))
+            .collect();
+        *self.reminders.categories.borrow_mut() = self
+            .cats
+            .0
+            .borrow()
+            .iter()
+            .map(|c| (c.owner_id.clone(), c.id.clone()))
+            .collect();
+    }
     fn svc(&self, now: i64) -> JarvisService<'_, MemoryPlans, CountingEntropy> {
         JarvisService::new(&self.plans, &self.e, now)
     }
@@ -245,14 +289,17 @@ impl F {
         self.plan_as(&me(), input, 1_000)
     }
     fn plan_as(&self, p: &Principal, input: &str, now: i64) -> Result<Plan, JarvisError> {
+        self.sync();
         let req = PlanRequest {
             time: None,
+            zone: None,
             input: input.into(),
             today: TODAY.into(),
         };
         block_on(self.svc(now).plan(p, &DeterministicParser, req, self))
     }
     fn execute(&self, id: &str, now: i64) -> Result<Plan, JarvisError> {
+        self.sync();
         block_on(self.svc(now).execute(&me(), id, self))
     }
 }
@@ -480,6 +527,7 @@ fn input_validation() {
         Err(JarvisError::Invalid("input", _))
     ));
     let bad_today = PlanRequest {
+        zone: None,
         time: None,
         input: "list tasks".into(),
         today: "yesterday".into(),
@@ -1256,3 +1304,4 @@ fn a_repeated_create_reports_instead_of_duplicating() {
 }
 
 mod chat;
+mod reminders;

@@ -7,10 +7,12 @@
  */
 import type { TimeBlock } from "./blocks";
 import { addDays, dayNumber, isFixed, occurrences, type CalendarEvent } from "./calendar";
+import { occurrencesIn, type Reminder } from "./reminders";
 import { isOpen, type Task, type TaskPriority } from "./tasks";
 import { clockLabel, convert, deviceZone, durationLabel, elapsed, toMinutes } from "./time";
 
-export type ItemKind = "event" | "block" | "deadline";
+/** Reminders (D-049) are markers, never time: no layout, conflicts, or suggestions. */
+export type ItemKind = "event" | "block" | "deadline" | "reminder";
 
 export interface CalItem {
   /** Unique per rendered item (an occurrence, or one day of a multi-day item). */
@@ -43,6 +45,9 @@ export interface CalItem {
   event?: CalendarEvent;
   block?: TimeBlock;
   task?: Task;
+  reminder?: Reminder;
+  /** A reminder's time in this device's zone (minutes); it stays out of the grid. */
+  at?: number;
 }
 
 export const isTimed = (i: CalItem): i is CalItem & { start: number; end: number } => i.start !== null && i.end !== null;
@@ -88,6 +93,8 @@ export interface ItemSources {
   events: CalendarEvent[];
   blocks: TimeBlock[];
   tasks: Task[];
+  /** Dated reminders appear as markers (D-049). */
+  reminders?: Reminder[];
   from: string;
   to: string;
   /** Defaults to this device's zone. */
@@ -95,7 +102,7 @@ export interface ItemSources {
 }
 
 /** Every calendar item overlapping `from..to`, in the viewer's zone. */
-export function buildItems({ events, blocks, tasks, from, to, zone = deviceZone() }: ItemSources): CalItem[] {
+export function buildItems({ events, blocks, tasks, reminders = [], from, to, zone = deviceZone() }: ItemSources): CalItem[] {
   const out: CalItem[] = [];
   const inRange = (d: string) => d >= from && d <= to;
   const taskById = new Map(tasks.map((t) => [t.id, t]));
@@ -180,6 +187,35 @@ export function buildItems({ events, blocks, tasks, from, to, zone = deviceZone(
       task: t,
     });
   }
+
+  // A day either side: a reminder's time can land on another date here.
+  for (const r of reminders) {
+    for (const o of occurrencesIn(r, addDays(from, -1), addDays(to, 1))) {
+      const here = r.due_time ? convert(o.date, toMinutes(r.due_time), r.timezone, zone) : { date: o.date, minutes: undefined };
+      if (!inRange(here.date)) continue;
+      out.push({
+        key: `r:${r.id}:${o.date}`,
+        kind: "reminder",
+        id: r.id,
+        title: r.title,
+        date: here.date,
+        start: null,
+        end: null,
+        fixed: true,
+        occurrence: o.date,
+        repeating: r.recurrence !== null,
+        done: o.done,
+        skipped: false,
+        taskId: r.task_id,
+        projectId: r.project_id,
+        fromPrev: false,
+        toNext: false,
+        zone: r.due_time && r.timezone !== zone ? r.timezone : undefined,
+        reminder: r,
+        at: here.minutes,
+      });
+    }
+  }
   return out.sort(compareItems);
 }
 
@@ -189,6 +225,7 @@ export function compareItems(a: CalItem, b: CalItem): number {
     a.date.localeCompare(b.date) ||
     Number(a.start !== null) - Number(b.start !== null) ||
     (a.start ?? 0) - (b.start ?? 0) ||
+    (a.at ?? -1) - (b.at ?? -1) ||
     (b.end ?? 0) - (a.end ?? 0) ||
     a.title.localeCompare(b.title)
   );
@@ -201,19 +238,22 @@ export interface Filters {
   /** Flexible blocks and events. */
   flexible: boolean;
   deadlines: boolean;
+  reminders: boolean;
   /** Finished sessions and closed tasks' deadlines. */
   completed: boolean;
   /** A project id, or "" for all. Events have no project and stay visible. */
   project: string;
 }
 
-export const ALL_FILTERS: Filters = { events: true, fixed: true, flexible: true, deadlines: true, completed: true, project: "" };
+export const ALL_FILTERS: Filters = { events: true, fixed: true, flexible: true, deadlines: true, reminders: true, completed: true, project: "" };
 
 export function applyFilters(items: CalItem[], f: Filters): CalItem[] {
   return items.filter((i) => {
     if (i.kind === "event" && !f.events) return false;
     if (i.kind === "deadline") {
       if (!f.deadlines) return false;
+    } else if (i.kind === "reminder") {
+      if (!f.reminders) return false;
     } else if (i.fixed ? !f.fixed : !f.flexible) return false;
     if (i.done && !f.completed) return false;
     if (f.project && i.kind !== "event" && i.projectId !== f.project) return false;

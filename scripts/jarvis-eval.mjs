@@ -60,7 +60,7 @@ class Client {
 /** Everything a plan could change, for the before/after comparison. */
 async function snapshot(api) {
   const out = {};
-  for (const path of ["/api/v1/tasks?status=all", "/api/v1/events", "/api/v1/blocks", "/api/v1/notes", "/api/v1/projects", "/api/v1/preferences"]) {
+  for (const path of ["/api/v1/tasks?status=all", "/api/v1/events", "/api/v1/blocks", "/api/v1/notes", "/api/v1/projects", "/api/v1/preferences", "/api/v1/reminders", "/api/v1/categories"]) {
     const r = await api.req("GET", path);
     if (r.status !== 200) throw new Error(`${path} → ${r.status}`);
     out[path] = r.json;
@@ -85,6 +85,9 @@ const CASES = [
   { kind: "parser", text: "complete this task", screen: "essay", expect: (r) => r.plan?.status === "pending" && /Essay/.test(r.plan.actions[0].summary) },
   { kind: "parser", text: "complete lab", expect: (r) => r.status === "ask" && r.choices?.length >= 2 },
   { kind: "parser", text: "From now on, no sessions after 9pm", expect: (r) => r.plan?.status === "pending" },
+  { kind: "parser", text: "Remind me to submit my assignment tomorrow at 8 PM", expect: (r) => r.plan?.status === "pending" && /submit my assignment/.test(r.plan.actions[0].summary) },
+  { kind: "parser", text: "Show me my overdue reminders", expect: (r) => r.plan?.status === "executed" },
+  { kind: "parser", text: "Add School and Important to my essay task", expect: (r) => r.plan?.status === "pending" && /School/.test(r.plan.actions[0].summary) },
   { kind: "parser", text: "undo the last change", expect: (r) => r.status === "unresolved" },
   // Another conversation, showing an id that is not the caller's: no task is assumed.
   { kind: "parser", text: "complete this task", screen: "forged", fresh: true, expect: (r) => r.status !== "plan" || !/Essay|Lab|dentist/.test(JSON.stringify(r.plan)) },
