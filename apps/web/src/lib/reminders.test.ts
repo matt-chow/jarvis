@@ -5,6 +5,8 @@ import {
   completeLocally,
   defaultAlerts,
   dueAt,
+  fieldLabel,
+  fieldValue,
   isOverdue,
   listNameProblem,
   matches,
@@ -188,5 +190,22 @@ describe("views", () => {
     expect(listNameProblem(lists, " errands ")).toBe("A list with that name exists.");
     expect(listNameProblem(lists, "Errands", "l1")).toBeUndefined();
     expect(listNameProblem(lists, " ")).toBe("Give the list a name.");
+  });
+});
+
+describe("conflict values (M7)", () => {
+  it("says each field in words", () => {
+    const names = (id: string) => ({ l1: "Errands", c1: "School" })[id];
+    expect(fieldLabel("due_date")).toBe("date");
+    expect(fieldLabel("title")).toBe("title");
+    expect(fieldValue("due_time", null)).toBe("none");
+    expect(fieldValue("priority", "high")).toBe("High");
+    expect(fieldValue("flagged", true)).toBe("yes");
+    expect(fieldValue("list_id", "l1", names)).toBe("Errands");
+    expect(fieldValue("project_id", "p9", names)).toBe("linked");
+    expect(fieldValue("category_ids", ["c1", "gone"], names)).toBe("School, (removed)");
+    expect(fieldValue("recurrence", { freq: "weekly", interval: 1, weekdays: [0, 2], anchor: "2026-11-02", until: null })).toBe(ruleSummary({ freq: "weekly", interval: 1, weekdays: [0, 2], anchor: "2026-11-02", until: null }));
+    expect(fieldValue("checklist", [{ id: "a", text: "x", done: true }, { id: "b", text: "y", done: false }])).toBe("1/2 done");
+    expect(fieldValue("notes", "n".repeat(100))).toHaveLength(80);
   });
 });

@@ -621,3 +621,39 @@ export function listNameProblem(lists: ReminderList[] | undefined, name: string,
   if ((lists ?? []).some((l) => l.id !== self && l.name.toLowerCase() === n.toLowerCase())) return "A list with that name exists.";
   return undefined;
 }
+
+const FIELD_LABELS: Record<string, string> = {
+  due_date: "date",
+  due_time: "time",
+  list_id: "list",
+  category_ids: "categories",
+  project_id: "project",
+  task_id: "task",
+  complete_with_task: "complete with task",
+  recurrence: "repeat",
+  advance: "next date from",
+  missed: "if missed",
+};
+
+/** A reminder field's name in words, for the sync-conflict view. */
+export const fieldLabel = (field: string) => FIELD_LABELS[field] ?? field.replace(/_/g, " ");
+
+/**
+ * A field's value in words, for comparing two versions (D-049 M7). `names`
+ * turns list and category ids into names where known.
+ */
+export function fieldValue(field: string, value: unknown, names: (id: string) => string | undefined = () => undefined): string {
+  if (value === null || value === undefined || value === "") return "none";
+  if (field === "recurrence") return ruleSummary(value as Rule) ?? "none";
+  if (field === "priority") return PRIORITY_LABELS[value as Priority] ?? String(value);
+  if (field === "alerts") return (value as Alert[]).map(alertLabel).join(", ") || "none";
+  if (field === "checklist") {
+    const items = value as ChecklistItem[];
+    return items.length ? `${items.filter((i) => i.done).length}/${items.length} done` : "none";
+  }
+  if (typeof value === "boolean") return value ? "yes" : "no";
+  if (Array.isArray(value)) return value.map((v) => names(String(v)) ?? (field.endsWith("_ids") ? "(removed)" : String(v))).join(", ") || "none";
+  if (field.endsWith("_id")) return names(String(value)) ?? "linked";
+  if (typeof value === "string") return value.length > 80 ? `${value.slice(0, 79)}…` : value;
+  return String(value);
+}

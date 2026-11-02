@@ -1,7 +1,18 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "../lib/api";
 import { sortLists, type NewReminder, type Reminder, type ReminderList, type ReminderPatch } from "../lib/reminders";
-import { applyReminderListLocally, applyReminderLocally, clientId, type Op } from "../lib/sync";
+import { localDb } from "../lib/db";
+import {
+  applyReminderListLocally,
+  applyReminderLocally,
+  clientId,
+  keepReminderConflicts,
+  REMINDER_CONFLICT,
+  reminderConflictKey,
+  reminderConflictOf,
+  type Op,
+  type ReminderConflict,
+} from "../lib/sync";
 import { runOptimistic, runOrQueue, upsert } from "./offline";
 import { useCachedList, type CachedList } from "./useCachedList";
 import { SYNCED_EVENT } from "./useSync";
@@ -26,6 +37,20 @@ export interface RemindersState {
   createList: (name: string, color?: string) => Promise<ReminderList | undefined>;
   updateList: (id: string, patch: { name?: string; color?: string }) => Promise<ReminderList | undefined>;
   removeList: (id: string) => Promise<boolean>;
+  /** Changes kept on this device after clashing with another device's (oldest first). */
+  conflicts: ReminderConflict[];
+  /** Apply this device's version (`mine`), or keep the other device's. */
+  resolve: (c: ReminderConflict, keep: "mine" | "theirs") => Promise<void>;
+}
+
+async function loadConflicts(): Promise<ReminderConflict[]> {
+  try {
+    const db = await localDb();
+    const all = await db.entriesWithPrefix<ReminderConflict>(REMINDER_CONFLICT);
+    return all.map(([, c]) => c).sort((a, b) => a.at - b.at);
+  } catch {
+    return [];
+  }
 }
 
 const fetchReminders = () => api.reminders();
@@ -53,15 +78,19 @@ export function useReminders(online: boolean): RemindersState {
   const lists = useCachedList<ReminderList>("reminder-lists:last", "list", fetchLists, online);
   const { reload } = list;
   const reloadLists = lists.reload;
+  const [conflicts, setConflicts] = useState<ReminderConflict[]>([]);
+  const reloadConflicts = useCallback(() => void loadConflicts().then(setConflicts), []);
 
   useEffect(() => {
+    reloadConflicts();
     const both = () => {
       reload();
       reloadLists();
+      reloadConflicts();
     };
     window.addEventListener(SYNCED_EVENT, both);
     return () => window.removeEventListener(SYNCED_EVENT, both);
-  }, [reload, reloadLists]);
+  }, [reload, reloadLists, reloadConflicts]);
 
   /** Run a reminder mutation; a 409 shows the server's copy and a reason. */
   const run = useCallback(
@@ -76,6 +105,17 @@ export function useReminders(online: boolean): RemindersState {
             return await server();
           } catch (e) {
             why = refused(list, e);
+            // An edit that clashed: the rest of it is applied, and this
+            // device's values are kept for the owner to choose (no silent loss).
+            const kept = op.kind === "reminder.update" ? await reminderConflictOf(api, op, e, new Map()).catch(() => undefined) : undefined;
+            if (kept?.kind === "fields") {
+              list.replace(upsert(list.latest(), kept.theirs));
+              await localDb()
+                .then((db) => keepReminderConflicts(db, [kept]))
+                .catch(() => undefined);
+              reloadConflicts();
+              why = `Changed on another device meanwhile (${kept.fields.join(", ")}). Both versions are under sync conflicts; choose one.`;
+            }
             throw e;
           }
         },
@@ -87,7 +127,7 @@ export function useReminders(online: boolean): RemindersState {
       if (why) list.setError(why);
       return r;
     },
-    [list],
+    [list, reloadConflicts],
   );
 
   const saved = (cur: Reminder[], r: Reminder) => upsert(cur, r);
@@ -208,6 +248,26 @@ export function useReminders(online: boolean): RemindersState {
     [lists, list],
   );
 
+  const resolve = useCallback(
+    async (c: ReminderConflict, keep: "mine" | "theirs") => {
+      if (keep === "mine") {
+        // Built on the copy shown now; if it changed again, a new conflict is kept.
+        const current = list.latest().find((x) => x.id === c.id) ?? c.theirs;
+        if (c.kind === "fields") await update(c.id, c.mine);
+        else if (c.op.kind === "reminder.complete") await complete(current);
+        else if (c.op.kind === "reminder.uncomplete") await uncomplete(current);
+        else await snooze(current, c.op.until);
+      }
+      try {
+        await (await localDb()).deleteValue(reminderConflictKey(c));
+      } catch {
+        /* IndexedDB unavailable: nothing was stored */
+      }
+      reloadConflicts();
+    },
+    [list, update, complete, uncomplete, snooze, reloadConflicts],
+  );
+
   return {
     reminders: list.items,
     lists: lists.items,
@@ -228,5 +288,7 @@ export function useReminders(online: boolean): RemindersState {
     createList,
     updateList,
     removeList,
+    conflicts,
+    resolve,
   };
 }

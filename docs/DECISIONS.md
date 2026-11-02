@@ -1009,3 +1009,28 @@ Guide: docs/NOTIFICATIONS.md.
   label validated for shape; the zone clock resolves it.
 - **Neglect nudge.** Lists gently ask about reminders overdue for more than
   7 days (complete, snooze, or reschedule). No automatic briefings.
+
+### Conflict recovery (slice 6)
+
+- **No silent loss.** A queued or online reminder edit that clashes with
+  another device's edit of the same fields (`409 conflict`, with the
+  current record) is split: the fields that don't clash are saved at once
+  (based on the server's version), and this device's values for the
+  clashing fields are kept on the device (IndexedDB,
+  `conflict:reminder:<id>`) instead of being dropped. Before this, the
+  whole edit was dropped with a message.
+- **Stale occurrence actions** (a queued snooze or reopen for an occurrence
+  the reminder has since moved past, `409 stale`) are kept the same way,
+  one per action and occurrence. A completion of a passed occurrence is
+  already accepted by the server and recorded against that occurrence.
+- **Reminders › sync conflicts** lists each one: for fields, a table of
+  this device's and the other device's values (in words) with *use this
+  device's* / *keep other device's*; for actions, *apply to the current
+  one* / *discard* (a snooze whose time has passed can only be
+  discarded). The other device's version stays in effect until the owner
+  chooses. Choosing *mine* sends a normal edit based on the version shown,
+  so a further clash is kept again rather than overwriting blindly.
+- A newer field conflict for the same reminder adds to the stored one
+  (union of fields, newest value per field). Stored conflicts are
+  per-device and never leave it; they hold the same data the device
+  already caches.

@@ -120,6 +120,42 @@ export const journalDoc = (date: string) => `journal:${date}`;
 /** IndexedDB key where a document's unresolved sync conflict is kept. */
 export const conflictKey = (doc: string) => `conflict:${doc}`;
 
+/**
+ * A queued reminder change the server couldn't apply as it was, kept until
+ * the owner chooses (D-049 M7). `fields`: this device's values for fields
+ * another device also changed (the rest of the edit was applied).
+ * `stale`: an occurrence action for an occurrence the reminder has moved
+ * past; it can be applied to the current occurrence instead.
+ */
+export type ReminderConflict =
+  | { kind: "fields"; id: string; fields: string[]; mine: ReminderPatch; theirs: Reminder; at: number }
+  | { kind: "stale"; id: string; op: Extract<Op, { kind: "reminder.complete" | "reminder.uncomplete" | "reminder.snooze" }>; message: string; theirs: Reminder; at: number };
+
+/** IndexedDB key prefix for unresolved reminder conflicts. */
+export const REMINDER_CONFLICT = "conflict:reminder:";
+/** One field conflict per reminder; one stale conflict per action and occurrence. */
+export const reminderConflictKey = (c: ReminderConflict) =>
+  c.kind === "fields" ? `${REMINDER_CONFLICT}${c.id}` : `${REMINDER_CONFLICT}${c.id}:${c.op.kind}:${c.op.occurrence ?? ""}`;
+
+/** Keep both: a newer field conflict for the same reminder adds to the older one. */
+export function mergeReminderConflict(old: ReminderConflict | undefined, next: ReminderConflict): ReminderConflict {
+  if (old?.kind !== "fields" || next.kind !== "fields") return next;
+  return { ...next, fields: [...new Set([...old.fields, ...next.fields])], mine: { ...old.mine, ...next.mine } };
+}
+
+export interface Kv {
+  getValue<T>(key: string): Promise<T | undefined>;
+  setValue<T>(key: string, value: T): Promise<void>;
+}
+
+/** Store reminder conflicts on this device until the owner resolves them. */
+export async function keepReminderConflicts(kv: Kv, conflicts: ReminderConflict[]): Promise<void> {
+  for (const c of conflicts) {
+    const key = reminderConflictKey(c);
+    await kv.setValue(key, mergeReminderConflict(await kv.getValue<ReminderConflict>(key), c));
+  }
+}
+
 export interface Outbox {
   outbox(): Promise<OutboxEntry[]>;
   settle(sent: OutboxEntry, rebase?: (op: unknown) => unknown): Promise<void>;
@@ -178,6 +214,8 @@ export interface SyncResult {
   rejected: { op: Op; reason: string }[];
   /** Saves that conflicted with a newer server copy; dropped from the outbox. */
   conflicts: Conflict[];
+  /** Reminder changes kept for the owner to resolve; dropped from the outbox. */
+  reminderConflicts: ReminderConflict[];
   /** New server versions of documents saved by this replay, by document key. */
   versions: Record<string, number>;
   /** Replay stopped early (offline, server error, or signed out). */
@@ -447,6 +485,42 @@ function conflictOf(op: Op, e: unknown): Conflict | undefined {
   return undefined;
 }
 
+/**
+ * A reminder edit that clashed with another device's: apply the fields that
+ * didn't clash, and keep this device's values for the rest. A stale
+ * occurrence action is kept as is. Anything else isn't a reminder conflict.
+ */
+export async function reminderConflictOf(api: Pick<SyncApi, "updateReminder">, op: Op, e: unknown, seen: Map<string, number>): Promise<ReminderConflict | undefined> {
+  if (!(e instanceof ApiError) || e.status !== 409) return undefined;
+  const body = e.body as { fields?: string[]; reminder?: Reminder; message?: string } | undefined;
+  const theirs = body?.reminder;
+  if (!theirs) return undefined;
+  const at = Date.now();
+  if (e.code === "stale" && (op.kind === "reminder.complete" || op.kind === "reminder.uncomplete" || op.kind === "reminder.snooze")) {
+    return { kind: "stale", id: op.id, op, message: body.message ?? e.detail ?? "the reminder has moved on", theirs, at };
+  }
+  if (e.code !== "conflict" || op.kind !== "reminder.update" || !body.fields?.length) return undefined;
+  const clash = new Set(body.fields);
+  const mine: Record<string, unknown> = {};
+  const rest: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(op.patch)) {
+    if (k === "base_version") continue;
+    (clash.has(k) ? mine : rest)[k] = v;
+  }
+  let current = theirs;
+  if (Object.keys(rest).length) {
+    try {
+      current = await api.updateReminder(op.id, { ...(rest as ReminderPatch), base_version: theirs.version });
+      seen.set(current.id, current.version);
+    } catch (again) {
+      // Changed again meanwhile: keep the whole edit for the owner instead.
+      if (!(again instanceof ApiError) || again.status !== 409) throw again;
+      Object.assign(mine, rest);
+    }
+  }
+  return { kind: "fields", id: op.id, fields: Object.keys(mine), mine: mine as ReminderPatch, theirs: current, at };
+}
+
 /** Why the server refused a queued change, in words. */
 function rejection(e: ApiError): string {
   const fields = (e.body as { fields?: string[] } | undefined)?.fields;
@@ -458,7 +532,7 @@ function rejection(e: ApiError): string {
 /** Replay queued changes in order. Never throws. */
 export async function replay(outbox: Outbox, api: SyncApi): Promise<SyncResult> {
   const entries = await outbox.outbox();
-  const result: SyncResult = { applied: 0, rejected: [], conflicts: [], versions: {}, pending: entries.length };
+  const result: SyncResult = { applied: 0, rejected: [], conflicts: [], reminderConflicts: [], versions: {}, pending: entries.length };
   const seen = new Map<string, number>();
   for (const entry of entries) {
     const op = entry.op as Op;
@@ -474,6 +548,13 @@ export async function replay(outbox: Outbox, api: SyncApi): Promise<SyncResult> 
       const conflict = conflictOf(op, e);
       if (conflict) {
         result.conflicts.push(conflict);
+        await outbox.settle(entry);
+        result.pending--;
+        continue;
+      }
+      const kept = await reminderConflictOf(api, op, e, seen);
+      if (kept) {
+        result.reminderConflicts.push(kept);
         await outbox.settle(entry);
         result.pending--;
         continue;

@@ -25,6 +25,8 @@ import {
   alertLabel,
   deviceZone,
   dueLabel,
+  fieldLabel,
+  fieldValue,
   inView,
   isOpen,
   isOverdue,
@@ -43,7 +45,7 @@ import {
   type SmartView,
   type SortKey,
 } from "../lib/reminders";
-import { clientId } from "../lib/sync";
+import { clientId, reminderConflictKey, type ReminderConflict } from "../lib/sync";
 import { isOpen as taskOpen, localDate } from "../lib/tasks";
 
 // Provisional screen: awaiting design integration (D-013; see docs/MODULES.md › Design status).
@@ -60,6 +62,84 @@ function useNow(): number {
     return () => window.clearInterval(t);
   }, []);
   return now;
+}
+
+const ACTION_WORDS: Record<Extract<ReminderConflict, { kind: "stale" }>["op"]["kind"], string> = {
+  "reminder.complete": "completion",
+  "reminder.uncomplete": "reopening",
+  "reminder.snooze": "snooze",
+};
+
+/**
+ * Reminder changes that clashed with another device's (D-049 M7). Nothing
+ * is dropped until the owner picks a version here.
+ */
+function SyncConflicts({ state, names }: { state: RemindersState; names: (id: string) => string | undefined }) {
+  const [busy, setBusy] = useState<string>();
+  const act = async (c: ReminderConflict, keep: "mine" | "theirs") => {
+    setBusy(reminderConflictKey(c));
+    try {
+      await state.resolve(c, keep);
+    } finally {
+      setBusy(undefined);
+    }
+  };
+  return (
+    <section aria-label="Sync conflicts" className="mb-3 rounded-sm border border-warn bg-sunken/60 px-3 py-2 text-sm">
+      <p className="label mb-2 text-warn">sync conflicts · {state.conflicts.length}</p>
+      <ul className="flex flex-col gap-3">
+        {state.conflicts.map((c) => {
+          const key = reminderConflictKey(c);
+          // A snooze whose time has passed has nothing left to apply.
+          const expired = c.kind === "stale" && c.op.kind === "reminder.snooze" && c.op.until <= Date.now();
+          return (
+            <li key={key} className="flex flex-col gap-1.5">
+              {c.kind === "fields" ? (
+                <>
+                  <p>
+                    “{c.theirs.title}” was changed on this device and on another. The rest of your edit was saved.
+                  </p>
+                  <table className="w-full table-fixed text-left text-xs">
+                    <thead className="text-muted">
+                      <tr>
+                        <th className="w-1/4 font-normal">field</th>
+                        <th className="font-normal">this device</th>
+                        <th className="font-normal">other device (kept now)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {c.fields.map((f) => (
+                        <tr key={f} className="align-top">
+                          <td className="text-muted">{fieldLabel(f)}</td>
+                          <td className="break-words">{fieldValue(f, (c.mine as Record<string, unknown>)[f], names)}</td>
+                          <td className="break-words">{fieldValue(f, (c.theirs as unknown as Record<string, unknown>)[f], names)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              ) : (
+                <p>
+                  Your offline {ACTION_WORDS[c.op.kind]} of “{c.theirs.title}”{c.op.occurrence ? ` for ${c.op.occurrence}` : ""} didn't apply: {c.message}.
+                  {c.theirs.due_date ? ` It's now due ${c.theirs.due_date}.` : ""}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {!expired && (
+                  <Button className={small} disabled={busy !== undefined} onClick={() => void act(c, "mine")}>
+                    {c.kind === "fields" ? "use this device's" : `apply to ${c.theirs.due_date ? "the current one" : "it now"}`}
+                  </Button>
+                )}
+                <Button className={small} disabled={busy !== undefined} onClick={() => void act(c, "theirs")}>
+                  {c.kind === "fields" ? "keep other device's" : "discard"}
+                </Button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
 }
 
 const timeOf = (ms: number) => new Date(ms).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -149,6 +229,7 @@ export function Reminders({ online }: ModuleProps) {
             this device is offline.
           </p>
         )}
+        {state.conflicts.length > 0 && <SyncConflicts state={state} names={(id) => listName.get(id) ?? catById.get(id)?.name} />}
         <div className="mb-3 grid gap-2 sm:grid-cols-2">
           <label className="flex min-w-0 items-center gap-2">
             <span className="label shrink-0">list</span>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
 import { localDb } from "../lib/db";
-import { conflictKey, replay, type Conflict, type SyncResult } from "../lib/sync";
+import { conflictKey, keepReminderConflicts, replay, type Conflict, type ReminderConflict, type SyncResult } from "../lib/sync";
 import { reportIfUnauthorized } from "./useSession";
 
 /** Fired after something is queued in the outbox. */
@@ -20,6 +20,11 @@ export interface SyncedDetail {
 function describeConflict(c: Conflict): string {
   const what = c.doc.startsWith("journal:") ? `the journal entry for ${c.doc.slice("journal:".length)}` : "a note";
   return `An offline edit to ${what} conflicts with a change made elsewhere. Open it to choose which version to keep.`;
+}
+
+function describeReminderConflict(c: ReminderConflict): string {
+  const what = c.kind === "fields" ? `An offline edit to reminder “${c.theirs.title}” (${c.fields.join(", ")})` : `An offline action on reminder “${c.theirs.title}”`;
+  return `${what} conflicts with a change made elsewhere. It's kept in Reminders › sync conflicts for you to choose.`;
 }
 
 export interface SyncState {
@@ -54,7 +59,8 @@ export function useSync(online: boolean): SyncState {
       const r: SyncResult = await replay(db, api);
       if (r.stopped === "unauthorized") reportIfUnauthorized(new ApiError(401, "unauthorized"));
       for (const c of r.conflicts) await db.setValue(conflictKey(c.doc), c);
-      const messages = [...r.rejected.map((x) => x.reason), ...r.conflicts.map(describeConflict)];
+      await keepReminderConflicts(db, r.reminderConflicts);
+      const messages = [...r.rejected.map((x) => x.reason), ...r.conflicts.map(describeConflict), ...r.reminderConflicts.map(describeReminderConflict)];
       if (messages.length) setRejected((cur) => [...cur, ...messages]);
       setPending((await db.outbox()).length);
       if (r.applied > 0 || messages.length > 0) {

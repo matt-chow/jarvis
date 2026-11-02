@@ -15,8 +15,11 @@ import {
   applyReminderListLocally,
   applyReminderLocally,
   clientId,
+  keepReminderConflicts,
+  REMINDER_CONFLICT,
   replay,
   type Op,
+  type ReminderConflict,
   type SyncApi,
 } from "./sync";
 import type { Note } from "./notes";
@@ -513,6 +516,59 @@ describe("reminder ops (D-049)", () => {
     const { api } = fakeApi(() => new ApiError(409, "conflict", undefined, { error: "conflict", fields: ["title"] }));
     const r = await replay(db, api);
     expect(r.rejected[0]?.reason).toBe("Couldn't update a reminder: title also changed on another device; that version was kept");
+  });
+
+  it("keeps clashing fields for the owner and applies the rest (M7)", async () => {
+    const theirs = { ...newReminderFrom("r1", { title: "Theirs", priority: "high" }, 0), version: 7 };
+    const db = await outboxWith([
+      { kind: "reminder.update", id: "r1", patch: { title: "Mine", notes: "only here", base_version: 3 } },
+      { kind: "reminder.update", id: "r1", patch: { flagged: true, base_version: 3 } },
+    ]);
+    let first = true;
+    const { api, calls } = fakeApi((op) => {
+      if (op === "reminder-update:r1@3" && first) {
+        first = false;
+        return new ApiError(409, "conflict", undefined, { error: "conflict", fields: ["title"], reminder: theirs });
+      }
+    });
+    const r = await replay(db, api);
+    expect(r).toMatchObject({ applied: 1, rejected: [], pending: 0 });
+    // The rest went to the server, based on the version it returned; the
+    // next queued edit builds on the version that write returned (the fake's 1).
+    expect(calls).toEqual(["reminder-update:r1@3", "reminder-update:r1@7", "reminder-update:r1@1"]);
+    expect(r.reminderConflicts).toEqual([expect.objectContaining({ kind: "fields", id: "r1", fields: ["title"], mine: { title: "Mine" } })]);
+    expect(await db.outbox()).toEqual([]);
+  });
+
+  it("keeps the whole edit when the rest clashes too", async () => {
+    const theirs = { ...newReminderFrom("r1", { title: "Theirs" }, 0), version: 7 };
+    const db = await outboxWith([{ kind: "reminder.update", id: "r1", patch: { title: "Mine", notes: "n", base_version: 3 } }]);
+    const { api } = fakeApi(() => new ApiError(409, "conflict", undefined, { error: "conflict", fields: ["title"], reminder: theirs }));
+    const r = await replay(db, api);
+    expect(r.reminderConflicts[0]).toMatchObject({ fields: ["title", "notes"], mine: { title: "Mine", notes: "n" } });
+  });
+
+  it("keeps a stale occurrence action instead of dropping it", async () => {
+    const theirs = { ...newReminderFrom("r1", { title: "Water", due_date: "2026-11-05" }, 0), version: 4 };
+    const db = await outboxWith([{ kind: "reminder.snooze", id: "r1", until: 99, occurrence: "2026-11-02" }]);
+    const { api } = fakeApi(() => new ApiError(409, "stale", undefined, { error: "stale", message: "that occurrence has passed", reminder: theirs }));
+    const r = await replay(db, api);
+    expect(r.rejected).toEqual([]);
+    expect(r.reminderConflicts).toEqual([
+      expect.objectContaining({ kind: "stale", id: "r1", message: "that occurrence has passed", op: { kind: "reminder.snooze", id: "r1", until: 99, occurrence: "2026-11-02" } }),
+    ]);
+  });
+
+  it("stores conflicts: field ones merge per reminder, stale ones stay separate", async () => {
+    const db = await outboxWith([]);
+    const theirs = newReminderFrom("r1", { title: "T" }, 0);
+    const fields = (f: string, v: string): ReminderConflict => ({ kind: "fields", id: "r1", fields: [f], mine: { [f]: v }, theirs, at: 1 });
+    const stale: ReminderConflict = { kind: "stale", id: "r1", op: { kind: "reminder.complete", id: "r1", occurrence: "2026-11-02" }, message: "m", theirs, at: 2 };
+    await keepReminderConflicts(db, [fields("title", "a"), stale]);
+    await keepReminderConflicts(db, [fields("notes", "b")]);
+    const kept = (await db.entriesWithPrefix<ReminderConflict>(REMINDER_CONFLICT)).map(([, c]) => c);
+    expect(kept).toHaveLength(2);
+    expect(kept.find((c) => c.kind === "fields")).toMatchObject({ fields: ["title", "notes"], mine: { title: "a", notes: "b" } });
   });
 
   it("applies locally like the server", () => {

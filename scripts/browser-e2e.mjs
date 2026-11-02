@@ -1003,6 +1003,22 @@ try {
     await page.evaluate(`[...document.querySelectorAll("button, a, [role=button]")].find((b) => b.innerText.includes("water the garden")).click()`);
     await waitFor("reminder opened", () => page.evaluate(`location.hash.startsWith("#/reminders") && location.hash.includes(${JSON.stringify(r.id)})`));
 
+    // M7: another device renames it; this device's rename then clashes. Both
+    // versions are kept until the owner picks one.
+    await waitFor("details open", () => page.evaluate(`[...document.querySelectorAll("input")].some((i) => i.value === "water the garden")`));
+    await page.evaluate(`fetch("/api/v1/reminders/${r.id}", { method: "PATCH", headers: { "Content-Type": "application/json", Origin: location.origin }, body: JSON.stringify({ title: "water the lawn" }) })`);
+    await page.evaluate(`[...document.querySelectorAll("input")].find((i) => i.value === "water the garden").focus()`);
+    await page.fill("title", "water the roses");
+    await page.evaluate("document.activeElement.blur()");
+    // The heading is styled uppercase, and innerText follows the style.
+    await waitFor("conflict shown", async () => (await page.text()).toLowerCase().includes("sync conflicts · 1"));
+    await page.waitForText("water the roses");
+    await shot("reminder-conflict");
+    if ((await json(`/api/v1/reminders/${r.id}`)).title !== "water the lawn") throw new Error("the other device's title should be kept until the owner chooses");
+    await page.click("use this device's");
+    await waitFor("mine applied", async () => (await json(`/api/v1/reminders/${r.id}`)).title === "water the roses");
+    await waitFor("conflict resolved", async () => !(await page.text()).toLowerCase().includes("sync conflicts"));
+
     const garden = (await json("/api/v1/projects")).projects?.find?.((p) => p.name === "Garden") ?? (await json("/api/v1/projects")).find?.((p) => p.name === "Garden");
     if (!garden) throw new Error("Garden project missing");
     await page.evaluate(`fetch("/api/v1/reminders", { method: "POST", headers: { "Content-Type": "application/json", Origin: location.origin }, body: JSON.stringify({ title: "Buy seeds", project_id: ${JSON.stringify(garden.id)} }) })`);

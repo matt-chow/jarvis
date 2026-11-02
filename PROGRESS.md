@@ -170,6 +170,20 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-11-02 — Reminders & categories, slice 6: conflict recovery (D-049)
+- A reminder edit that clashes with another device's (queued or online)
+  now saves its non-clashing fields and keeps this device's values for the
+  rest on the device, instead of dropping the whole edit. Stale occurrence
+  actions (snooze or reopen of a passed occurrence) are kept too.
+- Reminders › *sync conflicts*: both versions in words, with *use this
+  device's* / *keep other device's*, or *apply to the current one* /
+  *discard*. Nothing is lost until the owner chooses.
+- Tests: Vitest (split and keep, the whole edit kept on a second clash,
+  stale actions, merge per reminder, field values in words); browser e2e
+  (another device renames, this device's rename is kept, the owner picks
+  it, and the server takes it).
+- Gate: verify ✅ (core 239, Vitest 213), smoke ✅, browser e2e 40/40 ✅.
+
 ### 2026-11-02 — Reminders & categories, slice 5: Calendar, projects, JARVIS (D-049)
 - Calendar shows scheduled reminders (🔔, own tone, *Reminders* filter,
   recurring ones expanded to their occurrences); a click opens the
