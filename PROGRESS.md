@@ -131,6 +131,12 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to delete the retired OneDrive copy of the repo (D-040).
 
 ### Next task
+000. **Reminders & Shared Task Categories v1.0 (D-049) is committed, not
+   deployed** (0bd3c56). Owner: D1 bookmark, `npm run db:migrate:staging`
+   (0025–0027, schema v27), `npm run deploy:staging` (adds the minute cron),
+   the `VAPID_PRIVATE_KEY` secret (docs/STAGING.md §4.3a), then
+   docs/NOTIFICATIONS.md › Manual verification. Live push is pending manual
+   verification.
 00. **JARVIS 2.0 (D-048) is on staging** since 2026-10-29 (owner-approved):
    migration 0024 applied, Worker version
    029a3cfb-abd1-451f-9f26-4115e6efea5a, health reports schema v24, and
