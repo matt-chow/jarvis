@@ -170,6 +170,27 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-11-01 — Reminders & categories, slice 3: Reminders UI and offline (D-049)
+- Web: `lib/reminders.ts` (views, search, sort, overdue, client mirror of
+  the core's recurrence and DST-aware zone rules), `useReminders` (cached,
+  optimistic, offline outbox), and the Reminders screen (smart views, lists,
+  categories, search, sort, quick add, inline snooze, details, history,
+  restore and delete for good). Home *Reminders* widget (`reminders` added
+  to the widget allowlist in core and the default layout).
+- Offline ops `reminder.*` and `reminderList.*`: occurrence-named complete
+  and snooze, version rebase within a replay, delete never purges on
+  replay, conflict reasons in words.
+- Gate: verify ✅ (core 216, Vitest 193 incl. 13 reminders and 5 reminder
+  sync), smoke ✅, browser e2e 38/38 ✅ three runs in a row (new Reminders
+  step: quick add, repeat, checklist, snooze, complete a series, list,
+  delete and restore, Home widget, offline add). The Dashboard step now
+  waits for the saved layout after a reload (it raced the extra widget).
+- Watch item: the Links e2e step failed twice in eight runs (back-link
+  "Meeting notes" not shown on the task); not reproduced since. Failure
+  output now includes the end of the page text.
+- Not yet: Web Push and the cron trigger, calendar and project views,
+  JARVIS commands, the conflict recovery UI (next slices).
+
 ### 2026-11-01 — Reminders & categories, slice 2: reminder domain and API (D-049)
 - Core `reminders` module: IANA-zone conversion through a `ZoneClock`
   trait, recurrence (daily, weekly with weekdays, monthly, yearly, every

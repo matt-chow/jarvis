@@ -83,7 +83,10 @@ async function step(name, fn) {
   } catch (e) {
     failures++;
     const text = await page.text().catch(() => "(page unavailable)");
-    console.log(`  FAIL ${name}\n       ${e.message}\n       page: ${text.replace(/\s+/g, " ").slice(0, 300)}`);
+    const flat = text.replace(/\s+/g, " ");
+    // The start shows the screen; the end is often the part that failed.
+    const end = flat.length > 300 ? `\n       page end: ${flat.slice(-500)}` : "";
+    console.log(`  FAIL ${name}\n       ${e.message}\n       page: ${flat.slice(0, 300)}${end}`);
     throw e; // later steps depend on earlier ones
   }
 }
@@ -543,6 +546,107 @@ try {
     if (after.filter((l) => l.title === "Write the quarterly report").length !== 1) throw new Error(`links after sync: ${JSON.stringify(after)}`);
   });
 
+  await step("Reminders (D-049): quick add, repeat, checklist, snooze, complete a series, list, delete and restore, Home widget, offline add", async () => {
+    const reminders = () => page.evaluate(`fetch("/api/v1/reminders").then((r) => r.json())`);
+    const until = async (what, ok) => {
+      for (let i = 0; ; i++) {
+        const l = await reminders();
+        const found = ok(l);
+        if (found) return found;
+        if (i > 50) throw new Error(`${what}: ${JSON.stringify(l)}`);
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    };
+    const choose = (label, value) =>
+      waitFor(`select "${label}"`, () => page.evaluate(`(() => {
+        const el = document.querySelector('select[aria-label="${label}"]');
+        if (!el || el.disabled) return false;
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(el, ${JSON.stringify(value)});
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+      })()`));
+    const submit = (label) => page.evaluate(`document.querySelector('input[aria-label="${label}"]').form.requestSubmit()`);
+    const button = (text) =>
+      page.evaluate(`[...document.querySelectorAll("button")].find((b) => !b.disabled && b.innerText.trim().toLowerCase() === ${JSON.stringify(text)}).click()`);
+    const today = localToday();
+    const tomorrow = new Date(`${today}T12:00:00Z`);
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    const next = tomorrow.toISOString().slice(0, 10);
+
+    await page.hash("/reminders");
+    await page.waitForText("Nothing due today.");
+    await page.fill("New reminder", "Submit assignment");
+    await page.fill("New reminder time", "20:00");
+    await submit("New reminder");
+    let r = await until("created", (l) => l.find((x) => x.title === "Submit assignment"));
+    if (r.due_date !== today || r.due_time !== "20:00" || r.alerts.length !== 1) throw new Error(`created: ${JSON.stringify(r)}`);
+    await page.waitForText("Submit assignment");
+
+    await page.click("Submit assignment");
+    await choose("Repeat", "daily");
+    await until("repeats", (l) => l.find((x) => x.id === r.id && x.recurrence?.freq === "daily"));
+    await page.fill("New checklist item", "Proofread");
+    await submit("New checklist item");
+    await until("checklist", (l) => l.find((x) => x.id === r.id && x.checklist.length === 1));
+    await shot("reminders-detail");
+
+    await page.click("Snooze “Submit assignment”");
+    await page.click("1 hour");
+    await until("snoozed", (l) => l.find((x) => x.id === r.id && x.snoozed_until > Date.now()));
+    await page.waitForText("snoozed until");
+
+    // Completing a daily series moves it on to tomorrow (out of Today).
+    await page.click("Complete “Submit assignment”");
+    r = await until("advanced", (l) => l.find((x) => x.id === r.id && x.due_date === next && x.completed_at === null && x.snoozed_until === null));
+    await page.waitForText("Nothing due today.");
+    await shot("reminders-phone", { width: 390, height: 844 });
+
+    await page.click("lists");
+    await page.fill("New list", "School");
+    await submit("New list");
+    const listing = () => page.evaluate(`fetch("/api/v1/reminder-lists").then((r) => r.json())`);
+    await waitFor("list created", async () => (await listing()).length === 1);
+    const lists = await listing();
+    await page.click("lists");
+
+    // The details stay open across views.
+    await page.click("scheduled");
+    await page.waitForText("Tomorrow 20:00");
+    await choose("List", lists[0].id);
+    await until("in list", (l) => l.find((x) => x.id === r.id && x.list_id === lists[0].id));
+    await button("delete");
+    await until("soft deleted", (l) => l.find((x) => x.id === r.id && x.deleted_at !== null));
+    await page.click("deleted");
+    await page.click("Restore “Submit assignment”");
+    await until("restored", (l) => l.find((x) => x.id === r.id && x.deleted_at === null));
+
+    await page.hash("/");
+    await page.waitForText("reminders →");
+    await page.waitForText("Submit assignment");
+
+    // Offline: made on this device, then synced.
+    await page.hash("/reminders");
+    await waitFor("reminders loaded", () => page.evaluate(`!!document.querySelector('input[aria-label="New reminder"]:not([disabled])')`));
+    await page.send("Network.enable", {});
+    const net = (offline) => page.send("Network.emulateNetworkConditions", { offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    await net(true);
+    await waitFor("browser offline", () => page.evaluate("!navigator.onLine"));
+    await page.waitForText("Notifications need the server");
+    await page.fill("New reminder", "Call the dentist");
+    await submit("New reminder");
+    await page.waitForText("Call the dentist");
+    await page.waitForText("1 pending");
+    await net(false);
+    await waitFor("synced", async () => !/pending|syncing…/i.test(await page.text()), 30_000);
+    const dentist = await until("offline reminder on server", (l) => l.find((x) => x.title === "Call the dentist"));
+
+    // Leave nothing behind: a second DELETE purges.
+    for (const id of [r.id, r.id, dentist.id, dentist.id]) await page.evaluate(`fetch("/api/v1/reminders/${id}", { method: "DELETE", headers: { Origin: location.origin } })`);
+    await page.evaluate(`fetch("/api/v1/reminder-lists/${lists[0].id}", { method: "DELETE", headers: { Origin: location.origin } })`);
+    const left = await reminders();
+    if (left.length !== 0) throw new Error(`left behind: ${JSON.stringify(left)}`);
+  });
+
   await step("Habits: add one, check off today, streak shows and reaches the server", async () => {
     await page.hash("/habits");
     await page.waitForText("No habits yet");
@@ -667,10 +771,14 @@ try {
     await page.click("done");
     await waitFor("notes widget hidden", async () => !(await page.text()).includes("RECENT NOTES"));
     // Both edits reach the server, in order (they are sent one at a time).
-    await waitFor("server layout", async () => (await page.evaluate(`fetch("/api/v1/preferences").then((r) => r.json())`)).dashboard?.widgets.join() === "capture,habits,today,status,modules");
+    await waitFor("server layout", async () => (await page.evaluate(`fetch("/api/v1/preferences").then((r) => r.json())`)).dashboard?.widgets.join() === "capture,today,habits,reminders,status,modules");
     await page.reload();
     await page.waitForText("Stretch");
-    if ((await page.text()).includes("RECENT NOTES")) throw new Error("layout not kept after reload");
+    // The default layout can show until the saved one loads.
+    await waitFor("layout kept after reload", async () => {
+      const t = await page.text();
+      return !t.includes("RECENT NOTES") && t.indexOf("HABITS") < t.indexOf("REMINDERS");
+    });
     await shot("dashboard");
     await page.click("customize");
     await page.click("reset to default");

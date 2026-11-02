@@ -4,7 +4,7 @@
  * should share these ids.
  */
 
-export type ModuleId = "home" | "ask" | "search" | "inbox" | "tasks" | "projects" | "calendar" | "habits" | "notes" | "journal" | "library" | "music" | "files" | "jarvis" | "settings" | "modules";
+export type ModuleId = "home" | "ask" | "search" | "inbox" | "tasks" | "reminders" | "projects" | "calendar" | "habits" | "notes" | "journal" | "library" | "music" | "files" | "jarvis" | "settings" | "modules";
 
 export interface ModuleMeta {
   id: ModuleId;
@@ -27,6 +27,7 @@ export const MODULES: readonly ModuleMeta[] = [
   { id: "search", label: "Search", glyph: "⌕", summary: "Find anything across tasks, notes, projects, and journal.", stage: "preview", offline: false, group: "main" },
   { id: "inbox", label: "Inbox", glyph: "↓", summary: "Capture first, sort later: triage into tasks, notes, or the journal.", stage: "preview", offline: true, group: "main" },
   { id: "tasks", label: "Tasks", glyph: "☐", summary: "Tasks and subtasks with due dates and priorities.", stage: "preview", offline: true, group: "main" },
+  { id: "reminders", label: "Reminders", glyph: "◷", summary: "Reminders with alerts, repeats, lists, and snooze.", stage: "preview", offline: true, group: "main" },
   { id: "projects", label: "Projects", glyph: "▦", summary: "Group tasks and track progress.", stage: "preview", offline: true, group: "main" },
   { id: "calendar", label: "Calendar", glyph: "▣", summary: "Events by month and day, with tasks that are due.", stage: "preview", offline: true, group: "main" },
   { id: "habits", label: "Habits", glyph: "✓", summary: "Daily routines on chosen days, with streaks.", stage: "preview", offline: true, group: "main" },

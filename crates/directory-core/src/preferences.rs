@@ -6,7 +6,15 @@ use crate::validate;
 use serde::{Deserialize, Serialize};
 
 /// Dashboard widgets the clients know how to render.
-pub const WIDGETS: &[&str] = &["capture", "today", "habits", "notes", "status", "modules"];
+pub const WIDGETS: &[&str] = &[
+    "capture",
+    "today",
+    "reminders",
+    "habits",
+    "notes",
+    "status",
+    "modules",
+];
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Preferences {

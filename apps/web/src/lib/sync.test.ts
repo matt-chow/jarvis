@@ -3,7 +3,22 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import { LocalDb } from "./db";
 import { isLocalLink, localLinkId } from "./links";
-import { applyBlockLocally, applyCategoryLocally, applyEventLocally, applyHabitLocally, applyInboxLocally, applyLocally, applyProjectLocally, clientId, replay, type Op, type SyncApi } from "./sync";
+import { newReminderFrom, type Reminder } from "./reminders";
+import {
+  applyBlockLocally,
+  applyCategoryLocally,
+  applyEventLocally,
+  applyHabitLocally,
+  applyInboxLocally,
+  applyLocally,
+  applyProjectLocally,
+  applyReminderListLocally,
+  applyReminderLocally,
+  clientId,
+  replay,
+  type Op,
+  type SyncApi,
+} from "./sync";
 import type { Note } from "./notes";
 import type { Task } from "./tasks";
 
@@ -26,6 +41,15 @@ const note = (id: string, updated_at: number): Note => ({ id, title: "", body: "
 
 function fakeApi(fail: (op: string) => unknown = () => undefined) {
   const calls: string[] = [];
+  // Reminders on the "server": each write bumps the version.
+  const reminders = new Map<string, Reminder>();
+  const rem = async (name: string, id: string, f: (r: Reminder) => Partial<Reminder> = () => ({})) => {
+    await run(name);
+    const cur = reminders.get(id) ?? newReminderFrom(id, { title: "r" }, 0);
+    const next = { ...cur, ...f(cur), version: cur.version + 1 };
+    reminders.set(id, next);
+    return next;
+  };
   const run = async (name: string) => {
     calls.push(name);
     const err = fail(name);
@@ -100,12 +124,40 @@ function fakeApi(fail: (op: string) => unknown = () => undefined) {
       await run(`prefs:${JSON.stringify(patch)}`);
       return {};
     },
+    reminder: async (id) => {
+      calls.push(`reminder-get:${id}`);
+      const r = reminders.get(id);
+      if (!r) throw new ApiError(404, "not_found");
+      return r;
+    },
+    createReminder: (r) => rem(`reminder:${r.id}`, r.id),
+    updateReminder: (id, patch) => rem(`reminder-update:${id}@${patch.base_version}`, id),
+    // Like the server: the first DELETE soft-deletes, a second purges.
+    deleteReminder: async (id) => {
+      if (reminders.get(id)?.deleted_at) {
+        await run(`reminder-purge:${id}`);
+        reminders.delete(id);
+      } else await rem(`reminder-delete:${id}`, id, () => ({ deleted_at: 1 }));
+    },
+    restoreReminder: (id) => rem(`reminder-restore:${id}`, id, () => ({ deleted_at: null })),
+    completeReminder: (id, occ) => rem(`reminder-complete:${id}:${occ}`, id),
+    uncompleteReminder: (id, occ) => rem(`reminder-uncomplete:${id}:${occ}`, id),
+    snoozeReminder: (id, until, occ) => rem(`reminder-snooze:${id}:${until}:${occ}`, id, () => ({ snoozed_until: until })),
+    createReminderList: async (l) => {
+      await run(`list:${l.id}`);
+      return { id: l.id, name: l.name, color: "#3b3fa8", created_at: 0, updated_at: 0 };
+    },
+    updateReminderList: async (id) => {
+      await run(`list-update:${id}`);
+      return { id, name: "", color: "#3b3fa8", created_at: 0, updated_at: 0 };
+    },
+    deleteReminderList: async (id) => void (await run(`list-delete:${id}`)),
     putJournal: async (date, e) => {
       await run(`journal:${date}@${e.expected_updated_at}`);
       return { date, body: "", mood: null, created_at: 0, updated_at: 60 };
     },
   };
-  return { api, calls };
+  return { api, calls, reminders };
 }
 
 async function outboxWith(ops: Op[]) {
@@ -425,5 +477,73 @@ describe("category ops", () => {
     list = applyCategoryLocally(list, { kind: "task.delete", id: "t1" });
     expect(list.every((c) => c.task_ids.length === 0)).toBe(true);
     expect(applyCategoryLocally(list, { kind: "category.delete", id: "c1" }).map((c) => c.id)).toEqual(["c2"]);
+  });
+});
+
+describe("reminder ops (D-049)", () => {
+  it("rebases queued edits on the versions this replay wrote", async () => {
+    const db = await outboxWith([
+      { kind: "reminder.create", reminder: { id: "r1", title: "Pay rent" } },
+      { kind: "reminder.update", id: "r1", patch: { title: "Pay rent!", base_version: 0 } },
+      { kind: "reminder.update", id: "r1", patch: { notes: "online", base_version: 0 } },
+      { kind: "reminder.snooze", id: "r1", until: 99, occurrence: "2026-11-02" },
+    ]);
+    const { api, calls } = fakeApi();
+    expect(await replay(db, api)).toMatchObject({ applied: 4, rejected: [] });
+    expect(calls).toEqual(["reminder:r1", "reminder-update:r1@1", "reminder-update:r1@2", "reminder-snooze:r1:99:2026-11-02"]);
+  });
+
+  it("never purges on replay by accident; a gone reminder's complete is done", async () => {
+    const db = await outboxWith([
+      { kind: "reminder.create", reminder: { id: "r1", title: "a" } },
+      { kind: "reminder.delete", id: "r1" },
+      // A replayed soft delete of one already deleted: nothing to do.
+      { kind: "reminder.delete", id: "r1" },
+      { kind: "reminder.delete", id: "r1", purge: true },
+      { kind: "reminder.complete", id: "gone", occurrence: "2026-11-02" },
+    ]);
+    const { api, calls, reminders } = fakeApi((op) => (op.startsWith("reminder-complete:gone") ? new ApiError(404, "not_found") : undefined));
+    expect(await replay(db, api)).toMatchObject({ applied: 5, rejected: [] });
+    expect(calls).toEqual(["reminder:r1", "reminder-get:r1", "reminder-delete:r1", "reminder-get:r1", "reminder-get:r1", "reminder-purge:r1", "reminder-complete:gone:2026-11-02"]);
+    expect(reminders.has("r1")).toBe(false);
+  });
+
+  it("explains a field conflict in words", async () => {
+    const db = await outboxWith([{ kind: "reminder.update", id: "r1", patch: { title: "x", base_version: 3 } }]);
+    const { api } = fakeApi(() => new ApiError(409, "conflict", undefined, { error: "conflict", fields: ["title"] }));
+    const r = await replay(db, api);
+    expect(r.rejected[0]?.reason).toBe("Couldn't update a reminder: title also changed on another device; that version was kept");
+  });
+
+  it("applies locally like the server", () => {
+    let list = applyReminderLocally([], { kind: "reminder.create", reminder: { id: "r1", title: " Dentist ", due_date: "2026-11-02", due_time: "09:00", timezone: "America/Toronto", list_id: "l1", category_ids: ["c1"], task_id: "t1", complete_with_task: true, project_id: "p1" } }, 1);
+    list = applyReminderLocally(list, { kind: "reminder.create", reminder: { id: "r1", title: "dup" } }, 1);
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ title: "Dentist", priority: "none", completed_at: null });
+    list = applyReminderLocally(list, { kind: "reminder.snooze", id: "r1", until: 5, occurrence: "2026-11-02" }, 2);
+    expect(list[0].snoozed_until).toBe(5);
+    // A completion of an occurrence that has already moved on changes nothing.
+    expect(applyReminderLocally(list, { kind: "reminder.complete", id: "r1", occurrence: "2026-10-01" }, 3)).toEqual(list);
+    list = applyReminderLocally(list, { kind: "reminder.complete", id: "r1", occurrence: "2026-11-02" }, 3);
+    expect(list[0].completed_at).toBe(3);
+    list = applyReminderLocally(list, { kind: "reminderList.delete", id: "l1" }, 4);
+    list = applyReminderLocally(list, { kind: "category.delete", id: "c1" }, 4);
+    list = applyReminderLocally(list, { kind: "task.delete", id: "t1" }, 4);
+    list = applyReminderLocally(list, { kind: "project.delete", id: "p1" }, 4);
+    expect(list[0]).toMatchObject({ list_id: null, category_ids: [], task_id: null, complete_with_task: false, project_id: null });
+    list = applyReminderLocally(list, { kind: "reminder.delete", id: "r1" }, 5);
+    expect(list[0].deleted_at).toBe(5);
+    list = applyReminderLocally(list, { kind: "reminder.restore", id: "r1" }, 6);
+    expect(list[0].deleted_at).toBeNull();
+    expect(applyReminderLocally(list, { kind: "reminder.delete", id: "r1", purge: true })).toEqual([]);
+  });
+
+  it("applies list ops locally, sorted by name", () => {
+    let lists = applyReminderListLocally([], { kind: "reminderList.create", list: { id: "b", name: " Work " } }, 1);
+    lists = applyReminderListLocally(lists, { kind: "reminderList.create", list: { id: "a", name: "Errands", color: "#2c7445" } }, 1);
+    expect(lists.map((l) => l.name)).toEqual(["Errands", "Work"]);
+    lists = applyReminderListLocally(lists, { kind: "reminderList.update", id: "b", patch: { name: "Admin" } }, 2);
+    expect(lists.map((l) => l.id)).toEqual(["b", "a"]);
+    expect(applyReminderListLocally(lists, { kind: "reminderList.delete", id: "a" })).toHaveLength(1);
   });
 });

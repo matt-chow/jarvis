@@ -31,6 +31,7 @@ const Projects = lazy(() => import("./modules/Projects").then((m) => ({ default:
 const Search = lazy(() => import("./modules/Search").then((m) => ({ default: m.Search })));
 const Settings = lazy(() => import("./modules/Settings").then((m) => ({ default: m.Settings })));
 const Tasks = lazy(() => import("./modules/Tasks").then((m) => ({ default: m.Tasks })));
+const Reminders = lazy(() => import("./modules/Reminders").then((m) => ({ default: m.Reminders })));
 
 export interface ModuleProps {
   online: boolean;
@@ -46,6 +47,7 @@ const VIEWS: Record<ModuleId, ComponentType<ModuleProps>> = {
   search: Search,
   inbox: Inbox,
   tasks: Tasks,
+  reminders: Reminders,
   projects: Projects,
   calendar: Calendar,
   habits: Habits,

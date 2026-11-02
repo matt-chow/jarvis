@@ -892,3 +892,34 @@ per slice.
 - **Privacy.** Logs carry error kinds, never reminder text. The scheduler
   query (`due_for_scan`) reads across owners by design, but every save is
   scoped to the reminder's own owner.
+
+### Reminders UI and offline (slice 3)
+
+- **Screen** (provisional, D-013; `modules/Reminders.tsx`, built from the
+  Tasks rows and panels): smart views Today (due today or earlier), Scheduled,
+  All, Flagged, Completed, and Deleted; a list filter (all, none, or one), a
+  category filter, sort (due, priority, title, newest), and search. Completed
+  reminders are hidden by default; a search also finds them (not deleted
+  ones, except in Deleted). Quick add takes a title and an optional date and
+  time. Rows show the complete check, flag, priority marks, due or overdue,
+  snooze, repeat, list, categories, and checklist progress, with an inline
+  snooze menu (10 min, 1 hour, tomorrow 09:00, or a custom time). Details
+  edit every field (alerts from presets, repeat, advance and missed policy,
+  list, categories, priority, flag, checklist, links, project, task with
+  *complete with task*) and show the history. Deleted reminders can be
+  restored or deleted for good (with confirmation). Deep link:
+  `#/reminders?reminder=<id>`.
+- **Home** gains a *Reminders* widget (overdue first, then the next 7 days;
+  complete, snooze, open). The widget id `reminders` joins the server
+  allowlist and the default layout; saved custom layouts are unchanged.
+- **Offline** (D-017): reminder and list changes join the outbox as ops.
+  *Complete* and *snooze* name the occurrence (its date), and snooze is
+  queued as an absolute instant, so a replay after the series moved on (or
+  after a notification action) can't hit the wrong occurrence. Edits carry
+  `base_version`; within one replay later edits of the same reminder build
+  on the version just written. A queued delete checks first, so a replayed
+  soft delete never purges. A `409 conflict` or `stale` shows the server's
+  copy and why; a replayed rejection is reported in words. The client
+  mirrors the core's recurrence and zone rules for optimistic updates; the
+  server's answer replaces them.
+- **Honesty:** offline, the screen says that notifications need the server.

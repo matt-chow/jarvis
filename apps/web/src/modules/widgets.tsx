@@ -1,13 +1,16 @@
 /** Dashboard widgets backed by module hooks (each keeps its own offline cache). */
 import { useMemo } from "react";
+import { SnoozeMenu } from "../components/SnoozeMenu";
 import { Panel } from "../components/ui";
 import { useEvents } from "../hooks/useEvents";
 import { useHabits } from "../hooks/useHabits";
 import { useNotes } from "../hooks/useNotes";
+import { useReminders } from "../hooks/useReminders";
 import { useTasks } from "../hooks/useTasks";
 import { occurrences, timeLabel } from "../lib/calendar";
 import { formatDate, formatTime } from "../lib/format";
 import { weekday } from "../lib/habits";
+import { dueLabel, isOverdue, upcoming } from "../lib/reminders";
 import { isOpen, localDate } from "../lib/tasks";
 
 // Paper "Desktop · Home" cards: round task checks, square habit marks, mono times.
@@ -154,6 +157,57 @@ export function NotesWidget({ online, className }: { online: boolean; className?
           ))}
         </ul>
       )}
+    </Panel>
+  );
+}
+
+export function RemindersWidget({ online, className }: { online: boolean; className?: string }) {
+  const state = useReminders(online);
+  const now = Date.now();
+  const today = localDate();
+  const { overdue, soon } = useMemo(() => upcoming(state.reminders ?? [], now, today), [state.reminders, now, today]);
+  const shown = [...overdue, ...soon].slice(0, 6);
+
+  return (
+    <Panel
+      title={`reminders${state.reminders && overdue.length ? ` · ${overdue.length} overdue` : ""}`}
+      className={className}
+      actions={
+        <a href="#/reminders" className={link}>
+          reminders →
+        </a>
+      }
+    >
+      {!state.reminders ? (
+        <p className="text-sm text-muted">{state.loading ? "Loading…" : "Reminders couldn't be loaded."}</p>
+      ) : shown.length === 0 ? (
+        <p className="text-sm text-muted">Nothing overdue or due this week.</p>
+      ) : (
+        <ul aria-label="Upcoming reminders" className="flex flex-col gap-1.5">
+          {shown.map((r) => {
+            const late = isOverdue(r, now, today);
+            return (
+              <li key={r.id} className="flex min-h-9 items-center gap-3 text-[15px]">
+                <button
+                  type="button"
+                  aria-label={`Complete “${r.title}”`}
+                  onClick={() => void state.complete(r)}
+                  className="grid size-[18px] shrink-0 place-items-center rounded-full border-[1.5px] border-muted transition hover:border-accent hover:bg-accent/10"
+                />
+                <a href={`#/reminders?reminder=${r.id}`} className="min-w-0 truncate hover:underline">
+                  {r.flagged && <span className="mr-1 text-warn">⚑</span>}
+                  {r.title}
+                </a>
+                <span className={`ml-auto shrink-0 font-mono text-[11px] ${late ? "text-bad" : "text-muted"}`}>
+                  {late ? `overdue · ${dueLabel(r, today)}` : dueLabel(r, today)}
+                </span>
+                <SnoozeMenu reminder={r} disabled={false} onSnooze={(until) => void state.snooze(r, until)} />
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {state.error && <p className="mt-2 text-sm text-bad">{state.error}</p>}
     </Panel>
   );
 }

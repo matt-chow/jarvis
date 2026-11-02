@@ -21,6 +21,7 @@ import type { MusicLibrary, Playlist } from "./music";
 import type { Note, NotePatch, NoteSummary } from "./notes";
 import type { Preferences, PreferencesPatch } from "./preferences";
 import type { NewProject, Project, ProjectPatch } from "./projects";
+import type { AgendaItem, HistoryEntry, NewReminder, Reminder, ReminderList, ReminderPatch } from "./reminders";
 import type { SearchHit } from "./search";
 import type { AskAnswer } from "./talk";
 import { localDate, type NewTask, type PlanProposal, type Task, type TaskFilter, type TaskPatch } from "./tasks";
@@ -274,6 +275,31 @@ export class Api {
     this.call<{ task_id: string; category_ids: string[] }>("PUT", `/api/v1/tasks/${encodeURIComponent(taskId)}/categories`, {
       category_ids: ids,
     });
+
+  // ---- Reminders (D-049) ----
+  /** Every reminder, deleted ones included. */
+  reminders = () => this.call<Reminder[]>("GET", "/api/v1/reminders");
+  reminder = (id: string) => this.call<Reminder>("GET", `/api/v1/reminders/${encodeURIComponent(id)}`);
+  createReminder = (r: NewReminder & { id?: string }) => this.call<Reminder>("POST", "/api/v1/reminders", r);
+  updateReminder = (id: string, patch: ReminderPatch) => this.call<Reminder>("PATCH", `/api/v1/reminders/${encodeURIComponent(id)}`, patch);
+  /** Soft delete; a second delete purges. */
+  deleteReminder = (id: string) => this.call<void>("DELETE", `/api/v1/reminders/${encodeURIComponent(id)}`);
+  restoreReminder = (id: string) => this.call<Reminder>("POST", `/api/v1/reminders/${encodeURIComponent(id)}/restore`, {});
+  /** Idempotent. `occurrence`: the date meant (default: the current one). */
+  completeReminder = (id: string, occurrence?: string) =>
+    this.call<Reminder>("POST", `/api/v1/reminders/${encodeURIComponent(id)}/complete`, { occurrence });
+  uncompleteReminder = (id: string, occurrence?: string) =>
+    this.call<Reminder>("POST", `/api/v1/reminders/${encodeURIComponent(id)}/uncomplete`, { occurrence });
+  /** Snooze the current occurrence until an instant (ms); a passed occurrence → 409 `stale`. */
+  snoozeReminder = (id: string, until: number, occurrence?: string) =>
+    this.call<Reminder>("POST", `/api/v1/reminders/${encodeURIComponent(id)}/snooze`, { until, occurrence });
+  reminderHistory = (id: string) => this.call<HistoryEntry[]>("GET", `/api/v1/reminders/${encodeURIComponent(id)}/history`);
+  reminderAgenda = (from: string, to: string) => this.call<AgendaItem[]>("GET", `/api/v1/reminders/agenda?from=${from}&to=${to}`);
+  reminderLists = () => this.call<ReminderList[]>("GET", "/api/v1/reminder-lists");
+  createReminderList = (l: { id?: string; name: string; color?: string }) => this.call<ReminderList>("POST", "/api/v1/reminder-lists", l);
+  updateReminderList = (id: string, patch: { name?: string; color?: string }) =>
+    this.call<ReminderList>("PATCH", `/api/v1/reminder-lists/${encodeURIComponent(id)}`, patch);
+  deleteReminderList = (id: string) => this.call<void>("DELETE", `/api/v1/reminder-lists/${encodeURIComponent(id)}`);
 
   // ---- JARVIS ----
   /** Preview a command. Read-only plans come back already executed. */

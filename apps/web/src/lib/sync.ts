@@ -21,6 +21,19 @@ import { applyProgress, type LibraryItem, type Progress, type ProgressPatch } fr
 import type { Note, NotePatch } from "./notes";
 import type { Preferences, PreferencesPatch } from "./preferences";
 import type { NewProject, Project, ProjectPatch } from "./projects";
+import {
+  completeLocally,
+  newReminderFrom,
+  patchReminder,
+  sortLists,
+  uncompleteLocally,
+  withoutCategory,
+  withoutList,
+  type NewReminder,
+  type Reminder,
+  type ReminderList,
+  type ReminderPatch,
+} from "./reminders";
 import type { NewTask, Task, TaskPatch } from "./tasks";
 
 export type Op =
@@ -32,6 +45,20 @@ export type Op =
   | { kind: "category.create"; category: NewCategory & { id: string } }
   | { kind: "category.update"; id: string; patch: CategoryPatch }
   | { kind: "category.delete"; id: string }
+  | { kind: "reminder.create"; reminder: NewReminder & { id: string } }
+  /** `patch.base_version`: the version edited (field-level merge on the server). */
+  | { kind: "reminder.update"; id: string; patch: ReminderPatch }
+  /** Soft delete, or `purge` one already deleted. Neither repeats on replay. */
+  | { kind: "reminder.delete"; id: string; purge?: boolean }
+  | { kind: "reminder.restore"; id: string }
+  /** Names the occurrence completed, so a replay after the series moved on still means that one. */
+  | { kind: "reminder.complete"; id: string; occurrence?: string }
+  | { kind: "reminder.uncomplete"; id: string; occurrence?: string }
+  /** An absolute instant, fixed when queued. */
+  | { kind: "reminder.snooze"; id: string; until: number; occurrence?: string }
+  | { kind: "reminderList.create"; list: { id: string; name: string; color?: string } }
+  | { kind: "reminderList.update"; id: string; patch: { name?: string; color?: string } }
+  | { kind: "reminderList.delete"; id: string }
   | { kind: "inbox.capture"; item: { id: string; text: string } }
   | { kind: "inbox.delete"; id: string }
   /** Filed into another module on replay; the journal date is fixed when queued (D-036). */
@@ -106,6 +133,17 @@ export interface SyncApi {
   createCategory(c: NewCategory & { id: string }): Promise<Category>;
   updateCategory(id: string, patch: CategoryPatch): Promise<Category>;
   deleteCategory(id: string): Promise<void>;
+  reminder(id: string): Promise<Reminder>;
+  createReminder(r: NewReminder & { id: string }): Promise<Reminder>;
+  updateReminder(id: string, patch: ReminderPatch): Promise<Reminder>;
+  deleteReminder(id: string): Promise<void>;
+  restoreReminder(id: string): Promise<Reminder>;
+  completeReminder(id: string, occurrence?: string): Promise<Reminder>;
+  uncompleteReminder(id: string, occurrence?: string): Promise<Reminder>;
+  snoozeReminder(id: string, until: number, occurrence?: string): Promise<Reminder>;
+  createReminderList(l: { id: string; name: string; color?: string }): Promise<ReminderList>;
+  updateReminderList(id: string, patch: { name?: string; color?: string }): Promise<ReminderList>;
+  deleteReminderList(id: string): Promise<void>;
   capture(text: string, id?: string): Promise<InboxItem>;
   deleteInboxItem(id: string): Promise<void>;
   triage(id: string, to: TriageTarget, date?: string): Promise<Triaged>;
@@ -153,8 +191,13 @@ export function clientId(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** Applies one op; returns the new server version for document saves. */
-async function apply(api: SyncApi, op: Op): Promise<number | void> {
+/**
+ * Applies one op; returns the new server version for document saves.
+ * `seen`: reminder versions this replay produced, so later queued edits of
+ * the same reminder build on them instead of conflicting with themselves.
+ */
+async function apply(api: SyncApi, op: Op, seen: Map<string, number>): Promise<number | void> {
+  const saw = (r: Reminder) => void seen.set(r.id, r.version);
   try {
     switch (op.kind) {
       case "task.create":
@@ -177,6 +220,39 @@ async function apply(api: SyncApi, op: Op): Promise<number | void> {
         return;
       case "category.delete":
         await api.deleteCategory(op.id);
+        return;
+      case "reminder.create":
+        saw(await api.createReminder(op.reminder));
+        return;
+      case "reminder.update":
+        saw(await api.updateReminder(op.id, { ...op.patch, base_version: seen.get(op.id) ?? op.patch.base_version }));
+        return;
+      case "reminder.delete": {
+        // The server's DELETE soft-deletes, then purges: check first so a replay never purges by accident.
+        const current = await api.reminder(op.id);
+        if ((current.deleted_at !== null) === !!op.purge) await api.deleteReminder(op.id);
+        return;
+      }
+      case "reminder.restore":
+        saw(await api.restoreReminder(op.id));
+        return;
+      case "reminder.complete":
+        saw(await api.completeReminder(op.id, op.occurrence));
+        return;
+      case "reminder.uncomplete":
+        saw(await api.uncompleteReminder(op.id, op.occurrence));
+        return;
+      case "reminder.snooze":
+        saw(await api.snoozeReminder(op.id, op.until, op.occurrence));
+        return;
+      case "reminderList.create":
+        await api.createReminderList(op.list);
+        return;
+      case "reminderList.update":
+        await api.updateReminderList(op.id, op.patch);
+        return;
+      case "reminderList.delete":
+        await api.deleteReminderList(op.id);
         return;
       case "inbox.capture":
         await api.capture(op.item.text, op.item.id);
@@ -262,7 +338,10 @@ async function apply(api: SyncApi, op: Op): Promise<number | void> {
     // A check-in for a habit deleted meanwhile has nothing left to do.
     // A check-in or reading progress for something deleted meanwhile has nothing left to do.
     // A 404 means it is already done (deleted, or filed from another device).
-    const isDelete = op.kind.endsWith(".delete") || ["habit.check", "task.categories", "library.progress", "inbox.triage", "event.split"].includes(op.kind);
+    // A reminder deleted meanwhile has nothing left to complete, snooze, or restore.
+    const isDelete =
+      op.kind.endsWith(".delete") ||
+      ["habit.check", "task.categories", "library.progress", "inbox.triage", "event.split", "reminder.complete", "reminder.uncomplete", "reminder.snooze", "reminder.restore"].includes(op.kind);
     if (e instanceof ApiError && isCreate && e.code === "exists") return;
     if (e instanceof ApiError && isDelete && e.status === 404) return;
     throw e;
@@ -285,6 +364,26 @@ function describeOp(op: Op): string {
       return "update a category";
     case "category.delete":
       return "delete a category";
+    case "reminder.create":
+      return `create reminder “${op.reminder.title}”`;
+    case "reminder.update":
+      return "update a reminder";
+    case "reminder.delete":
+      return op.purge ? "delete a reminder for good" : "delete a reminder";
+    case "reminder.restore":
+      return "restore a reminder";
+    case "reminder.complete":
+      return "complete a reminder";
+    case "reminder.uncomplete":
+      return "reopen a reminder";
+    case "reminder.snooze":
+      return "snooze a reminder";
+    case "reminderList.create":
+      return `create list “${op.list.name}”`;
+    case "reminderList.update":
+      return "update a list";
+    case "reminderList.delete":
+      return "delete a list";
     case "inbox.capture":
       return `capture “${op.item.text.slice(0, 40)}”`;
     case "inbox.delete":
@@ -348,14 +447,23 @@ function conflictOf(op: Op, e: unknown): Conflict | undefined {
   return undefined;
 }
 
+/** Why the server refused a queued change, in words. */
+function rejection(e: ApiError): string {
+  const fields = (e.body as { fields?: string[] } | undefined)?.fields;
+  // A reminder edited on two devices: the other edit of the same fields was kept (D-049).
+  if (e.code === "conflict" && fields?.length) return `${fields.join(", ")} also changed on another device; that version was kept`;
+  return e.detail ?? e.code;
+}
+
 /** Replay queued changes in order. Never throws. */
 export async function replay(outbox: Outbox, api: SyncApi): Promise<SyncResult> {
   const entries = await outbox.outbox();
   const result: SyncResult = { applied: 0, rejected: [], conflicts: [], versions: {}, pending: entries.length };
+  const seen = new Map<string, number>();
   for (const entry of entries) {
     const op = entry.op as Op;
     try {
-      const version = await apply(api, op);
+      const version = await apply(api, op, seen);
       result.applied++;
       if (typeof version === "number") result.versions[op.kind === "note.save" ? noteDoc(op.id) : journalDoc((op as { date: string }).date)] = version;
       // Edited again while this save was in flight: keep the newer copy, based on what we just wrote.
@@ -375,7 +483,7 @@ export async function replay(outbox: Outbox, api: SyncApi): Promise<SyncResult> 
       else if (e instanceof ApiError && e.status >= 500) result.stopped = "server";
       if (result.stopped) return result;
       // A 4xx the server will never accept: drop it, but tell the user.
-      const reason = e instanceof ApiError ? (e.detail ?? e.code) : String(e);
+      const reason = e instanceof ApiError ? rejection(e) : String(e);
       result.rejected.push({ op, reason: `Couldn't ${describeOp(op)}: ${reason}` });
     }
     await outbox.settle(entry);
@@ -462,6 +570,54 @@ export function applyCategoryLocally(items: CategoryItem[], op: Op, now = Date.n
       return items.map((c) => (c.task_ids.includes(op.id) ? { ...c, task_ids: c.task_ids.filter((t) => t !== op.id) } : c));
     default:
       return items;
+  }
+}
+
+/** Apply a reminder op (or one that touches reminders) to the local reminder list. */
+export function applyReminderLocally(items: Reminder[], op: Op, now = Date.now()): Reminder[] {
+  const each = (id: string, f: (r: Reminder) => Reminder) => items.map((r) => (r.id === id ? f(r) : r));
+  switch (op.kind) {
+    case "reminder.create":
+      return items.some((r) => r.id === op.reminder.id) ? items : [...items, newReminderFrom(op.reminder.id, op.reminder, now)];
+    case "reminder.update":
+      return each(op.id, (r) => patchReminder(r, op.patch, now));
+    case "reminder.delete":
+      return op.purge ? items.filter((r) => r.id !== op.id) : each(op.id, (r) => ({ ...r, deleted_at: r.deleted_at ?? now, updated_at: now }));
+    case "reminder.restore":
+      return each(op.id, (r) => ({ ...r, deleted_at: null, updated_at: now }));
+    case "reminder.complete":
+      return each(op.id, (r) => (op.occurrence && r.due_date && op.occurrence !== r.due_date ? r : completeLocally(r, now)));
+    case "reminder.uncomplete":
+      return each(op.id, (r) => uncompleteLocally(r, now));
+    case "reminder.snooze":
+      return each(op.id, (r) => ({ ...r, snoozed_until: op.until, updated_at: now }));
+    case "reminderList.delete":
+      return withoutList(items, op.id, now);
+    case "category.delete":
+      return withoutCategory(items, op.id);
+    // The server unlinks reminders from a deleted task or project.
+    case "task.delete":
+      return items.map((r) => (r.task_id === op.id ? { ...r, task_id: null, complete_with_task: false } : r));
+    case "project.delete":
+      return items.map((r) => (r.project_id === op.id ? { ...r, project_id: null } : r));
+    default:
+      return items;
+  }
+}
+
+/** Apply a reminder-list op to the local lists. */
+export function applyReminderListLocally(lists: ReminderList[], op: Op, now = Date.now()): ReminderList[] {
+  switch (op.kind) {
+    case "reminderList.create": {
+      const l = op.list;
+      return lists.some((x) => x.id === l.id) ? lists : sortLists([...lists, { id: l.id, name: l.name.trim(), color: l.color ?? "#3b3fa8", created_at: now, updated_at: now }]);
+    }
+    case "reminderList.update":
+      return sortLists(lists.map((l) => (l.id === op.id ? { ...l, name: op.patch.name?.trim() ?? l.name, color: op.patch.color ?? l.color, updated_at: now } : l)));
+    case "reminderList.delete":
+      return lists.filter((l) => l.id !== op.id);
+    default:
+      return lists;
   }
 }
 
