@@ -20,6 +20,7 @@ mod preferences;
 mod presets;
 mod projects;
 mod rate_limit;
+mod reminders;
 mod search;
 mod tasks;
 
@@ -43,6 +44,7 @@ pub use preferences::D1PreferencesRepository;
 pub use presets::D1PresetRepository;
 pub use projects::D1ProjectRepository;
 pub use rate_limit::D1RateLimitStore;
+pub use reminders::D1ReminderRepository;
 pub use search::D1SearchSource;
 pub use tasks::D1TaskRepository;
 

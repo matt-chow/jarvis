@@ -139,12 +139,18 @@ impl ProjectRepository for D1ProjectRepository {
                 )?,
                 stmt(
                     &self.db,
+                    "UPDATE reminders SET project_id = NULL, version = version + 1
+                      WHERE owner_id = ?1 AND project_id = ?2",
+                    &[text(owner_id), text(id)],
+                )?,
+                stmt(
+                    &self.db,
                     "DELETE FROM projects WHERE owner_id = ?1 AND id = ?2",
                     &[text(owner_id), text(id)],
                 )?,
             ])
             .await
             .map_err(err)?;
-        Ok(results.get(1).is_some_and(|r| changes(r) > 0))
+        Ok(results.get(2).is_some_and(|r| changes(r) > 0))
     }
 }

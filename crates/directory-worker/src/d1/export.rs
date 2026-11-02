@@ -4,12 +4,12 @@ use super::{
     D1BlockRepository, D1CategoryRepository, D1EventRepository, D1FileRepository,
     D1HabitRepository, D1InboxRepository, D1JournalRepository, D1LibraryRepository,
     D1LinkRepository, D1MusicRepository, D1NoteRepository, D1PreferencesRepository,
-    D1ProjectRepository, D1TaskRepository,
+    D1ProjectRepository, D1ReminderRepository, D1TaskRepository,
 };
 use directory_core::blocks::{BlockRepository, TimeBlock, MAX_BLOCKS};
 use directory_core::calendar::{Event, EventRepository, MAX_EVENTS};
 use directory_core::categories::{Assignment, Category, CategoryRepository};
-use directory_core::export::ExportSource;
+use directory_core::export::{ExportSource, ReminderData};
 use directory_core::files::FileEntry;
 use directory_core::habits::{CheckIn, Habit, HabitRepository};
 use directory_core::inbox::{InboxItem, InboxRepository};
@@ -20,6 +20,7 @@ use directory_core::music::{MusicRepository, Playlist, MAX_PLAYLISTS};
 use directory_core::notes::Note;
 use directory_core::preferences::{from_stored, Preferences, PreferencesRepository};
 use directory_core::projects::{Project, ProjectRepository};
+use directory_core::reminders::ReminderRepository;
 use directory_core::tasks::{Filter, Task, TaskRepository};
 
 /// Large enough for a personal dataset; export streams in a later milestone.
@@ -40,6 +41,7 @@ pub struct D1ExportSource {
     pub preferences: D1PreferencesRepository,
     pub music: D1MusicRepository,
     pub categories: D1CategoryRepository,
+    pub reminders: D1ReminderRepository,
 }
 
 impl ExportSource for D1ExportSource {
@@ -97,5 +99,15 @@ impl ExportSource for D1ExportSource {
     }
     async fn task_categories(&self, owner_id: &str) -> Result<Vec<Assignment>, String> {
         self.categories.task_assignments(owner_id).await
+    }
+    async fn reminders(&self, owner_id: &str) -> Result<ReminderData, String> {
+        let r = &self.reminders;
+        Ok(ReminderData {
+            reminders: r.list(owner_id).await?,
+            reminder_lists: r.lists(owner_id).await?,
+            // "-" (undated) sorts before every date.
+            reminder_occurrences: r.occurrences(owner_id, None, "-", "9999-12-31").await?,
+            reminder_history: r.all_history(owner_id).await?,
+        })
     }
 }

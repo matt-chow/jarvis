@@ -170,6 +170,22 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-11-01 — Reminders & categories, slice 2: reminder domain and API (D-049)
+- Core `reminders` module: IANA-zone conversion through a `ZoneClock`
+  trait, recurrence (daily, weekly with weekdays, monthly, yearly, every
+  n, month-end clamping), alerts, missed-occurrence policies, completion
+  or calendar advance, snooze of the current occurrence, the scheduler
+  scan (one send per due alert, superseded older ones), field-level merge,
+  soft delete and restore, lists, and one-way task auto-complete.
+- Migration 0026 (schema v26). D1 adapter with a version-checked batch
+  save (`write_id` guard), an `Intl.DateTimeFormat` zone clock, routes
+  `/reminders…` and `/reminder-lists…`, export, and link cleanup on task,
+  project, and category delete.
+- Not yet: the Reminders UI, push notifications and the cron trigger,
+  calendar and JARVIS integration, offline ops (next slices).
+- Gate: core tests ✅ (216 incl. 29 reminders), worker clippy ✅, smoke ✅
+  (new reminders check: EST/EDT through Intl, recurrence, merge, links).
+
 ### 2026-11-01 — Reminders & categories, slice 1: shared categories (D-049)
 - Owner brief *Directory Reminders & Shared Task Categories v1.0*, built
   in slices: categories, reminder domain, Reminders UI, Web Push, calendar,

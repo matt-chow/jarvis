@@ -21,6 +21,7 @@ pub mod music;
 pub mod notes;
 pub mod preferences;
 pub mod projects;
+pub mod reminders;
 pub mod search;
 pub mod tasks;
 

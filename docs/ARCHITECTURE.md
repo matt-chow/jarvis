@@ -133,6 +133,13 @@ new backend, such as SQLite on a desktop client, implements the core traits.
 | POST | `/api/v1/categories` | session or token | `{ id?, name (≤ 40, unique ignoring case), color? (#rgb or #rrggbb, default #3b3fa8), icon? (≤ 8) }` → `201`; a repeated client id → `409 exists`. At most 200 per owner. |
 | PATCH / DELETE | `/api/v1/categories/{id}` | session or token | `{ name?, color?, icon? }` (`null` clears the icon). DELETE removes only its assignments. |
 | PUT | `/api/v1/tasks/{id}/categories` | session or token | `{ category_ids }` replaces the task's set (≤ 12, deduplicated, all owned or `400`) → `{ task_id, category_ids }`. Idempotent. |
+| GET / POST | `/api/v1/reminders` | session or token | Reminders (D-049), deleted ones included. POST `{ id?, title, notes?, links?, due_date?, due_time?, timezone?, list_id?, category_ids?, priority?, flagged?, project_id?, task_id?, complete_with_task?, alerts?, recurrence?, advance?, missed?, checklist? }` → `201`; a repeated client id → `409 exists`. At most 5000 per owner. |
+| GET | `/api/v1/reminders/agenda?from=&to=` | session or token | Dated occurrences in the range (≤ 100 days): `[{ reminder_id, occurrence_id, date, time, at, title, state: open|overdue|completed|missed, recurring, priority, flagged }]` |
+| GET / PATCH / DELETE | `/api/v1/reminders/{id}` | session or token | PATCH any field, plus `base_version` for a field-level merge (`409 conflict` → `{ fields, reminder }`). DELETE is soft; a second DELETE purges. |
+| POST | `/api/v1/reminders/{id}/complete`, `/uncomplete` | session or token | `{ occurrence? }` (default: the current one; uncomplete: the latest completion). Idempotent. |
+| POST | `/api/v1/reminders/{id}/snooze` | session or token | One of `{ minutes }`, `{ until }`, `{ tomorrow: true }`, with `occurrence?`; a passed occurrence → `409 stale`. |
+| POST / GET | `/api/v1/reminders/{id}/restore`, `/history` | session or token | Undo a soft delete; the newest 200 history lines. |
+| GET / POST / PATCH / DELETE | `/api/v1/reminder-lists[/{id}]` | session or token | `{ id?, name (≤ 60, unique ignoring case), color? }`; at most 100. DELETE keeps the reminders. |
 | GET | `/api/v1/library` | session or token | PDF/ePub files with reading progress (reading, want, unread, finished) |
 | PUT / DELETE | `/api/v1/library/{file_id}/progress` | session or token | PUT `{ status?, current_page?, total_pages?, position? }`. Percent is derived from pages; reaching the last page finishes the document. DELETE resets it. |
 | GET | `/api/v1/files?folder=` | session or token | `{ folder, folders, files }` from D1 metadata (no R2 list operations) |
@@ -186,6 +193,11 @@ JSON bodies are capped at 64 KiB.
     ignoring case, `#rrggbb` colour, optional icon) and `task_categories`
     (task, category, owner, position). Deleting a category or a task removes
     only its assignments.
+  - `0026`: reminders (D-049): `reminders` (one row per series: cursor date,
+    zone, JSON alerts, rule, checklist, `field_versions`, scheduler state
+    `due_at`/`notified_through`/`wake_at`, `write_id`), `reminder_lists`,
+    `reminder_categories`, `reminder_occurrences` (completed/missed), and
+    `reminder_history`.
 - IndexedDB v3 adds a `media` store: tracks the owner chose to save for
   offline playback (blobs, explicit download; the service worker still never
   caches `/api/*`).

@@ -15,6 +15,7 @@ use crate::music::Playlist;
 use crate::notes::Note;
 use crate::preferences::Preferences;
 use crate::projects::Project;
+use crate::reminders::{HistoryEntry, OccurrenceRow, Reminder, ReminderList};
 use crate::tasks::Task;
 use serde::{Deserialize, Serialize};
 
@@ -74,6 +75,18 @@ pub struct Export {
     /// Shared categories and which tasks carry them (D-049).
     pub categories: Vec<Category>,
     pub task_categories: Vec<Assignment>,
+    /// Reminders (D-049), deleted ones included, with their lists, resolved
+    /// occurrences, and history.
+    #[serde(flatten)]
+    pub reminders: ReminderData,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ReminderData {
+    pub reminders: Vec<Reminder>,
+    pub reminder_lists: Vec<ReminderList>,
+    pub reminder_occurrences: Vec<OccurrenceRow>,
+    pub reminder_history: Vec<HistoryEntry>,
 }
 
 /// Everything owned by `owner_id`, per module.
@@ -94,6 +107,7 @@ pub trait ExportSource {
     async fn playlists(&self, owner_id: &str) -> Result<Vec<Playlist>, String>;
     async fn categories(&self, owner_id: &str) -> Result<Vec<Category>, String>;
     async fn task_categories(&self, owner_id: &str) -> Result<Vec<Assignment>, String>;
+    async fn reminders(&self, owner_id: &str) -> Result<ReminderData, String>;
 }
 
 pub async fn export<S: ExportSource>(
@@ -143,6 +157,7 @@ pub async fn export<S: ExportSource>(
         playlists: source.playlists(&owner).await?,
         categories: source.categories(&owner).await?,
         task_categories: source.task_categories(&owner).await?,
+        reminders: source.reminders(&owner).await?,
         user,
     })
 }
@@ -242,6 +257,9 @@ mod tests {
         }
         async fn task_categories(&self, _: &str) -> Result<Vec<Assignment>, String> {
             Ok(vec![])
+        }
+        async fn reminders(&self, _: &str) -> Result<ReminderData, String> {
+            Ok(ReminderData::default())
         }
     }
 

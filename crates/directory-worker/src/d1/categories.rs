@@ -126,13 +126,24 @@ impl CategoryRepository for D1CategoryRepository {
                 )?,
                 stmt(
                     &self.db,
+                    "UPDATE reminders SET version = version + 1 WHERE owner_id = ?1 AND id IN
+                        (SELECT reminder_id FROM reminder_categories WHERE owner_id = ?1 AND category_id = ?2)",
+                    &[text(owner_id), text(id)],
+                )?,
+                stmt(
+                    &self.db,
+                    "DELETE FROM reminder_categories WHERE owner_id = ?1 AND category_id = ?2",
+                    &[text(owner_id), text(id)],
+                )?,
+                stmt(
+                    &self.db,
                     "DELETE FROM categories WHERE owner_id = ?1 AND id = ?2",
                     &[text(owner_id), text(id)],
                 )?,
             ])
             .await
             .map_err(err)?;
-        Ok(results.get(1).is_some_and(|r| changes(r) > 0))
+        Ok(results.get(3).is_some_and(|r| changes(r) > 0))
     }
 
     async fn task_assignments(&self, owner_id: &str) -> Result<Vec<Assignment>, String> {

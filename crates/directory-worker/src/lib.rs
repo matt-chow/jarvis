@@ -12,11 +12,12 @@ mod d1;
 mod entropy;
 mod http;
 mod r2;
+mod zone;
 
 use http::{
     auth, automations, backup, blocks, categories, diagnostics, events, export, files, habits,
-    health, inbox, jarvis, journal, library, links, music, notes, preferences, projects, search,
-    tasks,
+    health, inbox, jarvis, journal, library, links, music, notes, preferences, projects, reminders,
+    search, tasks,
 };
 
 #[event(fetch)]
@@ -81,6 +82,22 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .patch_async("/api/v1/categories/:id", categories::update)
         .delete_async("/api/v1/categories/:id", categories::delete)
         .put_async("/api/v1/tasks/:id/categories", categories::set_task)
+        // Reminders (D-049)
+        .get_async("/api/v1/reminders", reminders::list)
+        .post_async("/api/v1/reminders", reminders::create)
+        .get_async("/api/v1/reminders/agenda", reminders::agenda)
+        .get_async("/api/v1/reminders/:id", reminders::get)
+        .patch_async("/api/v1/reminders/:id", reminders::update)
+        .delete_async("/api/v1/reminders/:id", reminders::delete)
+        .post_async("/api/v1/reminders/:id/restore", reminders::restore)
+        .post_async("/api/v1/reminders/:id/complete", reminders::complete)
+        .post_async("/api/v1/reminders/:id/uncomplete", reminders::uncomplete)
+        .post_async("/api/v1/reminders/:id/snooze", reminders::snooze)
+        .get_async("/api/v1/reminders/:id/history", reminders::history)
+        .get_async("/api/v1/reminder-lists", reminders::lists)
+        .post_async("/api/v1/reminder-lists", reminders::create_list)
+        .patch_async("/api/v1/reminder-lists/:id", reminders::update_list)
+        .delete_async("/api/v1/reminder-lists/:id", reminders::delete_list)
         // Calendar
         .get_async("/api/v1/events", events::list)
         .post_async("/api/v1/events", events::create)

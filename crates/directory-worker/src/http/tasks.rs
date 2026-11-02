@@ -124,6 +124,7 @@ pub async fn update(mut req: Request, rc: RouteContext<()>) -> Result<Response> 
 /// Fire "task completed" automations (D-024).
 /// `date` is the caller's local date (the day the automation records).
 pub(crate) async fn completed(date: &str, env: &Env, p: &Principal, task: &Task) {
+    super::reminders::task_completed(env, p, &task.id).await;
     let project_name = match (&task.project_id, env.d1(bindings::DB)) {
         (Some(id), Ok(db)) => D1ProjectRepository::new(db)
             .get(&p.user_id, id)

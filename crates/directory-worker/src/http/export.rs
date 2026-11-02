@@ -6,7 +6,7 @@ use crate::d1::{
     D1BlockRepository, D1CategoryRepository, D1EventRepository, D1ExportSource, D1FileRepository,
     D1HabitRepository, D1InboxRepository, D1JournalRepository, D1LibraryRepository,
     D1LinkRepository, D1MusicRepository, D1NoteRepository, D1PreferencesRepository,
-    D1ProjectRepository, D1TaskRepository,
+    D1ProjectRepository, D1ReminderRepository, D1TaskRepository,
 };
 use crate::{bindings, try_or_respond};
 use directory_core::export::export as build_export;
@@ -36,6 +36,7 @@ pub async fn export(req: Request, rc: RouteContext<()>) -> Result<Response> {
         preferences: D1PreferencesRepository::new(db()?),
         music: D1MusicRepository::new(db()?, D1FileRepository::new(db()?)),
         categories: D1CategoryRepository::new(db()?),
+        reminders: D1ReminderRepository::new(db()?),
     };
     let now = Date::now().as_millis() as i64;
     let doc = match build_export(&source, user, EXPECTED_SCHEMA_VERSION, now).await {

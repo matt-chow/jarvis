@@ -301,6 +301,92 @@ async function local() {
       }
     });
 
+    await check("reminders (D-049): IANA zones, recurrence, complete/uncomplete, snooze, merge conflicts, lists, task links, soft delete", async () => {
+      const post = (body) => api.req("POST", "/api/v1/reminders", { body });
+      const act = (id, what, body = {}) => api.req("POST", `/api/v1/reminders/${id}/${what}`, { body });
+      expect((await post({ title: " " })).status === 400, "blank title");
+      expect((await post({ title: "x", timezone: "Mars/Base" })).status === 400, "unknown zone refused");
+      expect((await post({ title: "x", due_time: "20:00" })).status === 400, "time without a date");
+
+      // Winter (EST, UTC−5) and summer (EDT, UTC−4) through the runtime's Intl.
+      const winter = await post({ title: "Submit assignment", due_date: "2030-01-07", due_time: "20:00", timezone: "America/Toronto" });
+      expect(winter.status === 201 && winter.json.due_at === Date.UTC(2030, 0, 8, 1) && !("owner_id" in winter.json), `EST → ${winter.text}`);
+      expect(winter.json.alerts.length === 1 && winter.json.alerts[0].kind === "before", "default alert at the due time");
+      const summer = await post({ title: "Summer", due_date: "2030-07-08", due_time: "20:00", timezone: "America/Toronto", alerts: [] });
+      expect(summer.json.due_at === Date.UTC(2030, 6, 9, 0) && summer.json.alerts.length === 0, `EDT → ${summer.text}`);
+      const undated = await post({ title: "Someday" });
+      expect(undated.status === 201 && undated.json.due_date === null && undated.json.alerts.length === 0, "undated: no alerts");
+
+      const weekly = await post({
+        title: "Review notes", due_date: "2030-01-07", timezone: "America/Toronto",
+        recurrence: { freq: "weekly", weekdays: [0, 2] }, priority: "high", flagged: true,
+      });
+      expect(weekly.status === 201 && weekly.json.recurrence.anchor === "2030-01-07", `weekly → ${weekly.text}`);
+      const id = weekly.json.id;
+      let r = await act(id, "complete");
+      expect(r.status === 200 && r.json.due_date === "2030-01-09" && r.json.completed_at === null, `advance Mon → Wed → ${r.text}`);
+      expect((await act(id, "complete", { occurrence: "2030-01-07" })).json.due_date === "2030-01-09", "completing it again is a no-op");
+      r = await act(id, "uncomplete");
+      expect(r.json.due_date === "2030-01-07", `uncomplete → ${r.text}`);
+      r = await act(id, "snooze", { minutes: 60 });
+      expect(r.status === 200 && Math.abs(r.json.snoozed_until - (Date.now() + 3_600_000)) < 120_000, `snooze 1h → ${r.text}`);
+      expect((await act(id, "snooze", { minutes: 60, tomorrow: true })).status === 400, "one snooze option only");
+      expect((await act(id, "snooze", { tomorrow: true, occurrence: "2029-12-31" })).status === 409, "stale occurrence → 409");
+      const hist = await api.req("GET", `/api/v1/reminders/${id}/history`);
+      expect(hist.json.map((h) => h.action).join() === "snoozed,uncompleted,completed", `history → ${hist.text}`);
+      const agenda = await api.req("GET", "/api/v1/reminders/agenda?from=2030-01-07&to=2030-01-13");
+      const mine = agenda.json.filter((a) => a.reminder_id === id).map((a) => a.date).join();
+      expect(agenda.status === 200 && mine === "2030-01-07,2030-01-09", `agenda → ${agenda.text}`);
+      expect((await api.req("GET", "/api/v1/reminders/agenda?from=2030-01-07&to=2031-01-07")).status === 400, "agenda span bounded");
+
+      // Field-level merge: disjoint edits from an old base merge; overlapping ones conflict.
+      const v = r.json.version;
+      expect((await api.req("PATCH", `/api/v1/reminders/${id}`, { body: { base_version: v, title: "Review all notes" } })).status === 200, "edit");
+      const merged = await api.req("PATCH", `/api/v1/reminders/${id}`, { body: { base_version: v, flagged: false } });
+      expect(merged.status === 200 && merged.json.title === "Review all notes" && merged.json.flagged === false, `merge → ${merged.text}`);
+      const clash = await api.req("PATCH", `/api/v1/reminders/${id}`, { body: { base_version: v, title: "Other" } });
+      expect(clash.status === 409 && clash.json.fields.includes("title") && clash.json.reminder.title === "Review all notes", `conflict → ${clash.text}`);
+
+      // Lists and categories.
+      const list = await api.req("POST", "/api/v1/reminder-lists", { body: { name: "School", color: "#2C7" } });
+      expect(list.status === 201 && (await api.req("POST", "/api/v1/reminder-lists", { body: { name: "school" } })).status === 400, `list → ${list.text}`);
+      const cat = (await api.req("POST", "/api/v1/categories", { body: { name: "Important" } })).json;
+      r = await api.req("PATCH", `/api/v1/reminders/${id}`, { body: { list_id: list.json.id, category_ids: [cat.id] } });
+      expect(r.json.list_id === list.json.id && r.json.category_ids.join() === cat.id, `assign → ${r.text}`);
+      expect((await api.req("PATCH", `/api/v1/reminders/${id}`, { body: { category_ids: ["b".repeat(32)] } })).status === 400, "unknown category refused");
+      expect((await api.req("DELETE", `/api/v1/categories/${cat.id}`)).status === 204, "delete the category");
+      expect((await api.req("GET", `/api/v1/reminders/${id}`)).json.category_ids.length === 0, "category delete drops only its assignments");
+      expect((await api.req("DELETE", `/api/v1/reminder-lists/${list.json.id}`)).status === 204, "delete the list");
+      expect((await api.req("GET", `/api/v1/reminders/${id}`)).json.list_id === null, "list delete keeps the reminder");
+
+      // A task link with auto-complete; completing the task completes the reminder, not the reverse.
+      const task = (await api.req("POST", "/api/v1/tasks", { body: { title: "Essay" } })).json;
+      const linked = await post({ title: "Essay reminder", due_date: "2030-01-07", task_id: task.id, complete_with_task: true });
+      const loose = await post({ title: "Loose", due_date: "2030-01-07", task_id: task.id });
+      expect(linked.status === 201 && (await post({ title: "x", task_id: "c".repeat(32) })).status === 400, "unknown task refused");
+      await act(loose.json.id, "complete");
+      expect((await api.req("GET", `/api/v1/tasks/${task.id}`)).json.status !== "done", "a reminder never completes its task");
+      await api.req("PATCH", `/api/v1/tasks/${task.id}`, { body: { status: "done" } });
+      expect((await api.req("GET", `/api/v1/reminders/${linked.json.id}`)).json.completed_at > 0, "task done → linked reminder done");
+      expect((await api.req("DELETE", `/api/v1/tasks/${task.id}`)).status === 204, "delete the task");
+      expect((await api.req("GET", `/api/v1/reminders/${loose.json.id}`)).json.task_id === null, "task delete unlinks reminders");
+
+      // Soft delete, restore, purge; export.
+      expect((await api.req("DELETE", `/api/v1/reminders/${undated.json.id}`)).status === 204, "soft delete");
+      expect((await api.req("GET", `/api/v1/reminders/${undated.json.id}`)).json.deleted_at > 0, "recoverable");
+      expect((await act(undated.json.id, "restore")).json.deleted_at === null, "restore");
+      const doc = (await api.req("GET", "/api/v1/export")).json;
+      expect(doc.reminders.length === 6 && doc.reminder_history.length >= 3 && doc.reminder_occurrences.length >= 1, "in export");
+      for (const x of (await api.req("GET", "/api/v1/reminders")).json) {
+        await api.req("DELETE", `/api/v1/reminders/${x.id}`);
+        expect((await api.req("DELETE", `/api/v1/reminders/${x.id}`)).status === 204, "second delete purges");
+      }
+      expect((await api.req("GET", "/api/v1/reminders")).json.length === 0, "all purged");
+      for (const [m, p] of [["GET", "/api/v1/reminders"], ["POST", `/api/v1/reminders/${id}/complete`], ["GET", "/api/v1/reminder-lists"]]) {
+        expect((await fetch(`${baseUrl}${p}`, { method: m })).status === 401, `anonymous ${m} ${p} → 401`);
+      }
+    });
+
     await check("projects: create, assign tasks (top-level only), archive, delete unassigns tasks", async () => {
       expect((await api.req("POST", "/api/v1/projects", { body: { name: "" } })).status === 400, "blank name");
       const proj = await api.req("POST", "/api/v1/projects", { body: { name: "Kitchen remodel", description: "Q1" } });

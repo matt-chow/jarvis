@@ -845,3 +845,50 @@ per slice.
   recolour, set an icon, or delete (with confirmation).
 - **Export** includes `categories` and `task_categories`. Restore does not
   import them yet.
+
+### Reminders domain (slice 2)
+
+- **Separate records.** Reminders have their own tables (migration 0026,
+  schema v26): `reminders`, `reminder_lists`, `reminder_categories`,
+  `reminder_occurrences`, and `reminder_history`. A reminder may refer to a
+  task or project; deleting one clears the link in the same batch and the
+  reminder stays. A list delete keeps its reminders (they lose the list);
+  a category delete drops only its assignments.
+- **One record per series.** `due_date` is the current occurrence (the
+  cursor); the occurrence id is `<id>:<date>` (`<id>:-` when undated).
+  Resolved occurrences (`completed`, `missed`) are rows keyed by
+  (reminder, date), so replays are idempotent. Every action appends a
+  history line (completed, uncompleted, snoozed, missed).
+- **Time.** Dates and times are local to the reminder's IANA zone. Core
+  converts with a `ZoneClock` trait; the Worker implements it with the
+  runtime's `Intl.DateTimeFormat`. An ambiguous fall-back time takes the
+  first instant; a spring-forward gap moves forward. Unknown zones are `400`.
+- **Recurrence:** daily, weekly (weekdays), monthly, yearly, every *n* (≤ 999),
+  optional end date. Month ends clamp (31 Jan → 28/29 Feb). The rule is
+  re-anchored when the date, rule, or advance mode changes. **Advance**
+  `calendar` (the next date of the rule) or `completion` (the next date after
+  the day it was done).
+- **Missed occurrences:** `one` (default; the overdue one is recorded missed
+  once the next one starts), `skip` (recorded missed at the end of its day),
+  or `each` (the cursor waits; later completions are kept in
+  `completed_ahead` and `backlog` counts the rest).
+- **Alerts:** up to 5, `before` (minutes ≤ 28 days before the due time, or
+  09:00 for a date-only reminder) or `at` (a time, ≤ 28 days before). Default:
+  one at the due time (timed) or 09:00 (date-only); none when undated.
+  Unscheduled reminders never notify.
+- **Snooze** applies to the current occurrence only (minutes, an instant, or
+  09:00 tomorrow, ≤ 1 year); a stale occurrence is `409 stale`. It is cleared
+  by a reschedule. Overdue stays overdue until completed.
+- **Concurrency.** Every write is version-checked. A PATCH with
+  `base_version` merges per field (`field_versions` records when each field
+  last changed); only a real overlap is `409 conflict` with the current
+  record and the fields. The D1 save is one batch; its dependent statements
+  run only if the version-checked update took (a per-save `write_id`).
+- **Delete** is soft (`deleted_at`; restore with `POST …/restore`); deleting
+  an already-deleted reminder purges it. Nothing purges automatically.
+- **Task link.** With `complete_with_task`, completing the linked task
+  completes the reminder's current occurrence. One way only: completing a
+  reminder never touches the task, so there are no loops.
+- **Privacy.** Logs carry error kinds, never reminder text. The scheduler
+  query (`due_for_scan`) reads across owners by design, but every save is
+  scoped to the reminder's own owner.

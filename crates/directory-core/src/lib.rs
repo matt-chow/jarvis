@@ -32,6 +32,7 @@ pub mod planner;
 pub mod preferences;
 pub mod projects;
 pub mod rate_limit;
+pub mod reminders;
 pub mod search;
 pub mod system;
 pub mod tasks;

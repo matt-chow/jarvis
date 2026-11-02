@@ -187,6 +187,14 @@ impl TaskRepository for D1TaskRepository {
                         (SELECT id FROM tasks WHERE owner_id = ?1 AND parent_id = ?2))",
                     &[text(owner_id), text(id)],
                 )?,
+                // Reminders keep living, unlinked (0026).
+                stmt(
+                    &self.db,
+                    "UPDATE reminders SET task_id = NULL, complete_with_task = 0, version = version + 1
+                      WHERE owner_id = ?1 AND (task_id = ?2 OR task_id IN
+                        (SELECT id FROM tasks WHERE owner_id = ?1 AND parent_id = ?2))",
+                    &[text(owner_id), text(id)],
+                )?,
                 stmt(
                     &self.db,
                     "DELETE FROM tasks WHERE owner_id = ?1 AND parent_id = ?2",
@@ -200,7 +208,7 @@ impl TaskRepository for D1TaskRepository {
             ])
             .await
             .map_err(err)?;
-        Ok(results.get(3).is_some_and(|r| changes(r) > 0))
+        Ok(results.get(4).is_some_and(|r| changes(r) > 0))
     }
 
     async fn project_exists(&self, owner_id: &str, project_id: &str) -> Result<bool, String> {
