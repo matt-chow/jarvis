@@ -8,6 +8,7 @@ use super::zone::{local_at, local_to_utc, ZoneClock, DAY_MS, MINUTE_MS};
 use crate::categories::{self, MAX_PER_ITEM};
 use crate::entropy::{is_id, new_id, Entropy};
 use crate::identity::Principal;
+use crate::notifications::{notice, Notice};
 use crate::tasks::Priority;
 use crate::validate;
 use serde::{Deserialize, Serialize};
@@ -78,15 +79,17 @@ pub trait ReminderRepository {
     async fn count(&self, owner_id: &str) -> Result<u32, String>;
     /// Insert the reminder and its categories.
     async fn insert(&self, r: &Reminder) -> Result<(), String>;
-    /// Save the reminder, its categories, occurrence changes, and history in
-    /// one batch, only if the stored version is still `expected`. `false`
-    /// means it changed meanwhile (or is gone).
+    /// Save the reminder, its categories, occurrence changes, history, and
+    /// notices (ignoring any already logged) in one batch, only if the stored
+    /// version is still `expected`. `false` means it changed meanwhile (or
+    /// is gone), and nothing was written.
     async fn save(
         &self,
         r: &Reminder,
         expected: i64,
         changes: &[OccurrenceChange],
         history: &[HistoryEntry],
+        notices: &[Notice],
     ) -> Result<bool, String>;
     /// Remove the reminder with its categories, occurrences, history, and notification log.
     async fn purge(&self, owner_id: &str, id: &str) -> Result<bool, String>;
@@ -560,7 +563,7 @@ impl<'a, R: ReminderRepository, E: Entropy + ?Sized, C: ZoneClock> ReminderServi
             schedule::refresh(self.clock, &mut next, self.now);
             if self
                 .repo
-                .save(&next, before.version, &changes, &history)
+                .save(&next, before.version, &changes, &history, &[])
                 .await
                 .map_err(backend)?
             {
@@ -607,7 +610,7 @@ impl<'a, R: ReminderRepository, E: Entropy + ?Sized, C: ZoneClock> ReminderServi
             schedule::refresh(self.clock, &mut next, self.now);
             if self
                 .repo
-                .save(&next, before.version, &[], &[])
+                .save(&next, before.version, &[], &[], &[])
                 .await
                 .map_err(backend)?
             {
@@ -1222,8 +1225,29 @@ pub async fn run_scheduler<R: ReminderRepository, E: Entropy + ?Sized, C: ZoneCl
             }));
             hist.push(entry("missed"));
         }
+        // The alert to send, and any it superseded, are logged with the scan
+        // itself: a notice exists exactly when the high-water mark passed it.
+        let notice = |f: &Fire, state: &str| Notice {
+            id: new_id(entropy),
+            owner_id: next.owner_id.clone(),
+            reminder_id: next.id.clone(),
+            occurrence: f.occurrence.clone(),
+            slot: f.slot.clone(),
+            due_at: f.at,
+            state: state.to_owned(),
+            created_at: now,
+        };
+        let mut notices: Vec<Notice> = scan
+            .superseded
+            .iter()
+            .map(|f| notice(f, notice::SUPERSEDED))
+            .collect();
+        notices.extend(scan.send.iter().map(|f| notice(f, notice::PENDING)));
         // A lost race means someone edited it: the next minute's scan sees the new copy.
-        if repo.save(&next, before.version, &rows, &hist).await? {
+        if repo
+            .save(&next, before.version, &rows, &hist, &notices)
+            .await?
+        {
             out.push(Scanned {
                 owner_id: next.owner_id.clone(),
                 reminder_id: next.id.clone(),

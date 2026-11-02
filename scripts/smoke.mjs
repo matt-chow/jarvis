@@ -7,7 +7,9 @@
 //
 //   BASE_URL=https://directory.<you>.workers.dev DIRECTORY_API_TOKEN=dir_... npm run smoke
 //     Read-mostly checks against a deployed Worker using a device API token.
+import { generateKeyPairSync } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { SoftAuthenticator } from "./lib/authenticator.mjs";
 import { startDevServer } from "./lib/devserver.mjs";
 
@@ -100,9 +102,43 @@ async function anonymousLeaks(api) {
   return open;
 }
 
+/** A local stand-in for a push service: /ok/* answers 201, /gone/* 410. */
+async function mockPush(port) {
+  const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const jwk = publicKey.export({ format: "jwk" });
+  const requests = [];
+  const server = createServer((req, res) => {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => {
+      requests.push({ method: req.method, url: req.url, headers: req.headers, body: Buffer.concat(chunks) });
+      res.writeHead(req.url.startsWith("/gone/") ? 410 : 201).end();
+    });
+  });
+  await new Promise((r) => server.listen(port, "127.0.0.1", r));
+  return {
+    origin: `http://127.0.0.1:${port}`,
+    privateKey: privateKey.export({ format: "jwk" }).d,
+    publicKey: Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, "base64url"), Buffer.from(jwk.y, "base64url")]).toString("base64url"),
+    requests,
+    /** Wait for `n` pushes (up to 10 s). */
+    async wait(n) {
+      for (let i = 0; i < 100 && requests.length < n; i++) await new Promise((r) => setTimeout(r, 100));
+      expect(requests.length >= n, `expected ${n} push(es), got ${requests.length}`);
+      return requests.slice(0, n);
+    },
+    close: () => server.close(),
+  };
+}
+
 async function local() {
   console.log("starting isolated wrangler dev (fresh D1/R2 state)…");
-  const server = await startDevServer({ port: 8790, name: "smoke" });
+  const push = await mockPush(8799);
+  const server = await startDevServer({
+    port: 8790,
+    name: "smoke",
+    vars: { VAPID_PRIVATE_KEY: push.privateKey, VAPID_SUBJECT: "mailto:smoke@example.com", DIRECTORY_PUSH_TEST_ORIGIN: push.origin },
+  });
   const { baseUrl, origin, rpId, setupToken } = server;
   console.log(`smoke: ${baseUrl}`);
   const api = new Client(baseUrl, origin);
@@ -385,6 +421,76 @@ async function local() {
       for (const [m, p] of [["GET", "/api/v1/reminders"], ["POST", `/api/v1/reminders/${id}/complete`], ["GET", "/api/v1/reminder-lists"]]) {
         expect((await fetch(`${baseUrl}${p}`, { method: m })).status === 401, `anonymous ${m} ${p} → 401`);
       }
+    });
+
+    await check("notifications (D-049): devices, endpoint allowlist, payload-free VAPID push, claim once, ack, expiry, scheduled snooze alert", async () => {
+      const cfg = await api.req("GET", "/api/v1/notifications/config");
+      expect(cfg.status === 200 && cfg.json.enabled && cfg.json.public_key === push.publicKey, `config → ${cfg.text}`);
+      const reg = (endpoint, label = "") => api.req("POST", "/api/v1/notifications/subscriptions", { body: { endpoint, label } });
+      expect((await reg("https://evil.example/push/1")).status === 400, "unknown push host refused");
+      expect((await reg("https://fcm.googleapis.com:8443/fcm/send/x")).status === 400, "non-default port refused");
+      const a = await reg(`${push.origin}/ok/a`, "Smoke\u0007 phone");
+      expect(a.status === 200 && a.json.label === "Smoke phone" && !("endpoint" in a.json) && !("owner_id" in a.json), `register → ${a.text}`);
+      expect((await reg(`${push.origin}/ok/a`, "Smoke phone")).json.id === a.json.id, "renewing keeps the device");
+      const gone = await reg(`${push.origin}/gone/b`, "Old laptop");
+      expect((await api.req("GET", "/api/v1/notifications/subscriptions")).json.length === 2, "two devices");
+
+      // A test notification goes out at once, with no payload.
+      push.requests.length = 0;
+      const t = await api.req("POST", "/api/v1/notifications/test", { body: {} });
+      expect(t.status === 202 && t.json.notice_id, `test → ${t.text}`);
+      expect((await api.req("POST", "/api/v1/notifications/test", { body: {} })).status === 429, "second test within 30 s → busy");
+      const sent = await push.wait(2);
+      for (const p of sent) {
+        expect(p.method === "POST" && p.body.length === 0, "payload-free POST");
+        const auth = p.headers.authorization ?? "";
+        expect(/^vapid t=[\w-]+\.[\w-]+\.[\w-]+, k=[\w-]+$/.test(auth) && auth.endsWith(push.publicKey), `VAPID header → ${auth}`);
+        expect(p.headers.ttl === "43200" && p.headers.urgency === "high" && p.headers.topic === t.json.notice_id.slice(0, 32), "push headers");
+      }
+      const devices = (await api.req("GET", "/api/v1/notifications/subscriptions")).json;
+      expect(devices.length === 1 && devices[0].id === a.json.id && devices[0].last_ok_at, "410 removed the expired device; the other was accepted");
+      expect((await api.req("DELETE", `/api/v1/notifications/subscriptions/${gone.json.id}`)).status === 404, "already removed");
+
+      // The service worker claims what to show; a claim is once only.
+      const claim = (endpoint) => api.req("POST", "/api/v1/notifications/claim", { body: { endpoint } });
+      const shown = await claim(`${push.origin}/ok/a`);
+      expect(shown.status === 200 && shown.json.length === 1 && shown.json[0].reminder_id === null, `claim → ${shown.text}`);
+      expect((await claim(`${push.origin}/ok/a`)).json.length === 0, "claimed once");
+      const stranger = await claim(`${push.origin}/ok/unknown`);
+      expect(stranger.status === 200 && stranger.json.length === 0, "unknown endpoint: nothing to show (and no hint whose it is)");
+      const ack = (id, action) => api.req("POST", `/api/v1/notifications/deliveries/${id}/ack`, { body: { action } });
+      expect((await ack(shown.json[0].delivery_id, "opened")).status === 204, "ack");
+      expect((await ack("c".repeat(32), "opened")).status === 404, "unknown delivery");
+      expect((await ack(shown.json[0].delivery_id, "explode")).status === 400, "unknown action");
+
+      // The cron path: a snooze alert a few seconds out, then one scheduled run.
+      const rem = await api.req("POST", "/api/v1/reminders", { body: { title: "Dentist", due_date: "2031-05-01", due_time: "10:00", timezone: "UTC" } });
+      const until = Date.now() + 3000;
+      const sn = await api.req("POST", `/api/v1/reminders/${rem.json.id}/snooze`, { body: { until } });
+      expect(sn.status === 200 && sn.json.snoozed_until === until, `snooze → ${sn.text}`);
+      await new Promise((r) => setTimeout(r, 3500));
+      push.requests.length = 0;
+      const run = await fetch(`${baseUrl}/cdn-cgi/handler/scheduled?cron=*+*+*+*+*`);
+      const ran = await run.text();
+      expect(run.ok && !ran.includes("<html"), `scheduled → ${run.status} ${ran.slice(0, 80)}`);
+      await push.wait(1);
+      const due = (await claim(`${push.origin}/ok/a`)).json;
+      expect(due.length === 1 && due[0].reminder_id === rem.json.id && due[0].occurrence === "2031-05-01", `scheduled claim → ${JSON.stringify(due)}`);
+      expect(due[0].title === "Dentist" && !due[0].body.includes("Dentist") && due[0].url.includes(rem.json.id), "title, time-only body, deep link");
+      // A second run finds nothing new: one logical alert, one push.
+      push.requests.length = 0;
+      await fetch(`${baseUrl}/cdn-cgi/handler/scheduled?cron=*+*+*+*+*`);
+      await new Promise((r) => setTimeout(r, 500));
+      expect(push.requests.length === 0, "no duplicate push");
+      // The notification's Complete button, as the service worker sends it.
+      const done = await api.req("POST", `/api/v1/reminders/${rem.json.id}/complete`, { body: { occurrence: due[0].occurrence } });
+      expect(done.status === 200 && done.json.completed_at, `complete → ${done.text}`);
+      expect((await ack(due[0].delivery_id, "completed")).status === 204, "ack completed");
+      const hist = (await api.req("GET", "/api/v1/notifications/history?limit=10")).json;
+      const h = hist.find((x) => x.reminder_id === rem.json.id);
+      expect(h && h.title === "Dentist" && !h.open && h.deliveries[0].state === "completed", `history → ${JSON.stringify(h)}`);
+      const test = hist.find((x) => x.reminder_id === "");
+      expect(test && test.deliveries.map((d) => d.state).sort().join() === "expired,opened", `test history → ${JSON.stringify(test)}`);
     });
 
     await check("projects: create, assign tasks (top-level only), archive, delete unassigns tasks", async () => {
@@ -1281,6 +1387,7 @@ async function local() {
   } finally {
     if (failures) console.log(`\n--- wrangler output (tail) ---\n${server.logs().split("\n").slice(-40).join("\n")}`);
     server.stop();
+    push.close();
   }
 }
 

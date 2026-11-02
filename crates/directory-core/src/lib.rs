@@ -28,6 +28,7 @@ pub mod library;
 pub mod links;
 pub mod music;
 pub mod notes;
+pub mod notifications;
 pub mod planner;
 pub mod preferences;
 pub mod projects;

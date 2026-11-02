@@ -8,6 +8,7 @@
 use super::{changes, count, err, int, opt_int, opt_text, stmt, text};
 use crate::entropy::WebCryptoEntropy;
 use directory_core::entropy::new_id;
+use directory_core::notifications::Notice;
 use directory_core::reminders::{
     HistoryEntry, OccurrenceChange, OccurrenceRow, Reminder, ReminderList, ReminderRepository,
 };
@@ -370,6 +371,7 @@ impl ReminderRepository for D1ReminderRepository {
         expected: i64,
         occurrence_changes: &[OccurrenceChange],
         history: &[HistoryEntry],
+        notices: &[Notice],
     ) -> Result<bool, String> {
         let token = new_id(&WebCryptoEntropy);
         // ?1 id, ?2 owner, ?3.. the other columns, then the version check and token.
@@ -434,14 +436,40 @@ impl ReminderRepository for D1ReminderRepository {
                 ],
             )?);
         }
+        for n in notices {
+            batch.push(stmt(
+                &self.db,
+                &format!(
+                    "INSERT OR IGNORE INTO notification_log (id, owner_id, reminder_id, occurrence, slot, due_at, state, created_at)
+                     SELECT ?3, ?4, ?1, ?5, ?6, ?7, ?8, ?9 WHERE {TOOK}"
+                ),
+                &[
+                    text(&r.id),
+                    text(&token),
+                    text(&n.id),
+                    text(&r.owner_id),
+                    text(&n.occurrence),
+                    text(&n.slot),
+                    int(n.due_at),
+                    text(&n.state),
+                    int(n.created_at),
+                ],
+            )?);
+        }
         let results = self.db.batch(batch).await.map_err(err)?;
         Ok(results.first().is_some_and(|x| changes(x) > 0))
     }
 
     async fn purge(&self, owner_id: &str, id: &str) -> Result<bool, String> {
         let args = [text(owner_id), text(id)];
-        let mut batch = Vec::new();
+        let mut batch = vec![stmt(
+            &self.db,
+            "DELETE FROM notification_deliveries WHERE owner_id = ?1 AND notice_id IN
+             (SELECT id FROM notification_log WHERE owner_id = ?1 AND reminder_id = ?2)",
+            &args,
+        )?];
         for table in [
+            "notification_log",
             "reminder_history",
             "reminder_occurrences",
             "reminder_categories",

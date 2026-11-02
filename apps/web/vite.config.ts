@@ -22,6 +22,8 @@ const PUBLIC_SHELL = [
  */
 function serviceWorker(): Plugin {
   const template = fileURLToPath(new URL("./sw/service-worker.js", import.meta.url));
+  // Pure push helpers, inlined ahead of the template as plain functions.
+  const pushHelpers = fileURLToPath(new URL("./sw/push.js", import.meta.url));
   return {
     name: "directory:service-worker",
     apply: "build",
@@ -38,9 +40,11 @@ function serviceWorker(): Plugin {
       if (index?.type === "asset") hash.update(index.source);
       // "/" (not "/index.html"): Workers Static Assets redirects /index.html → /.
       const precache = ["/", ...PUBLIC_SHELL, ...files];
+      const helpers = readFileSync(pushHelpers, "utf8").replace(/^export /gm, "");
       const source = readFileSync(template, "utf8")
         .replace("__CACHE_VERSION__", hash.digest("hex").slice(0, 16))
-        .replace("__PRECACHE_MANIFEST__", JSON.stringify(precache));
+        .replace("__PRECACHE_MANIFEST__", JSON.stringify(precache))
+        .concat("\n", helpers);
       this.emitFile({ type: "asset", fileName: "sw.js", source });
     },
   };

@@ -11,14 +11,23 @@ mod bindings;
 mod d1;
 mod entropy;
 mod http;
+mod push;
 mod r2;
 mod zone;
 
 use http::{
     auth, automations, backup, blocks, categories, diagnostics, events, export, files, habits,
-    health, inbox, jarvis, journal, library, links, music, notes, preferences, projects, reminders,
-    search, tasks,
+    health, inbox, jarvis, journal, library, links, music, notes, notifications, preferences,
+    projects, reminders, search, tasks,
 };
+
+/// Cron (every minute, wrangler.toml `[triggers]`): reminder alerts (D-049).
+#[event(scheduled)]
+async fn scheduled(_event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
+    if let Err(e) = push::scheduled(&env).await {
+        console_error!("scheduled run failed: {e}");
+    }
+}
 
 #[event(fetch)]
 async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
@@ -98,6 +107,27 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .post_async("/api/v1/reminder-lists", reminders::create_list)
         .patch_async("/api/v1/reminder-lists/:id", reminders::update_list)
         .delete_async("/api/v1/reminder-lists/:id", reminders::delete_list)
+        // Notifications (D-049)
+        .get_async("/api/v1/notifications/config", notifications::config)
+        .get_async(
+            "/api/v1/notifications/subscriptions",
+            notifications::devices,
+        )
+        .post_async(
+            "/api/v1/notifications/subscriptions",
+            notifications::register,
+        )
+        .delete_async(
+            "/api/v1/notifications/subscriptions/:id",
+            notifications::remove,
+        )
+        .post_async("/api/v1/notifications/test", notifications::test)
+        .post_async("/api/v1/notifications/claim", notifications::claim)
+        .post_async(
+            "/api/v1/notifications/deliveries/:id/ack",
+            notifications::ack,
+        )
+        .get_async("/api/v1/notifications/history", notifications::history)
         // Calendar
         .get_async("/api/v1/events", events::list)
         .post_async("/api/v1/events", events::create)

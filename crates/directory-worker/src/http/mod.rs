@@ -19,6 +19,7 @@ pub mod library;
 pub mod links;
 pub mod music;
 pub mod notes;
+pub mod notifications;
 pub mod preferences;
 pub mod projects;
 pub mod reminders;

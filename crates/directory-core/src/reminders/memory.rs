@@ -2,6 +2,7 @@
 
 use super::model::{Reminder, ReminderList};
 use super::service::{HistoryEntry, OccurrenceChange, OccurrenceRow, ReminderRepository};
+use crate::notifications::Notice;
 use std::cell::RefCell;
 
 #[derive(Default)]
@@ -15,6 +16,8 @@ pub struct MemoryReminders {
     pub categories: RefCell<Vec<(String, String)>>,
     pub tasks: RefCell<Vec<(String, String)>>,
     pub projects: RefCell<Vec<(String, String)>>,
+    /// The notice log the scheduler writes (shared with the notification tests).
+    pub notices: RefCell<Vec<Notice>>,
 }
 
 impl MemoryReminders {
@@ -77,6 +80,7 @@ impl ReminderRepository for MemoryReminders {
         expected: i64,
         changes: &[OccurrenceChange],
         history: &[HistoryEntry],
+        notices: &[Notice],
     ) -> Result<bool, String> {
         {
             let mut all = self.reminders.borrow_mut();
@@ -89,6 +93,18 @@ impl ReminderRepository for MemoryReminders {
             *slot = r.clone();
         }
         self.apply(&r.owner_id, changes, history, &r.id);
+        let mut log = self.notices.borrow_mut();
+        for n in notices {
+            let same = |x: &Notice| {
+                x.owner_id == n.owner_id
+                    && x.reminder_id == n.reminder_id
+                    && x.occurrence == n.occurrence
+                    && x.slot == n.slot
+            };
+            if !log.iter().any(same) {
+                log.push(n.clone());
+            }
+        }
         Ok(true)
     }
     async fn purge(&self, owner_id: &str, id: &str) -> Result<bool, String> {
@@ -102,6 +118,9 @@ impl ReminderRepository for MemoryReminders {
         self.history
             .borrow_mut()
             .retain(|(o, h)| !(o == owner_id && h.reminder_id == id));
+        self.notices
+            .borrow_mut()
+            .retain(|n| !(n.owner_id == owner_id && n.reminder_id == id));
         Ok(self.reminders.borrow().len() < before)
     }
     async fn occurrences(

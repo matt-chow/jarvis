@@ -19,6 +19,7 @@ import type { LibraryItem, Progress, ProgressPatch } from "./library";
 import type { EntityRef, Linked } from "./links";
 import type { MusicLibrary, Playlist } from "./music";
 import type { Note, NotePatch, NoteSummary } from "./notes";
+import type { Device, HistoryItem as NotificationHistoryItem, PushConfig } from "./notifications";
 import type { Preferences, PreferencesPatch } from "./preferences";
 import type { NewProject, Project, ProjectPatch } from "./projects";
 import type { AgendaItem, HistoryEntry, NewReminder, Reminder, ReminderList, ReminderPatch } from "./reminders";
@@ -275,6 +276,17 @@ export class Api {
     this.call<{ task_id: string; category_ids: string[] }>("PUT", `/api/v1/tasks/${encodeURIComponent(taskId)}/categories`, {
       category_ids: ids,
     });
+
+  // ---- Notifications (D-049) ----
+  pushConfig = () => this.call<PushConfig>("GET", "/api/v1/notifications/config");
+  pushDevices = () => this.call<Device[]>("GET", "/api/v1/notifications/subscriptions");
+  /** Register or renew this browser's push endpoint. */
+  registerPush = (endpoint: string, label: string) =>
+    this.call<Device>("POST", "/api/v1/notifications/subscriptions", { endpoint, label });
+  removePushDevice = (id: string) => this.call<void>("DELETE", `/api/v1/notifications/subscriptions/${encodeURIComponent(id)}`);
+  /** Queue a test notification to every device (429 `busy` within 30 s of the last). */
+  testPush = () => this.call<{ notice_id: string }>("POST", "/api/v1/notifications/test", {});
+  notificationHistory = (limit = 50) => this.call<NotificationHistoryItem[]>("GET", `/api/v1/notifications/history?limit=${limit}`);
 
   // ---- Reminders (D-049) ----
   /** Every reminder, deleted ones included. */

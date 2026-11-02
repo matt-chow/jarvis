@@ -21,6 +21,12 @@ not_found_handling = "single-page-application"
 # Only API routes invoke the Worker; static files are served directly (free, unmetered).
 run_worker_first = ["/api/*"]
 
+# Reminder alerts (D-049): the scheduler runs every minute (Workers Free
+# allows 5 cron triggers per account). Local `wrangler dev` runs it only on
+# `curl /__scheduled` with `--test-scheduled`.
+[triggers]
+crons = ["* * * * *"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "directory-db"
@@ -45,6 +51,10 @@ DIRECTORY_ORIGINS = ""
 # Secrets (not stored here):
 #   DIRECTORY_SETUP_TOKEN — `npx wrangler secret put DIRECTORY_SETUP_TOKEN`; locally via .dev.vars
 #   OPENROUTER_API_KEY    — optional, AI intent parsing (D-043, docs/JARVIS_SHORTCUTS.md).
+#   VAPID_PRIVATE_KEY     — optional, Web Push for reminders (D-049); `node scripts/vapid-keys.mjs`.
+#                           Unset = notifications report "not configured".
+# Optional push var: VAPID_SUBJECT = "mailto:you@example.com" (default: the first https origin).
+# Never set DIRECTORY_PUSH_TEST_ORIGIN on a deployed Worker (local smoke only).
 # Optional AI vars (AI stays off unless both the key and a ":free" model are set):
 #   JARVIS_AI_MODEL = "<openrouter model id ending in :free>"
 #   JARVIS_AI_DAILY = "40"   # most AI calls per owner per UTC day (a chat turn may use up to 3)
@@ -59,6 +69,9 @@ DIRECTORY_ORIGINS = ""
 name = "directory-staging"
 workers_dev = true
 preview_urls = false
+
+[env.staging.triggers]
+crons = ["* * * * *"]
 
 [[env.staging.d1_databases]]
 binding = "DB"

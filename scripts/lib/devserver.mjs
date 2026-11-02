@@ -73,7 +73,7 @@ export async function startDevServer({ port = 8790, name = "smoke", vars = {} } 
 
   let output = "";
   const child = spawn(
-    command(["dev", "--port", String(port), "--ip", "127.0.0.1", "--persist-to", stateDir, "--env-file", `"${envFile}"`]),
+    command(["dev", "--port", String(port), "--ip", "127.0.0.1", "--test-scheduled", "--persist-to", stateDir, "--env-file", `"${envFile}"`]),
     { cwd: ROOT, env: env(), shell: true, detached: !IS_WIN, stdio: ["ignore", "pipe", "pipe"] },
   );
   child.stdout.on("data", (d) => (output += d));

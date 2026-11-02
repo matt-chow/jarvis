@@ -17,3 +17,10 @@ DIRECTORY_ORIGINS=http://localhost:8787,http://localhost:5173
 # JARVIS_AI_MODEL=<model id ending in :free>
 # JARVIS_AI_DAILY=40
 # JARVIS_AI_TIMEOUT_MS=12000
+
+# Optional: Web Push for reminders (D-049). Generate a key pair with
+#   node scripts/vapid-keys.mjs
+# Unset = notifications report "not configured". Locally, push services need
+# HTTPS origins and real browsers; the smoke test uses a mock push server.
+# VAPID_PRIVATE_KEY=<base64url P-256 private key>
+# VAPID_SUBJECT=mailto:you@example.com

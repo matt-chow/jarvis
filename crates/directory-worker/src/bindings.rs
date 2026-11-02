@@ -17,3 +17,10 @@ pub const AI_MODEL: &str = "JARVIS_AI_MODEL";
 pub const AI_DAILY: &str = "JARVIS_AI_DAILY";
 /// Var (optional): how long one AI call may take, in ms (default 12000, 2000–25000).
 pub const AI_TIMEOUT_MS: &str = "JARVIS_AI_TIMEOUT_MS";
+/// Secret (optional): VAPID private key for Web Push, base64url P-256 scalar
+/// (`node scripts/vapid-keys.mjs`). Unset = notifications "not configured".
+pub const VAPID_PRIVATE_KEY: &str = "VAPID_PRIVATE_KEY";
+/// Var (optional): VAPID contact, `mailto:` or `https://` (default: the first https origin).
+pub const VAPID_SUBJECT: &str = "VAPID_SUBJECT";
+/// Var (local smoke only): an extra push endpoint origin to accept. Never set when deployed.
+pub const PUSH_TEST_ORIGIN: &str = "DIRECTORY_PUSH_TEST_ORIGIN";

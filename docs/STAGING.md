@@ -220,6 +220,21 @@ chat turn uses up to 3) and `JARVIS_AI_TIMEOUT_MS` (per call, default
 12000). Without a model, Ask understands direct commands and says so
 (DECISIONS D-048).
 
+### 4.3a Optional: reminder notifications (Web Push)
+
+Reminders work without it; alerts then show only in the app. To send push
+notifications (docs/NOTIFICATIONS.md):
+
+```powershell
+node scripts/vapid-keys.mjs                               # prints VAPID_PRIVATE_KEY=… (not saved)
+npx wrangler secret put VAPID_PRIVATE_KEY --env staging   # paste the value
+```
+
+Optionally set `VAPID_SUBJECT` (`mailto:…`) in `[env.staging.vars]`. The
+deploy also installs the `* * * * *` cron trigger (`[env.staging.triggers]`,
+free tier). Live delivery is pending manual verification
+(docs/NOTIFICATIONS.md › Manual verification).
+
 ### 4.4 Check before going further (💻)
 
 ```powershell
@@ -236,7 +251,7 @@ targeting production.
 ## 5. Migrations, safely
 
 The database schema comes from the append-only files in `migrations/`
-(`0001` … `0024`). The app expects **schema v24**.
+(`0001` … `0027`). The app expects **schema v27**.
 
 💻 See what will be applied (for a brand-new database, all 23 are listed):
 
@@ -298,11 +313,11 @@ $base = "https://directory-staging.<subdomain>.workers.dev"
 ```
 
 1. **Health** should be `status: ok`, with the database check saying
-   `schema v24` and storage ok:
+   `schema v27` and storage ok:
    ```powershell
    Invoke-RestMethod "$base/api/v1/health" | ConvertTo-Json -Depth 4
    ```
-   `schema vN, expected v24` means migrations are missing (§5). The
+   `schema vN, expected v27` means migrations are missing (§5). The
    endpoint returns HTTP 503 while degraded.
 2. **Data needs sign-in.** This should print `401`:
    ```powershell

@@ -923,3 +923,54 @@ per slice.
   mirrors the core's recurrence and zone rules for optimistic updates; the
   server's answer replaces them.
 - **Honesty:** offline, the screen says that notifications need the server.
+
+### Notifications (slice 4)
+
+Guide: docs/NOTIFICATIONS.md.
+
+- **Web Push, payload-free.** Pushes carry no body, so there is no RFC 8291
+  encryption and no per-device keys to store. The service worker wakes,
+  calls `POST /notifications/claim {endpoint}` with its session cookie, and
+  shows what comes back (title, time-only body, deep link). The reminder
+  text never passes through a push service. Trade-off: a signed-out device
+  shows a generic "open Directory" notification.
+- **VAPID** (RFC 8292): an ES256 JWT signed in core (with the `p256` crate core already uses for passkeys; no
+  new dependency), one per push-service origin per run. The
+  private key is the `VAPID_PRIVATE_KEY` secret; the public key is derived
+  and served by `/notifications/config`. `VAPID_SUBJECT`, or else the first
+  https origin. No key: notices are recorded `not_configured`, and Settings
+  says push isn't set up.
+- **Durable state** (migration 0027, schema v27): `push_subscriptions`
+  (per device, per owner), `notification_log` (a *notice*: one logical alert,
+  unique per owner, reminder, occurrence, and slot, written in the reminder's
+  save batch), and `notification_deliveries` (one per notice and device,
+  unique). Inserts are `INSERT OR IGNORE`, so a replay or an overlapping cron
+  run can't make a second logical alert or a second push to a device.
+- **Scheduler.** A `* * * * *` cron (Workers Free) runs the reminder scan,
+  then dispatch (each due notice is re-checked against the reminder now:
+  resolved, stale after 12 h, superseded, no devices, or fan-out), then sends.
+  Batches are capped (50/50/25) for the CPU limit; the rest waits a minute.
+  Browser timers are never the authority. Every query is scoped by the
+  notice's own owner; deliveries join their subscription by id *and* owner.
+- **Honest states.** 2xx is `accepted`, not delivered; only a claim makes it
+  `shown`, and the notification's buttons record opened, completed,
+  snoozed, or dismissed. 404/410 → `expired` and the subscription is deleted;
+  429, 5xx, or a network error → retry with backoff (1, 2, 4, 8 min, 5
+  tries); 401/403 → `failed` (key mismatch). History keeps 30 days.
+- **Endpoint allowlist.** Only known push-service hosts, HTTPS on the default
+  port, ≤ 1024 characters, so registration can't aim the Worker's fetch
+  anywhere else (SSRF). Local smoke adds a mock origin through
+  `DIRECTORY_PUSH_TEST_ORIGIN`, which is never set in deployed config. A
+  claim for someone else's endpoint returns `[]`, not `404`, so endpoints
+  can't be probed. Endpoints are never returned to the browser.
+- **Actions.** Complete and Snooze 10 min call the normal reminder routes
+  for the notification's occurrence, so a stale action is `409` and opens the
+  app instead. Other snooze lengths are in the app (iOS shows at most two
+  actions, and some platforms none). A test notification is limited to one
+  per 30 s.
+- **Devices.** Up to 20 per owner; re-registering an endpoint renews it (and
+  moves it to the signed-in owner). `pushsubscriptionchange` re-registers.
+  iOS gets Web Push only from the Home Screen app; Settings explains this.
+- **Local cron trigger:** `wrangler dev --test-scheduled` exposes
+  `/cdn-cgi/handler/scheduled` (the legacy `/__scheduled` is caught by the
+  static-asset routing, since only `/api/*` runs the Worker first).

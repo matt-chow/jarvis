@@ -94,7 +94,7 @@ impl TextModel for OpenRouter {
 }
 
 /// `f`'s output, or `None` if it takes longer than `ms`.
-async fn within<F: Future>(f: F, ms: u64) -> Option<F::Output> {
+pub(crate) async fn within<F: Future>(f: F, ms: u64) -> Option<F::Output> {
     let mut f = pin!(f);
     let mut timer = pin!(Delay::from(Duration::from_millis(ms)));
     poll_fn(|cx| {

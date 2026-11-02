@@ -863,6 +863,18 @@ try {
     await page.evaluate(`fetch("/api/v1/notes/${note.id}", { method: "DELETE", headers: { Origin: location.origin } })`);
   });
 
+  await step("Notifications (D-049): Settings says honestly that push isn't set up; the service worker has the push handlers", async () => {
+    await page.hash("/settings");
+    await page.waitForText("Push isn't set up on this server yet");
+    await page.waitForText("No device has notifications on.");
+    await page.waitForText("Push is best-effort");
+    const sw = await page.evaluate(`fetch("/sw.js").then((r) => r.text())`);
+    for (const s of ['addEventListener("push"', "notificationclick", "function notificationFor", "/api/v1/notifications/claim"]) {
+      if (!sw.includes(s)) throw new Error(`sw.js lacks ${s}`);
+    }
+    await shot("settings-notifications");
+  });
+
   await step("Accessibility: on every module, controls have accessible names and the page has a heading", async () => {
     const problems = [];
     for (const m of ["home", "ask", "search", "inbox", "tasks", "projects", "calendar", "habits", "notes", "journal", "library", "music", "files", "jarvis", "settings"]) {

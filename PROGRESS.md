@@ -170,6 +170,32 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-11-01 — Reminders & categories, slice 4: notifications (D-049)
+- Core `notifications`: VAPID ES256 JWT, push-service endpoint allowlist,
+  devices (≤ 20, renew, remove), notices written in the reminder's save
+  batch (unique per owner, reminder, occurrence, slot), dispatch with
+  resolved/stale/superseded/no-devices/not-configured, sends with retry
+  and backoff, 404/410 expiry, claim-once, acks, history, pruning.
+- Migration 0027 (schema v27): `push_subscriptions`,
+  `notification_log`, `notification_deliveries`. D1 adapter, Fetch
+  transport, 8 routes under `/api/v1/notifications/*`, and a `* * * * *`
+  cron trigger (default and staging) running scan → dispatch → send.
+- Web: payload-free push in the service worker (claim, show, Complete and
+  Snooze 10 min actions, open, dismiss, `pushsubscriptionchange`), and a
+  Settings *notifications* panel (turn on/off per device, iOS Home Screen
+  guidance, devices, test, recent alerts in honest wording).
+  `scripts/vapid-keys.mjs`. Docs: docs/NOTIFICATIONS.md, STAGING §4.3a.
+- Gate: verify ✅ (core 226, Vitest 203, handoff 50), smoke ✅ (new check
+  with a local mock push service: VAPID headers, payload-free, 410 expiry,
+  claim once, the cron path via `/cdn-cgi/handler/scheduled`, no duplicate
+  push, complete from the notification), browser e2e 39/39 ✅ (new
+  Notifications step).
+- Watch item: the Planner e2e step timed out once ("moved an hour later")
+  at 23:40 local; it passed on the next run. Not caused by this slice.
+- Live delivery to real devices: **pending manual verification**
+  (docs/NOTIFICATIONS.md › Manual verification). Needs the owner's
+  `VAPID_PRIVATE_KEY` staging secret and a deploy.
+
 ### 2026-11-01 — Reminders & categories, slice 3: Reminders UI and offline (D-049)
 - Web: `lib/reminders.ts` (views, search, sort, overdue, client mirror of
   the core's recurrence and DST-aware zone rules), `useReminders` (cached,
