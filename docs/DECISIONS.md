@@ -1067,3 +1067,44 @@ DESIGN.md.
   calendar split. Per device, never synced, safe defaults on bad data.
 - **Sentence case.** Panel titles and status labels are sentence case;
   mono is kept for data. The browser e2e text match is case-insensitive.
+
+### Budget (slice 2)
+
+- **Records on the server, figures on the device.** Migration 0028
+  (schema v28) adds `budget_settings`, `budget_accounts`,
+  `budget_categories`, `budget_transactions`, and `budget_templates`,
+  all scoped by `owner_id`. `GET /api/v1/budget` returns the whole budget;
+  balances, totals, category spending, budget progress, and monthly charts
+  are computed in `lib/budget.ts`, so they work offline from the cached copy.
+- **Money is an integer in minor units** (cents for CAD), with one currency
+  per owner (default CAD). Changing the currency relabels; it never converts.
+- **Transfers move money between your accounts.** They change both balances
+  and are excluded from income, spending, and net. A transfer needs two
+  different accounts and has no category.
+- **Balances are derived:** opening balance + income + transfers in −
+  spending − transfers out. An account that has transactions or recurring
+  items can't be deleted (409, "archive it instead"); archived accounts drop
+  out of the total and of new-transaction pickers. Deleting a category keeps
+  its transactions, uncategorized.
+- **Recurring items are templates, not transactions.** Each date stays
+  pending until the owner records it (`POST /templates/:id/post` with a
+  client id), so totals only include money that moved. Posting is
+  idempotent (replay → 409 `exists`, treated as success by sync). Monthly
+  dates keep their anchor day (31 → 28/29 Feb → 31 Mar).
+- **CSV import is previewed first.** Rows are matched by column name
+  (date, amount or debit/credit, type, payee/description, category, account,
+  note, id); without a type column the sign decides. Every row shows as new,
+  duplicate (same id, or same date, type, amount, payee, and account), or an
+  error before anything is saved; duplicates are skipped unless the owner
+  ticks the box. The server inserts with `INSERT OR IGNORE` in chunks of
+  100, so a retried import never doubles. Export writes the same columns and
+  guards spreadsheet formulas.
+- **Every change works offline** through the sync queue (`budget.*` ops).
+- **Charts have tables.** Each chart has a "Show as a table" disclosure with
+  the same numbers.
+- **Not included, on purpose:** bank connections, paid financial APIs,
+  investment advice, multiple currencies. The budget is **not yet in the JSON
+  export/restore**; the CSV export covers transactions (follow-up).
+- Shortcuts: `g m` opens Budget; Alt+M adds an expense (Alt+E was avoided:
+  it opens the browser menu in Chrome and Edge on Windows). The sidebar
+  group "Listen" becomes "Money and music".

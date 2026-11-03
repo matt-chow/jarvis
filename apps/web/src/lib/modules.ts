@@ -6,7 +6,7 @@
 
 import type { IconName } from "../components/icons";
 
-export type ModuleId = "home" | "ask" | "search" | "inbox" | "tasks" | "reminders" | "projects" | "calendar" | "habits" | "notes" | "journal" | "library" | "music" | "files" | "jarvis" | "settings" | "modules";
+export type ModuleId = "home" | "ask" | "search" | "inbox" | "tasks" | "reminders" | "projects" | "calendar" | "habits" | "notes" | "journal" | "library" | "budget" | "music" | "files" | "jarvis" | "settings" | "modules";
 
 export interface ModuleMeta {
   id: ModuleId;
@@ -37,6 +37,7 @@ export const MODULES: readonly ModuleMeta[] = [
   { id: "journal", label: "Journal", icon: "journal", summary: "One entry per day, with mood.", stage: "preview", offline: true, group: "knowledge" },
   { id: "library", label: "Library", icon: "library", summary: "PDFs and ePubs with reading progress.", stage: "preview", offline: false, group: "knowledge" },
   { id: "files", label: "Files", icon: "files", summary: "Private cloud storage.", stage: "preview", offline: false, group: "knowledge" },
+  { id: "budget", label: "Budget", icon: "budget", summary: "Accounts, spending, income, and monthly budgets.", stage: "preview", offline: true, group: "life" },
   { id: "music", label: "Music", icon: "music", summary: "A turntable for your own audio files and playlists.", stage: "preview", offline: true, group: "life" },
   { id: "jarvis", label: "JARVIS", icon: "jarvis", summary: "Command console: preview and approval, presets, automations, history.", stage: "preview", offline: false, group: "system" },
   { id: "modules", label: "Modules", icon: "modules", summary: "Every module in one place.", stage: "ready", offline: true, group: "system" },
@@ -53,7 +54,7 @@ export const SIDEBAR_GROUPS: readonly { group: ModuleGroup; label?: string }[] =
   { group: "main" },
   { group: "plan", label: "Plan" },
   { group: "knowledge", label: "Write and read" },
-  { group: "life", label: "Listen" },
+  { group: "life", label: "Money and music" },
   { group: "system", label: "System" },
 ];
 

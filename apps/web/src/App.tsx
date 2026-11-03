@@ -28,6 +28,7 @@ const Jarvis = lazy(() => import("./modules/Jarvis").then((m) => ({ default: m.J
 const Journal = lazy(() => import("./modules/Journal").then((m) => ({ default: m.Journal })));
 const Library = lazy(() => import("./modules/Library").then((m) => ({ default: m.Library })));
 const Modules = lazy(() => import("./modules/Modules").then((m) => ({ default: m.Modules })));
+const Budget = lazy(() => import("./modules/Budget").then((m) => ({ default: m.Budget })));
 const Music = lazy(() => import("./modules/Music").then((m) => ({ default: m.Music })));
 const Notes = lazy(() => import("./modules/Notes").then((m) => ({ default: m.Notes })));
 const Calendar = lazy(() => import("./modules/Calendar").then((m) => ({ default: m.Calendar })));
@@ -59,6 +60,7 @@ const VIEWS: Record<ModuleId, ComponentType<ModuleProps>> = {
   notes: Notes,
   journal: Journal,
   library: Library,
+  budget: Budget,
   music: Music,
   files: Files,
   jarvis: Jarvis,
@@ -133,6 +135,7 @@ export function App() {
       e.preventDefault();
       if (hit.id === "help") setHelp(true);
       else if (hit.id === "panel") toggleRef.current();
+      else if (hit.id === "expense") location.hash = "/budget?add=expense";
       else if (hit.to) location.hash = `/${hit.to}`;
     };
     window.addEventListener("keydown", onKey);

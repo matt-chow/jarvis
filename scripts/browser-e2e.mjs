@@ -847,6 +847,40 @@ try {
     await page.click("Close player");
   });
 
+  await step("Budget (D-050): first account, quick-add an expense, overview totals, CSV import skips the duplicate", async () => {
+    await page.hash("/budget");
+    await page.waitForText("Nothing connects to a bank");
+    await page.fill("Name", "Chequing");
+    await page.fill("Opening balance", "1000");
+    await page.click("Add account");
+    await page.waitForText("Add transaction");
+    // Alt+M navigates here; the param opens the form.
+    await page.hash("/budget?add=expense");
+    await page.fill("Amount", "12.50");
+    await page.fill("Payee", "Bakery");
+    await page.evaluate(`document.querySelector('form[aria-label="Transaction"] button[type="submit"]').click()`);
+    await waitFor("form closed", () => page.evaluate(`!document.querySelector('form[aria-label="Transaction"]')`));
+    await page.waitForText("$12.50");
+    const today = localToday();
+    const dir = mkdtempSync(join(tmpdir(), "directory-budget-"));
+    const csv = join(dir, "bank.csv");
+    writeFileSync(csv, `Date,Description,Amount
+${today},Bakery,-12.50
+${today},Cafe,-4.00
+`);
+    await page.click("Import and export");
+    await page.setFile('input[type="file"][accept=".csv,text/csv"]', csv);
+    await page.waitForText("duplicate, skipped");
+    await page.click("Import 1 row");
+    await page.waitForText("1 imported.");
+    const b = await page.evaluate(`fetch("/api/v1/budget").then((r) => r.json())`);
+    const amounts = b.transactions.map((t) => t.amount).sort((x, y) => x - y);
+    if (b.accounts.length !== 1 || b.accounts[0].opening_balance !== 100000 || JSON.stringify(amounts) !== "[400,1250]") throw new Error(`budget: ${JSON.stringify(b)}`);
+    await page.click("Overview");
+    await page.waitForText("$16.50");
+    await shot("budget");
+  });
+
   await step("Restore: an export file adds missing records and reports what it did", async () => {
     const dir = mkdtempSync(join(tmpdir(), "directory-restore-"));
     const file = join(dir, "export.json");

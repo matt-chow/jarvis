@@ -10,6 +10,7 @@
  */
 import { ApiError, isNetworkError } from "./api";
 import { newBlock, patchBlock, type BlockPatch, type NewBlock, type TimeBlock } from "./blocks";
+import type { Entity as BudgetEntity, Imported, Inputs as BudgetInputs, Records as BudgetRecords, Template as BudgetTemplate, Transaction as BudgetTransaction, TransactionInput } from "./budget";
 import { sortCategories, withTaskCategories, type Category, type CategoryItem, type CategoryPatch, type NewCategory } from "./categories";
 import { addDays, dayNumber, nthStart, type CalendarEvent, type EventPatch, type NewEvent, type SplitRequest, type SplitResult } from "./calendar";
 import type { OutboxEntry } from "./db";
@@ -92,7 +93,16 @@ export type Op =
   | { kind: "link.create"; from: EntityRef; to: EntityRef }
   | { kind: "link.delete"; link_id: string }
   /** Reading progress (a PUT, so replays are safe). */
-  | { kind: "library.progress"; file_id: string; patch: ProgressPatch };
+  | { kind: "library.progress"; file_id: string; patch: ProgressPatch }
+  /** Budget records (D-050): creates carry a client id; updates replace every field (a PUT). */
+  | { kind: "budget.create"; entity: BudgetEntity; id: string; input: BudgetInputs[BudgetEntity] }
+  | { kind: "budget.update"; entity: BudgetEntity; id: string; input: BudgetInputs[BudgetEntity] }
+  | { kind: "budget.delete"; entity: BudgetEntity; id: string }
+  /** The transaction's client id makes a replay a 409. */
+  | { kind: "budget.post"; template_id: string; txn_id: string }
+  | { kind: "budget.currency"; currency: string }
+  /** Ids already stored are skipped, so a replay is safe. */
+  | { kind: "budget.import"; transactions: (TransactionInput & { id: string })[] };
 
 export interface NoteFields {
   title: string;
@@ -206,6 +216,12 @@ export interface SyncApi {
   setProgress(fileId: string, patch: ProgressPatch): Promise<Progress>;
   link(from: EntityRef, to: EntityRef): Promise<Linked>;
   unlink(linkId: string): Promise<void>;
+  createBudget<E extends BudgetEntity>(entity: E, id: string, input: BudgetInputs[E]): Promise<BudgetRecords[E]>;
+  replaceBudget<E extends BudgetEntity>(entity: E, id: string, input: BudgetInputs[E]): Promise<BudgetRecords[E]>;
+  deleteBudget(entity: BudgetEntity, id: string): Promise<void>;
+  postTemplate(templateId: string, txnId: string): Promise<{ transaction: BudgetTransaction; template: BudgetTemplate }>;
+  setBudgetCurrency(currency: string): Promise<{ currency: string }>;
+  importBudget(transactions: (TransactionInput & { id: string })[]): Promise<Imported>;
 }
 
 export interface SyncResult {
@@ -368,11 +384,29 @@ async function apply(api: SyncApi, op: Op, seen: Map<string, number>): Promise<n
       case "library.progress":
         await api.setProgress(op.file_id, op.patch);
         return;
+      case "budget.create":
+        await api.createBudget(op.entity, op.id, op.input);
+        return;
+      case "budget.update":
+        await api.replaceBudget(op.entity, op.id, op.input);
+        return;
+      case "budget.delete":
+        await api.deleteBudget(op.entity, op.id);
+        return;
+      case "budget.post":
+        await api.postTemplate(op.template_id, op.txn_id);
+        return;
+      case "budget.currency":
+        await api.setBudgetCurrency(op.currency);
+        return;
+      case "budget.import":
+        await api.importBudget(op.transactions);
+        return;
     }
   } catch (e) {
     // Already applied by an earlier, interrupted replay.
     // A split whose replacement exists was applied (the series edit is in the same transaction).
-    const isCreate = op.kind.endsWith(".create") || op.kind === "inbox.capture" || op.kind === "event.split";
+    const isCreate = op.kind.endsWith(".create") || op.kind === "inbox.capture" || op.kind === "event.split" || op.kind === "budget.post";
     // A check-in for a habit deleted meanwhile has nothing left to do.
     // A check-in or reading progress for something deleted meanwhile has nothing left to do.
     // A 404 means it is already done (deleted, or filed from another device).
@@ -474,8 +508,22 @@ function describeOp(op: Op): string {
       return `link a ${op.from.kind} to a ${op.to.kind}`;
     case "link.delete":
       return "remove a link";
+    case "budget.create":
+      return `add a budget ${BUDGET_NOUN[op.entity]}`;
+    case "budget.update":
+      return `change a budget ${BUDGET_NOUN[op.entity]}`;
+    case "budget.delete":
+      return `delete a budget ${BUDGET_NOUN[op.entity]}`;
+    case "budget.post":
+      return "record a recurring item";
+    case "budget.currency":
+      return `set the budget currency to ${op.currency}`;
+    case "budget.import":
+      return `import ${op.transactions.length} transaction${op.transactions.length === 1 ? "" : "s"}`;
   }
 }
+
+const BUDGET_NOUN: Record<BudgetEntity, string> = { accounts: "account", categories: "category", transactions: "transaction", templates: "recurring item" };
 
 function conflictOf(op: Op, e: unknown): Conflict | undefined {
   if (!(e instanceof ApiError) || e.code !== "conflict") return undefined;

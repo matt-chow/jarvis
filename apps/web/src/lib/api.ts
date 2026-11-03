@@ -6,6 +6,7 @@
 import type { NewRule, Rule, RulePatch } from "./automations";
 import type { ImportKind, ImportReport } from "./backup";
 import type { BlockPatch, NewBlock, TimeBlock } from "./blocks";
+import type { BudgetData, Entity as BudgetEntity, Imported, Inputs as BudgetInputs, Records as BudgetRecords, Template as BudgetTemplate, Transaction as BudgetTransaction, TransactionInput } from "./budget";
 import type { Category, CategoryListing, CategoryPatch, NewCategory } from "./categories";
 import type { CalendarEvent, EventPatch, NewEvent, SplitRequest, SplitResult } from "./calendar";
 import type { ClientError, ErrorReport } from "./errors";
@@ -264,6 +265,18 @@ export class Api {
       "GET",
       `/api/v1/tasks/plan?date=${date}${minutes ? `&minutes=${minutes}` : ""}${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ""}`,
     );
+
+  // ---- Budget (D-050) ----
+  budget = () => this.call<BudgetData>("GET", "/api/v1/budget");
+  setBudgetCurrency = (currency: string) => this.call<{ currency: string }>("PUT", "/api/v1/budget/settings", { currency });
+  createBudget = <E extends BudgetEntity>(entity: E, id: string, input: BudgetInputs[E]) =>
+    this.call<BudgetRecords[E]>("POST", `/api/v1/budget/${entity}`, { ...input, id });
+  replaceBudget = <E extends BudgetEntity>(entity: E, id: string, input: BudgetInputs[E]) =>
+    this.call<BudgetRecords[E]>("PUT", `/api/v1/budget/${entity}/${encodeURIComponent(id)}`, input);
+  deleteBudget = (entity: BudgetEntity, id: string) => this.call<void>("DELETE", `/api/v1/budget/${entity}/${encodeURIComponent(id)}`);
+  postTemplate = (templateId: string, txnId: string) =>
+    this.call<{ transaction: BudgetTransaction; template: BudgetTemplate }>("POST", `/api/v1/budget/templates/${encodeURIComponent(templateId)}/post`, { id: txnId });
+  importBudget = (transactions: (TransactionInput & { id: string })[]) => this.call<Imported>("POST", "/api/v1/budget/import", { transactions });
 
   // ---- Categories (D-049) ----
   categories = () => this.call<CategoryListing>("GET", "/api/v1/categories");

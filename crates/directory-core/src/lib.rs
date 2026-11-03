@@ -11,6 +11,7 @@
 pub mod automations;
 pub mod backup;
 pub mod blocks;
+pub mod budget;
 pub mod calendar;
 pub mod categories;
 pub mod diagnostics;

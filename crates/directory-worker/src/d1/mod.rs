@@ -2,6 +2,7 @@
 
 mod automations;
 mod blocks;
+mod budget;
 mod categories;
 mod diagnostics;
 mod events;
@@ -27,6 +28,7 @@ mod tasks;
 
 pub use automations::D1AutomationRepository;
 pub use blocks::D1BlockRepository;
+pub use budget::D1BudgetRepository;
 pub use categories::D1CategoryRepository;
 pub use diagnostics::D1DiagnosticsRepository;
 pub use events::D1EventRepository;

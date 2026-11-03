@@ -337,6 +337,63 @@ async function local() {
       }
     });
 
+    await check("budget (D-050): accounts, categories, transfers, recurring post (idempotent), import skips known ids, deletes", async () => {
+      const B = "/api/v1/budget";
+      const post = (kind, body) => api.req("POST", `${B}/${kind}`, { body });
+      const empty = (await api.req("GET", B)).json;
+      expect(empty.currency === "CAD" && empty.accounts.length === 0 && empty.transactions.length === 0, `empty → ${JSON.stringify(empty)}`);
+      expect((await api.req("PUT", `${B}/settings`, { body: { currency: "eur" } })).json.currency === "EUR", "currency upper-cased");
+      expect((await api.req("PUT", `${B}/settings`, { body: { currency: "euro" } })).status === 400, "bad currency");
+      await api.req("PUT", `${B}/settings`, { body: { currency: "CAD" } });
+
+      const cheq = await post("accounts", { id: "1".repeat(32), name: "Chequing", kind: "chequing", opening_balance: 100000 });
+      expect(cheq.status === 201 && cheq.json.opening_balance === 100000 && !("owner_id" in cheq.json), `account → ${cheq.text}`);
+      expect((await post("accounts", { id: "1".repeat(32), name: "Chequing" })).status === 409, "replayed create → 409");
+      expect((await post("accounts", { name: " chequing " })).status === 400, "duplicate account name refused");
+      const save = (await post("accounts", { name: "Savings", kind: "savings" })).json;
+      const food = (await post("categories", { name: "Groceries", kind: "expense", monthly_budget: 40000 })).json;
+      const pay = (await post("categories", { name: "Salary", kind: "income" })).json;
+      expect((await post("categories", { name: "Bonus", kind: "income", monthly_budget: 5 })).status === 400, "income has no budget");
+
+      const txn = (body) => post("transactions", { account_id: cheq.json.id, date: "2026-11-02", ...body });
+      const spend = await txn({ kind: "expense", category_id: food.id, amount: 2550, payee: "Market" });
+      expect(spend.status === 201 && spend.json.amount === 2550, `expense → ${spend.text}`);
+      expect((await txn({ kind: "expense", category_id: pay.id, amount: 1 })).status === 400, "category kind must match");
+      expect((await txn({ kind: "expense", amount: 0 })).status === 400, "zero amount refused");
+      expect((await txn({ kind: "transfer", to_account_id: cheq.json.id, amount: 5 })).status === 400, "transfer to itself refused");
+      expect((await txn({ kind: "transfer", to_account_id: save.id, amount: 5000 })).status === 201, "transfer");
+      const edited = await api.req("PUT", `${B}/transactions/${spend.json.id}`, { body: { kind: "expense", account_id: cheq.json.id, category_id: food.id, amount: 2600, date: "2026-11-02", payee: "Market" } });
+      expect(edited.status === 200 && edited.json.amount === 2600, `replace → ${edited.text}`);
+
+      const rent = await post("templates", { kind: "expense", account_id: cheq.json.id, amount: 120000, payee: "Rent", cadence: "monthly", next_date: "2026-01-31" });
+      expect(rent.status === 201 && rent.json.anchor_day === 31, `template → ${rent.text}`);
+      const occ = "2".repeat(32);
+      const posted = await api.req("POST", `${B}/templates/${rent.json.id}/post`, { body: { id: occ } });
+      expect(posted.status === 201 && posted.json.transaction.date === "2026-01-31" && posted.json.template.next_date === "2026-02-28", `post → ${posted.text}`);
+      expect((await api.req("POST", `${B}/templates/${rent.json.id}/post`, { body: { id: occ } })).status === 409, "replayed post → 409");
+
+      const row = (id) => ({ id, kind: "expense", account_id: cheq.json.id, amount: 300, date: "2026-10-01", payee: "Cafe" });
+      const imp = await api.req("POST", `${B}/import`, { body: { transactions: [row("3".repeat(32)), row("4".repeat(32))] } });
+      expect(imp.status === 200 && imp.json.imported === 2 && imp.json.skipped === 0, `import → ${imp.text}`);
+      const again = await api.req("POST", `${B}/import`, { body: { transactions: [row("3".repeat(32)), row("5".repeat(32))] } });
+      expect(again.json.imported === 1 && again.json.skipped === 1, `re-import → ${again.text}`);
+      const bad = await api.req("POST", `${B}/import`, { body: { transactions: [row("6".repeat(32)), { ...row("7".repeat(32)), amount: -1 }] } });
+      expect(bad.status === 400, "one bad row refuses the whole import");
+
+      const all = (await api.req("GET", B)).json;
+      expect(all.transactions.length === 6 && all.templates.length === 1 && all.categories.length === 2, `load → ${all.transactions.length}`);
+      expect((await api.req("DELETE", `${B}/accounts/${cheq.json.id}`)).json?.message?.includes("archive"), "account in use refused");
+      expect((await api.req("DELETE", `${B}/categories/${food.id}`)).status === 204, "delete category");
+      expect((await api.req("GET", B)).json.transactions.every((t) => t.category_id !== food.id), "its transactions stay, uncategorized");
+      expect((await api.req("DELETE", `${B}/nonsense/${food.id}`)).status === 404, "unknown kind → 404");
+      for (const t of all.transactions) await api.req("DELETE", `${B}/transactions/${t.id}`);
+      await api.req("DELETE", `${B}/templates/${rent.json.id}`);
+      expect((await api.req("DELETE", `${B}/accounts/${cheq.json.id}`)).status === 204, "unused account deletes");
+      for (const [m, p] of [["GET", B], ["POST", `${B}/transactions`], ["POST", `${B}/import`]]) {
+        expect((await fetch(`${baseUrl}${p}`, { method: m })).status === 401, `anonymous ${m} ${p} → 401`);
+      }
+    });
+
     await check("reminders (D-049): IANA zones, recurrence, complete/uncomplete, snooze, merge conflicts, lists, task links, soft delete", async () => {
       const post = (body) => api.req("POST", "/api/v1/reminders", { body });
       const act = (id, what, body = {}) => api.req("POST", `/api/v1/reminders/${id}/${what}`, { body });

@@ -119,6 +119,27 @@ function fakeApi(fail: (op: string) => unknown = () => undefined) {
       return applyBlockLocally([], { kind: "block.create", block: { id, title: "x", date: "2026-01-01", start_time: "09:00", end_time: "10:00" } })[0];
     },
     deleteBlock: async (id) => void (await run(`block-delete:${id}`)),
+    createBudget: async (entity, id) => {
+      await run(`budget-create:${entity}:${id}`);
+      return {} as never;
+    },
+    replaceBudget: async (entity, id) => {
+      await run(`budget-update:${entity}:${id}`);
+      return {} as never;
+    },
+    deleteBudget: async (entity, id) => void (await run(`budget-delete:${entity}:${id}`)),
+    postTemplate: async (templateId, txnId) => {
+      await run(`budget-post:${templateId}:${txnId}`);
+      return {} as never;
+    },
+    setBudgetCurrency: async (currency) => {
+      await run(`budget-currency:${currency}`);
+      return { currency };
+    },
+    importBudget: async (rows) => {
+      await run(`budget-import:${rows.length}`);
+      return { imported: rows.length, skipped: 0 };
+    },
     setProgress: async (fileId) => {
       await run(`progress:${fileId}`);
       return { file_id: fileId, status: "reading", current_page: 1, total_pages: 2, position: null, percent: 50, started_at: 0, finished_at: null, updated_at: 0 };

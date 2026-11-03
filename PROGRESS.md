@@ -176,6 +176,22 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-11-03 — Personal home redesign, slice 2: Budget (D-050)
+- New Budget module: accounts with opening and derived balances, expenses,
+  income, and transfers (excluded from totals), categories with monthly
+  budgets, recurring templates recorded when due (pending until then),
+  overview with income/spending/net, six-month and category charts (each
+  with a table), date range presets, transactions with filters.
+- CSV export, and CSV import with a row-by-row preview, duplicate skipping,
+  and idempotent chunked inserts. One currency (default CAD) in minor units.
+- Migration 0028 (schema v28), `/api/v1/budget` routes (all authenticated,
+  owner-scoped), offline queue ops, `g m` and Alt+M shortcuts.
+- Not in the JSON export yet (CSV export covers transactions).
+- Tests: core budget tests, Vitest (`lib/budget.test.ts`), smoke budget
+  check, browser e2e Budget step.
+- Gate: verify ✅ (core 246, Vitest 240, handoff 50), smoke ✅, browser e2e
+  all steps ✅.
+
 ### 2026-11-03 — Personal home redesign, slice 0: shell (D-050)
 - Authored SVG icon set replaces text glyphs (sidebar, Modules, tab bar).
   Sidebar groups: main, Plan, Write and read, Listen, System. Phone tabs:

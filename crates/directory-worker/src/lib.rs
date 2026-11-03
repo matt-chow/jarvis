@@ -16,9 +16,9 @@ mod r2;
 mod zone;
 
 use http::{
-    auth, automations, backup, blocks, categories, diagnostics, events, export, files, habits,
-    health, inbox, jarvis, journal, library, links, music, notes, notifications, preferences,
-    projects, reminders, search, tasks,
+    auth, automations, backup, blocks, budget, categories, diagnostics, events, export, files,
+    habits, health, inbox, jarvis, journal, library, links, music, notes, notifications,
+    preferences, projects, reminders, search, tasks,
 };
 
 /// Cron (every minute, wrangler.toml `[triggers]`): reminder alerts (D-049).
@@ -91,6 +91,14 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .patch_async("/api/v1/categories/:id", categories::update)
         .delete_async("/api/v1/categories/:id", categories::delete)
         .put_async("/api/v1/tasks/:id/categories", categories::set_task)
+        // Budget (D-050)
+        .get_async("/api/v1/budget", budget::load)
+        .put_async("/api/v1/budget/settings", budget::settings)
+        .post_async("/api/v1/budget/import", budget::import)
+        .post_async("/api/v1/budget/templates/:id/post", budget::post)
+        .post_async("/api/v1/budget/:kind", budget::create)
+        .put_async("/api/v1/budget/:kind/:id", budget::replace)
+        .delete_async("/api/v1/budget/:kind/:id", budget::delete)
         // Reminders (D-049)
         .get_async("/api/v1/reminders", reminders::list)
         .post_async("/api/v1/reminders", reminders::create)
