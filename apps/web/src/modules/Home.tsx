@@ -201,7 +201,7 @@ function StatusWidget({ props, className }: { props: ModuleProps; className?: st
       className={className}
       actions={
         <Button onClick={health.refresh} disabled={health.loading || !online} className={small}>
-          {health.loading ? "checking" : "recheck"}
+          {health.loading ? "Checking" : "Recheck"}
         </Button>
       }
     >

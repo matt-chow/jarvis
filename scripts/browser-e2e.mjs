@@ -1345,6 +1345,38 @@ ${today},Cafe,-4.00
     if (reset.jarvis !== undefined && reset.jarvis !== null) throw new Error(`reset: ${JSON.stringify(reset)}`);
   });
 
+  // Design review (D-050): key screens on a phone, a tablet, and a desktop, in
+  // light and dark. Only when SCREENSHOT_DIR is set; it checks nothing else.
+  if (SHOTS) {
+    await step("Design review captures: key screens at 390, 820, and 1440 px in light and dark", async () => {
+      const routes = ["home", "tasks", "calendar", "reminders", "habits", "budget", "music", "jarvis", "notes", "settings"];
+      const sizes = [
+        ["phone", 390, 844, true],
+        ["tablet", 820, 1180, true],
+        ["desktop", 1440, 900, false],
+      ];
+      try {
+        for (const scheme of ["light", "dark"]) {
+          await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] });
+          for (const [size, width, height, mobile] of sizes) {
+            await page.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: mobile ? 2 : 1, mobile });
+            for (const r of routes) {
+              await page.hash(`/${r}`);
+              await page.reload();
+              await waitFor(`${r} rendered`, () => page.evaluate(`!!document.querySelector("main h2, main h1")`));
+              await new Promise((res) => setTimeout(res, 400)); // let cached lists settle
+              const { data } = await page.send("Page.captureScreenshot", { format: "png" });
+              writeFileSync(join(SHOTS, `review-${r}-${size}-${scheme}.png`), Buffer.from(data, "base64"));
+            }
+          }
+        }
+      } finally {
+        await page.send("Emulation.clearDeviceMetricsOverride", {});
+        await page.send("Emulation.setEmulatedMedia", { features: [] });
+      }
+    });
+  }
+
   await step("sign out and forget this device: asks first, then deletes the browser's copy", async () => {
     const cached = `indexedDB.databases().then((dbs) => dbs.some((d) => d.name === "directory") && new Promise((res) => { const r = indexedDB.open("directory"); r.onsuccess = () => { const db = r.result; if (!db.objectStoreNames.contains("kv")) { db.close(); return res(false); } const g = db.transaction("kv").objectStore("kv").get("tasks:last"); g.onsuccess = () => { db.close(); res(g.result !== undefined); }; }; }))`;
     if (!(await page.evaluate(cached))) throw new Error("expected cached tasks before forgetting");

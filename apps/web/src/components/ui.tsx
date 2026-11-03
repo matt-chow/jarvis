@@ -45,7 +45,7 @@ export function Panel({
   return (
     <section className={`overflow-hidden rounded-lg border border-line bg-panel ${className}`}>
       <header className="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-2 px-[var(--pad-card)] pt-4">
-        <h2 className="flex min-w-0 flex-1 items-baseline gap-2 text-[15px] font-medium">
+        <h2 className="flex min-w-[min(100%,10rem)] flex-1 items-baseline gap-2 text-[15px] font-medium">
           <span className="truncate first-letter:uppercase">{head}</span>
           {rest.length > 0 && <span className="truncate font-mono text-xs font-normal text-muted">{rest.join(" · ")}</span>}
         </h2>

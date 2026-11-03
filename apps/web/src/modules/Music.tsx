@@ -210,7 +210,7 @@ function Upload({ disabled, onUploaded }: { disabled: boolean; onUploaded: () =>
     <div className="flex flex-wrap items-center gap-2">
       <label className={`inline-flex ${disabled ? "opacity-50" : "cursor-pointer"}`}>
         <span className="sr-only">Upload audio</span>
-        <input ref={input} type="file" accept="audio/*" multiple disabled={disabled} aria-label="Upload audio" onChange={(e) => void upload(e.target.files)} className="text-xs" />
+        <input ref={input} type="file" accept="audio/*" multiple disabled={disabled} aria-label="Upload audio" onChange={(e) => void upload(e.target.files)} className="max-w-full text-xs text-ink file:mr-3 file:rounded-full file:border file:border-line file:bg-panel file:px-3 file:py-1.5 file:text-[13px] file:text-ink" />
       </label>
       {status && (
         <span role="status" className="text-xs text-muted">

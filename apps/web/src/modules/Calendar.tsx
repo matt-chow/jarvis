@@ -322,7 +322,7 @@ export function Calendar({ online }: ModuleProps) {
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1">
           <Button className="min-h-9 px-3" onClick={() => setAnchor(today)} disabled={isCurrent && anchor === today}>
-            today
+            Today
           </Button>
           <button type="button" aria-label={`Previous ${view}`} onClick={() => go(-1)} className="grid size-9 place-items-center rounded-full font-mono text-muted hover:bg-sunken hover:text-ink">
             ‹
@@ -354,10 +354,10 @@ export function Calendar({ online }: ModuleProps) {
             className="min-h-9 px-3"
             onClick={() => setPanel({ kind: "create", spot: { date: view === "month" ? anchor : days.includes(today) ? today : days[0], start: Math.min(23 * 60, Math.ceil((now.minutes + 1) / 30) * 30), end: Math.min(1440, Math.ceil((now.minutes + 1) / 30) * 30 + 60) } })}
           >
-            + new
+            + New
           </Button>
           <Button className="min-h-9 px-3" aria-pressed={panel?.kind === "inbox"} onClick={() => setPanel(panel?.kind === "inbox" && isPhone() ? undefined : { kind: "inbox" })}>
-            unscheduled · {inbox.length}
+            Unscheduled · {inbox.length}
           </Button>
           <span className="hidden lg:contents">
             <Button className="min-h-9 px-3" aria-pressed={split} onClick={toggleSplit}>
@@ -365,7 +365,7 @@ export function Calendar({ online }: ModuleProps) {
             </Button>
           </span>
           <Button className="min-h-9 px-3" aria-expanded={showFilters} onClick={() => setShowFilters(!showFilters)}>
-            filters{JSON.stringify(filters) !== JSON.stringify(ALL_FILTERS) ? " ●" : ""}
+            Filters{JSON.stringify(filters) !== JSON.stringify(ALL_FILTERS) ? " ●" : ""}
           </Button>
           <Button className="min-h-9 px-3" aria-label="Planner settings" onClick={() => setPanel({ kind: "settings" })}>
             ⚙
@@ -473,7 +473,7 @@ export function Calendar({ online }: ModuleProps) {
                   tasks.reload();
                 }}
               >
-                retry
+                Try again
               </Button>
             </div>
           ) : view === "month" ? (

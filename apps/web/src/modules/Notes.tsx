@@ -49,7 +49,7 @@ export function Notes({ online }: ModuleProps) {
         title={`notes${state.notes ? ` · ${state.notes.length}` : ""}`}
         actions={
           <Button onClick={() => void create()} variant="primary" disabled={!state.notes} className={small}>
-            + new
+            + New
           </Button>
         }
       >

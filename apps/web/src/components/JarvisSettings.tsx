@@ -53,7 +53,7 @@ export function JarvisSettings({ online }: { online: boolean }) {
   };
 
   return (
-    <Panel title="jarvis scheduling" className="lg:col-span-2">
+    <Panel title="JARVIS scheduling" className="lg:col-span-2">
       {!prefs ? (
         <p className="cursor font-mono text-sm text-muted">loading</p>
       ) : (

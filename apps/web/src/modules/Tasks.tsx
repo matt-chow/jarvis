@@ -166,7 +166,7 @@ export function Tasks({ online }: ModuleProps) {
           </select>
         </label>
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <label className="flex min-w-0 flex-1 items-center gap-2">
+          <label className="flex min-w-[14rem] flex-1 items-center gap-2">
             <span className="label shrink-0">category</span>
             <select
               value={category}

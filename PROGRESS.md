@@ -131,6 +131,13 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 - Whether to delete the retired OneDrive copy of the repo (D-040).
 
 ### Next task
+0000. **Personal home redesign (D-050) is committed and pushed, not
+   deployed** (slices 0–7). It adds migration 0028 (Budget, schema v28),
+   which needs 0025–0027 first (item 000). Owner: look through the review
+   captures (`SCREENSHOT_DIR=<folder> npm run test:browser`), then take a D1
+   bookmark, migrate, and deploy to staging when ready. Check on a real
+   iPhone: the tab bar, the vinyl player's audio and crackle, and the Home
+   widgets.
 000. **Reminders & Shared Task Categories v1.0 (D-049) is committed, not
    deployed** (0bd3c56). Owner: D1 bookmark, `npm run db:migrate:staging`
    (0025–0027, schema v27), `npm run deploy:staging` (adds the minute cron),
@@ -175,6 +182,26 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 ---
 
 ## Log
+
+### 2026-11-03 — Personal home redesign, slice 7: design review captures (D-050)
+- `SCREENSHOT_DIR=… npm run test:browser` now also saves Home, Tasks,
+  Calendar, Reminders, Habits, Budget, Music, JARVIS, Notes, and Settings at
+  390 px (phone, 2x), 820 px (tablet, 2x), and 1440 px (desktop), in light and
+  dark (`review-<route>-<size>-<scheme>.png`, 60 images). Without the
+  variable the step is skipped. Captures are Chromium device emulation, not a
+  real iPhone or iPad.
+- Fixes from the review: sentence case left on Calendar (Today, + New,
+  Unscheduled, Filters, Try again), Notes (+ New), Settings (+ Add), and the
+  Home status widget (Checking, Recheck); "JARVIS" in the JARVIS and
+  scheduling panel titles; Panel titles keep at least 10rem before actions
+  wrap (Reminders on tablet showed "Remi…"); a styled upload button on
+  Music; the Tasks category filter and the device-token name no longer
+  shrink to a sliver on phones; no scrollbar under the Budget tabs.
+- Design tool: Paper Desktop wasn't running during the D-050 redesign, so it
+  was designed and checked directly in the running UI (these captures),
+  not in Paper.
+- Gate: verify ✅ (core 246, Vitest 248, handoff 50), smoke ✅, browser e2e
+  all steps ✅ (captures reviewed after the fixes).
 
 ### 2026-11-03 — Personal home redesign, slice 6: consistency pass (D-050)
 - Sentence-case controls on every remaining screen except Library (Tasks,

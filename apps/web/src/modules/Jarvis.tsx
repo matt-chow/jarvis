@@ -189,7 +189,7 @@ export function Jarvis({ online }: ModuleProps) {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5">
-      <Panel title="jarvis · commands">
+      <Panel title="JARVIS · commands">
         <form onSubmit={submit} className="flex gap-2">
           <span aria-hidden className="cursor self-center font-mono text-accent">
             &gt;

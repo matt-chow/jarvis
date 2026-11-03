@@ -102,7 +102,7 @@ export function Budget({ online }: ModuleProps) {
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <div role="tablist" aria-label="Budget sections" className="-mx-1 flex max-w-full gap-1 overflow-x-auto px-1">
+        <div role="tablist" aria-label="Budget sections" className="-mx-1 flex max-w-full gap-1 overflow-x-auto px-1 [scrollbar-width:none]">
           {VIEWS_.map((v) => (
             <button
               key={v.id}

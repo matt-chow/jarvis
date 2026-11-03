@@ -808,7 +808,7 @@ export function DayAgenda(props: { date: string; items: CalItem[]; onSelect: (i:
       )}
       <div className="flex gap-1.5">
         <Button className={small} variant="primary" onClick={props.onNew}>
-          + new
+          + New
         </Button>
         <Button className={small} onClick={props.onOpenDay}>
           Open day
