@@ -2,7 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 import { reportError } from "../hooks/reportError";
 import { Button, Panel } from "./ui";
 
-// Provisional component: awaiting design integration (see docs/MODULES.md › Design status).
+// Restyled in the D-050 pass (no separate Paper design): shared tokens and components, sentence case.
 
 interface Props {
   /** Which module this wraps (for the report). */
@@ -36,9 +36,9 @@ export class ErrorBoundary extends Component<Props, { error?: Error }> {
         </div>
         <div className="mt-3 flex gap-2">
           <Button variant="primary" onClick={() => this.setState({ error: undefined })}>
-            try again
+            Try again
           </Button>
-          <Button onClick={() => location.reload()}>reload app</Button>
+          <Button onClick={() => location.reload()}>Reload app</Button>
         </div>
         <p className="mt-3 text-xs text-muted">The error was recorded in Settings › diagnostics.</p>
       </Panel>

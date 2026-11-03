@@ -25,7 +25,7 @@ import {
 import { journalDoc } from "../lib/sync";
 import { localDate } from "../lib/tasks";
 
-// Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
+// Restyled in the D-050 pass (no separate Paper design): shared tokens and components, sentence case.
 
 const small = "min-h-7 px-2 text-[10px]";
 
@@ -71,7 +71,7 @@ export function Journal({ online }: ModuleProps) {
         title="journal"
         actions={
           <Button className={small} onClick={() => go(today)} disabled={date === today}>
-            today
+            Today
           </Button>
         }
       >
@@ -90,7 +90,7 @@ export function Journal({ online }: ModuleProps) {
           <div className="text-sm">
             <p className="text-muted">The journal couldn't be loaded.</p>
             <Button className={`${small} mt-2`} onClick={list.reload}>
-              retry
+              Try again
             </Button>
           </div>
         ) : list.items.length === 0 ? (
@@ -266,15 +266,15 @@ function DayEditor(props: {
               {confirmDelete ? (
                 <span className="flex gap-1.5">
                   <Button className={small} onClick={() => setConfirmDelete(false)}>
-                    keep
+                    Keep
                   </Button>
                   <Button variant="danger" className={small} onClick={() => void remove()}>
-                    confirm delete
+                    Confirm delete
                   </Button>
                 </span>
               ) : (
                 <Button variant="danger" className={small} onClick={() => setConfirmDelete(true)}>
-                  delete entry
+                  Delete entry
                 </Button>
               )}
             </div>

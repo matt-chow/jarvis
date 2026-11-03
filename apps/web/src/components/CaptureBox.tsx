@@ -47,7 +47,7 @@ export function CaptureBox({
         className={`${inputClass} min-w-0 flex-1 resize-none py-2 leading-snug`}
       />
       <Button type="submit" variant="primary" disabled={disabled || busy || !text.trim()}>
-        {flash ? "captured ✓" : "capture"}
+        {flash ? "Captured ✓" : "Capture"}
       </Button>
     </form>
   );

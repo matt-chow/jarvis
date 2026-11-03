@@ -462,10 +462,10 @@ export function EntryForm(props: {
 
       <div className="flex flex-wrap gap-1.5 pt-1">
         <Button type="submit" variant="primary" className={small} disabled={invalid || busy}>
-          {item ? "save" : kind === "task" ? (scheduleNow ? "add and schedule" : "add task") : kind === "event" ? "add event" : "schedule"}
+          {item ? "Save" : kind === "task" ? (scheduleNow ? "Add and schedule" : "Add task") : kind === "event" ? "Add event" : "Schedule"}
         </Button>
         <Button className={small} onClick={props.onDone}>
-          cancel
+          Cancel
         </Button>
       </div>
     </form>
@@ -561,7 +561,7 @@ export function ScheduleTask(props: {
                 <span className={`block text-xs ${s.late || s.short ? "text-warn" : "text-muted"}`}>{s.reason}</span>
               </span>
               <Button className={small} variant="primary" disabled={busy} onClick={() => void pick(s)} aria-label={`Schedule ${shortDate(s.date)} at ${clockLabel(s.start)}`}>
-                {moving ? "move here" : "schedule"}
+                {moving ? "Move here" : "Schedule"}
               </Button>
             </li>
           ))}
@@ -570,11 +570,11 @@ export function ScheduleTask(props: {
       <div className="flex flex-wrap gap-1.5">
         {!moving && (
           <Button className={small} onClick={props.onPlace} aria-pressed={props.placing}>
-            {props.placing ? "cancel placing" : "tap a time instead"}
+            {props.placing ? "Cancel placing" : "Tap a time instead"}
           </Button>
         )}
         <Button className={small} onClick={props.onDone}>
-          close
+          Close
         </Button>
       </div>
     </div>
@@ -643,11 +643,11 @@ export function ItemDetails(props: {
           {atRisk(task, a) && <p className="mt-1 text-xs text-warn">Not enough time scheduled before it's due.</p>}
           <div className="mt-2 flex flex-wrap gap-1.5">
             <Button className={small} onClick={() => void planner.setTaskDone(task, isOpen(task))}>
-              {isOpen(task) ? "complete task" : "reopen task"}
+              {isOpen(task) ? "Complete task" : "Reopen task"}
             </Button>
             {isOpen(task) && (
               <Button className={small} onClick={() => props.onSchedule(task)}>
-                plan time
+                Plan time
               </Button>
             )}
             <a href={`#/tasks?task=${task.id}`} className="inline-flex min-h-8 items-center rounded-full border border-line px-3 text-xs hover:bg-sunken">
@@ -679,22 +679,22 @@ export function ItemDetails(props: {
                   void planner.updateBlock(b, { status: "done", actual_minutes: actual ? Math.max(0, Math.min(1440, Number(actual) || 0)) : item.end! - item.start! }, item.title)
                 }
               >
-                session done
+                Session done
               </Button>
             </>
           ) : (
             <Button className={small} onClick={() => void planner.updateBlock(b, { status: "planned", actual_minutes: null }, item.title)}>
-              mark not done
+              Mark not done
             </Button>
           )}
           {b.status !== "skipped" && b.status !== "done" && (
             <Button className={small} onClick={() => void planner.updateBlock(b, { status: "skipped" }, item.title)}>
-              skip
+              Skip
             </Button>
           )}
           {b.status === "skipped" && (
             <Button className={small} onClick={() => void planner.updateBlock(b, { status: "planned" }, item.title)}>
-              restore
+              Restore
             </Button>
           )}
         </div>
@@ -718,7 +718,7 @@ export function ItemDetails(props: {
             </Button>
             {b && !item.fixed && task && (
               <Button className={small} onClick={() => props.onSchedule(task, item)}>
-                find another time
+                Find another time
               </Button>
             )}
           </div>
@@ -729,7 +729,7 @@ export function ItemDetails(props: {
       <div className="flex flex-wrap gap-1.5 border-t border-line pt-3">
         {item.kind !== "deadline" && (
           <Button className={small} onClick={props.onEdit}>
-            edit
+            Edit
           </Button>
         )}
         {item.kind !== "deadline" &&
@@ -747,31 +747,31 @@ export function ItemDetails(props: {
                   props.onClose();
                 }}
               >
-                confirm delete
+                Confirm delete
               </Button>
               <Button className={small} onClick={() => setConfirm(undefined)}>
-                keep
+                Keep
               </Button>
             </span>
           ) : e && e.repeat !== "none" ? (
             <>
               <Button variant="danger" className={small} onClick={() => setConfirm("one")}>
-                cancel this one
+                Cancel this one
               </Button>
               <Button variant="danger" className={small} onClick={() => setConfirm(item.occurrence === e.start_date ? "all" : "following")}>
-                delete from here
+                Delete from here
               </Button>
               <Button variant="danger" className={small} onClick={() => setConfirm("all")}>
-                delete all
+                Delete all
               </Button>
             </>
           ) : (
             <Button variant="danger" className={small} onClick={() => setConfirm("all")}>
-              delete
+              Delete
             </Button>
           ))}
         <Button className={small} onClick={props.onClose}>
-          close
+          Close
         </Button>
       </div>
     </div>
@@ -811,7 +811,7 @@ export function DayAgenda(props: { date: string; items: CalItem[]; onSelect: (i:
           + new
         </Button>
         <Button className={small} onClick={props.onOpenDay}>
-          open day
+          Open day
         </Button>
       </div>
     </div>
@@ -860,7 +860,7 @@ export function PlannerSettings(props: { hours: Hours; visible: [number, number]
           />
         </Field>
         <Button className={small} variant="primary" disabled={!changed || !valid} onClick={() => props.onHours(h)}>
-          save working hours
+          Save working hours
         </Button>
       </fieldset>
       <fieldset className="flex flex-col gap-2">

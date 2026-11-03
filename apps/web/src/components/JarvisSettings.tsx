@@ -5,7 +5,7 @@ import { jarvisForm, parseJarvisForm, type JarvisForm } from "../lib/preferences
 import { durationLabel } from "../lib/time";
 import { Button, Panel, inputClass } from "./ui";
 
-// Provisional (D-013): Settings fields in the existing style.
+// Settings fields in the existing style (D-050 pass).
 
 const small = "min-h-8 px-3 text-xs";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -119,11 +119,11 @@ export function JarvisSettings({ online }: { online: boolean }) {
           )}
           <div className="flex flex-wrap gap-2">
             <Button type="submit" variant="primary" className={small} disabled={!changed || !("prefs" in parsed)}>
-              save jarvis settings
+              Save JARVIS settings
             </Button>
             {saved && (
               <Button type="button" className={small} onClick={reset}>
-                use defaults
+                Use defaults
               </Button>
             )}
           </div>

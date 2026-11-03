@@ -14,7 +14,7 @@ import type { Note, NoteSummary } from "../lib/notes";
 import type { NoteFields } from "../lib/sync";
 import { resolveLinks } from "../lib/wiki";
 
-// Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
+// Restyled in the D-050 pass (no separate Paper design): shared tokens and components, sentence case.
 
 const small = "min-h-7 px-2 text-[10px]";
 
@@ -72,7 +72,7 @@ export function Notes({ online }: ModuleProps) {
           <div className="text-sm">
             <p className="text-muted">Notes couldn't be loaded.</p>
             <Button className={`${small} mt-2`} onClick={state.reload}>
-              retry
+              Try again
             </Button>
           </div>
         ) : state.notes.length === 0 ? (
@@ -180,7 +180,7 @@ function NoteEditor(props: {
             {SAVE_STATUS_TEXT[editor.status]}
           </span>
           <Button className={small} aria-pressed={pinned} onClick={() => editor.edit({ pinned: !pinned })}>
-            {pinned ? "unpin" : "pin"}
+            {pinned ? "Unpin" : "Pin"}
           </Button>
         </span>
       }
@@ -213,7 +213,7 @@ function NoteEditor(props: {
         {confirmDelete ? (
           <span className="flex gap-1.5">
             <Button className={small} onClick={() => setConfirmDelete(false)}>
-              keep
+              Keep
             </Button>
             <Button
               variant="danger"
@@ -223,12 +223,12 @@ function NoteEditor(props: {
                 void state.remove(id);
               }}
             >
-              confirm delete
+              Confirm delete
             </Button>
           </span>
         ) : (
           <Button variant="danger" className={small} onClick={() => setConfirmDelete(true)}>
-            delete
+            Delete
           </Button>
         )}
       </div>

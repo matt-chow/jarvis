@@ -8,7 +8,7 @@ import { localDb } from "../lib/db";
 import { breadcrumbs, filesRoute, joinFolder, type FileEntry, type Listing, type Usage } from "../lib/files";
 import { formatBytes, formatDate } from "../lib/format";
 
-// Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
+// Restyled in the D-050 pass (no separate Paper design): shared tokens and components, sentence case.
 
 const small = "min-h-7 px-2 text-[10px]";
 
@@ -152,10 +152,10 @@ export function Files({ online }: ModuleProps) {
         actions={
           <span className="flex gap-1.5">
             <Button className={small} disabled={busy || offline} onClick={() => setNewFolder("")}>
-              new folder
+              New folder
             </Button>
             <Button variant="primary" className={small} disabled={busy || offline} onClick={() => fileInput.current?.click()}>
-              upload
+              Upload
             </Button>
           </span>
         }
@@ -212,7 +212,7 @@ export function Files({ online }: ModuleProps) {
               className={`${inputClass} min-w-0 flex-1`}
             />
             <Button type="submit" className={small} disabled={!newFolder.trim() || newFolder.includes("/")}>
-              create
+              Create
             </Button>
           </form>
         )}
@@ -245,7 +245,7 @@ export function Files({ online }: ModuleProps) {
             <p className="mt-4 text-sm text-muted">This folder hasn't been opened on this device yet, so it needs a connection.</p>
           ) : (
             <Button className={`${small} mt-4`} onClick={() => void reload()}>
-              retry
+              Try again
             </Button>
           )
         ) : listing.folders.length === 0 && listing.files.length === 0 ? (
@@ -333,23 +333,23 @@ function FileRow(props: {
         {mode === "view" && (
           <span className="flex gap-1">
             <Button className={small} disabled={disabled} onClick={() => (setValue(file.name), setMode("rename"))}>
-              rename
+              Rename
             </Button>
             <Button className={small} disabled={disabled} onClick={() => (setValue(file.folder), setMode("move"))}>
-              move
+              Move
             </Button>
             <Button variant="danger" className={small} disabled={disabled} onClick={() => setMode("delete")}>
-              del
+              Del
             </Button>
           </span>
         )}
         {mode === "delete" && (
           <span className="flex gap-1">
             <Button className={small} onClick={() => setMode("view")}>
-              keep
+              Keep
             </Button>
             <Button variant="danger" className={small} onClick={() => void act(() => api.deleteFile(file.id))}>
-              confirm delete
+              Confirm delete
             </Button>
           </span>
         )}
@@ -369,7 +369,7 @@ function FileRow(props: {
             {mode}
           </Button>
           <Button className={small} onClick={() => setMode("view")}>
-            cancel
+            Cancel
           </Button>
         </form>
       )}

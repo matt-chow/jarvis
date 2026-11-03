@@ -39,24 +39,29 @@ D-046). Every screen uses its tokens and the shared `Panel`, `Button`, and
 `StatusChip` components. A screen is *integrated* once its layout matches
 its Paper artboard; *design system* means it has the new look but its own
 layout, because the artboard hasn't been read yet or doesn't exist.
+*D-050* means it was redesigned in the personal-home pass (2026-11) in the
+UI itself, because Paper Desktop was not running; every other screen got
+the D-050 consistency pass (sentence-case controls, no provisional styling).
+Library was left out of that pass on purpose.
 
 | Screen | File | Status |
 | --- | --- | --- |
 | App shell (sidebar, header, tab bar) | `App.tsx` | integrated (Desktop · Home, Mobile · Home) |
 | Sign-in / first-run setup | `components/AuthScreen.tsx` | design system |
 | Home dashboard and widgets | `modules/Home.tsx`, `modules/widgets.tsx`, `modules/Suggest.tsx` | integrated |
-| Music and player bar | `modules/Music.tsx`, `components/Player.tsx` | design system |
+| Music and player bar | `modules/Music.tsx`, `components/Player.tsx`, `components/Turntable.tsx` | D-050 |
 | JARVIS automations panel | `modules/AutomationsPanel.tsx` | design system |
 | Search | `modules/Search.tsx` | design system |
 | Inbox + capture box | `modules/Inbox.tsx`, `components/CaptureBox.tsx` | design system |
 | Tasks | `modules/Tasks.tsx` | design system |
 | Projects | `modules/Projects.tsx` | design system |
-| Habits | `modules/Habits.tsx` | design system |
-| Reminders | `modules/Reminders.tsx`, `components/SnoozeMenu.tsx` | provisional |
-| Calendar | `modules/Calendar.tsx` | design system |
+| Habits | `modules/Habits.tsx` | D-050 |
+| Reminders | `modules/Reminders.tsx`, `components/SnoozeMenu.tsx` | design system |
+| Calendar | `modules/Calendar.tsx`, `components/planner/*` | D-050 (split view) |
 | Notes | `modules/Notes.tsx` | design system |
 | Journal | `modules/Journal.tsx` | design system |
-| Library | `modules/Library.tsx` | design system |
+| Budget | `modules/Budget.tsx` | D-050 |
+| Library | `modules/Library.tsx` | design system (not in the D-050 pass) |
 | Files | `modules/Files.tsx` | design system |
 | Settings | `modules/Settings.tsx` | design system |
 | JARVIS console | `modules/Jarvis.tsx` | design system |

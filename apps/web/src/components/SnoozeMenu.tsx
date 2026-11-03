@@ -19,7 +19,7 @@ export function SnoozeMenu(props: { reminder: Reminder; disabled: boolean; onSno
   return (
     <span className="relative">
       <Button className={small} disabled={props.disabled} aria-expanded={open} aria-label={`Snooze “${r.title}”`} onClick={() => setOpen(!open)}>
-        snooze
+        Snooze
       </Button>
       {open && (
         <span
@@ -42,7 +42,7 @@ export function SnoozeMenu(props: { reminder: Reminder; disabled: boolean; onSno
               className={`${inputClass} min-w-0 flex-1 text-xs`}
             />
             <Button className={small} disabled={!custom || new Date(custom).getTime() <= Date.now()} onClick={() => pick(new Date(custom).getTime())}>
-              set
+              Set
             </Button>
           </span>
         </span>

@@ -152,7 +152,7 @@ export function LinkedSection({ entity, disabled }: { entity: EntityRef; disable
               className={`${inputClass} min-w-0 flex-1`}
             />
             <button type="button" onClick={() => setPicking(false)} className="font-mono text-[11px] text-muted hover:text-ink">
-              cancel
+              Cancel
             </button>
           </div>
           {!candidates && !day ? (

@@ -9,10 +9,10 @@ export function ConflictBanner({ at, onTheirs, onMine }: { at: number; onTheirs:
       <p>This was changed on another device ({formatTime(at)}).</p>
       <div className="mt-2 flex flex-wrap gap-2">
         <Button className={small} onClick={onTheirs}>
-          use theirs
+          Use theirs
         </Button>
         <Button className={small} variant="primary" onClick={onMine}>
-          keep mine
+          Keep mine
         </Button>
       </div>
     </div>

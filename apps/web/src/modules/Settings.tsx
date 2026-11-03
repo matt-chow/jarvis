@@ -16,7 +16,7 @@ import { useDevice, type Density } from "../lib/device";
 import { localDate } from "../lib/tasks";
 import { creationRequest, describePasskeyError, encodeRegistration } from "../lib/webauthn";
 
-// Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
+// Restyled in the D-050 pass (no separate Paper design): shared tokens and components, sentence case.
 
 function describe(e: unknown): string {
   if (e instanceof ApiError) {
@@ -219,7 +219,7 @@ export function Settings({ online, session }: ModuleProps) {
                   title={passkeys.length <= 1 ? "Your only passkey can't be removed" : undefined}
                   onClick={() => void removePasskey(p.id)}
                 >
-                  remove
+                  Remove
                 </Button>
               </li>
             ))}
@@ -251,7 +251,7 @@ export function Settings({ online, session }: ModuleProps) {
             <option value="jarvis">JARVIS only (Shortcuts)</option>
           </select>
           <Button type="submit" disabled={busy || !online}>
-            create
+            Create
           </Button>
         </form>
         {newSecret && (
@@ -270,10 +270,10 @@ export function Settings({ online, session }: ModuleProps) {
             )}
             <div className="mt-2 flex gap-2">
               <Button className={small} onClick={() => void navigator.clipboard?.writeText(newSecret.secret)}>
-                copy
+                Copy
               </Button>
               <Button className={small} onClick={() => setNewSecret(undefined)}>
-                done
+                Done
               </Button>
             </div>
           </div>
@@ -291,7 +291,7 @@ export function Settings({ online, session }: ModuleProps) {
                   </span>
                 </span>
                 <Button variant="danger" className={small} disabled={busy} onClick={() => void revokeToken(t.id)}>
-                  revoke
+                  Revoke
                 </Button>
               </li>
             ))}
@@ -311,7 +311,7 @@ export function Settings({ online, session }: ModuleProps) {
           contents stay in Files. Sign-in credentials are never included.
         </p>
         <Button className="mt-3" disabled={busy || !online} onClick={() => void run(downloadExport)}>
-          export my data
+          Export my data
         </Button>
         <Restore online={online} />
       </Panel>
@@ -354,10 +354,10 @@ function Diagnostics({ online }: { online: boolean }) {
       actions={
         <span className="flex gap-1.5">
           <Button className="min-h-7 px-2 text-[10px]" disabled={!online} onClick={load}>
-            refresh
+            Refresh
           </Button>
           <Button className="min-h-7 px-2 text-[10px]" variant="danger" disabled={!online || !errors?.length} onClick={() => void clear()}>
-            clear
+            Clear
           </Button>
         </span>
       }
@@ -481,7 +481,7 @@ function Restore({ online }: { online: boolean }) {
             </p>
           )}
           <Button className="mt-2" variant="primary" disabled={running || !online || plan.batches.length === 0} onClick={() => void restore(plan)}>
-            {running ? "restoring…" : "restore"}
+            {running ? "Restoring…" : "Restore"}
           </Button>
         </div>
       )}
@@ -538,10 +538,10 @@ function SignOut({ session }: { session: ModuleProps["session"] }) {
           {confirm > 0 ? `${confirm} change${confirm === 1 ? " hasn't" : "s haven't"} synced yet and will be lost. ` : ""}Delete everything saved in this browser?
         </span>
         <Button className={small} onClick={() => setConfirm(undefined)}>
-          keep
+          Keep
         </Button>
         <Button variant="danger" className={small} onClick={() => void session.signOut({ forget: true })}>
-          sign out and forget
+          Sign out and forget
         </Button>
       </span>
     );
@@ -549,10 +549,10 @@ function SignOut({ session }: { session: ModuleProps["session"] }) {
   return (
     <span className="flex gap-1.5">
       <Button onClick={() => void session.signOut()} className={small}>
-        sign out
+        Sign out
       </Button>
       <Button onClick={() => void ask()} className={small} title="Also delete the offline copy of your data in this browser">
-        sign out and forget this device
+        Sign out and forget this device
       </Button>
     </span>
   );

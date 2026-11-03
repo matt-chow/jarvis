@@ -35,7 +35,7 @@ import {
   type TaskStatus,
 } from "../lib/tasks";
 
-// Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
+// Restyled in the D-050 pass (no separate Paper design): shared tokens and components, sentence case.
 
 const FILTERS: { id: TaskFilter; label: string }[] = [
   { id: "open", label: "Open" },
@@ -184,10 +184,10 @@ export function Tasks({ online }: ModuleProps) {
             </select>
           </label>
           <Button className={small} aria-pressed={grouped} onClick={() => setGrouped(!grouped)}>
-            {grouped ? "ungroup" : "group"}
+            {grouped ? "Ungroup" : "Group"}
           </Button>
           <Button className={small} aria-pressed={managing} onClick={() => setManaging(!managing)}>
-            categories
+            Categories
           </Button>
         </div>
         <QuickAdd
@@ -206,7 +206,7 @@ export function Tasks({ online }: ModuleProps) {
           <div className="mt-4 text-sm">
             <p className="text-muted">Tasks couldn't be loaded.</p>
             <Button className={`${small} mt-2`} onClick={state.reload}>
-              retry
+              Try again
             </Button>
           </div>
         ) : tree.length === 0 ? (
@@ -250,7 +250,7 @@ export function Tasks({ online }: ModuleProps) {
           title="categories"
           actions={
             <Button onClick={() => setManaging(false)} className={small} aria-label="Close categories">
-              close
+              Close
             </Button>
           }
         >
@@ -342,7 +342,7 @@ function PlanPanel(props: {
           />
         </label>
         <Button type="submit" disabled={!online || busy || invalid}>
-          {busy ? "planning…" : budget ? "suggest" : "priorities"}
+          {busy ? "Planning…" : budget ? "Suggest" : "Priorities"}
         </Button>
       </form>
       {invalid && <p className="mt-2 text-sm text-bad">Enter whole minutes from 1 to 960.</p>}
@@ -426,7 +426,7 @@ function QuickAdd({ disabled, onAdd }: { disabled: boolean; onAdd: (title: strin
         className={`${inputClass} min-w-0 flex-1`}
       />
       <Button type="submit" variant="primary" disabled={disabled || busy || !title.trim()}>
-        add
+        Add
       </Button>
     </form>
   );
@@ -533,7 +533,7 @@ function TaskDetail(props: {
       title="task"
       actions={
         <Button onClick={onClose} className={small} aria-label="Close task details">
-          close
+          Close
         </Button>
       }
     >
@@ -615,7 +615,7 @@ function TaskDetail(props: {
             />
             {task.due_date && (
               <Button className={small} disabled={readOnly} onClick={() => void state.update(task.id, { due_date: null })}>
-                clear
+                Clear
               </Button>
             )}
           </span>
@@ -735,7 +735,7 @@ function TaskDetail(props: {
                 className={`${inputClass} min-w-0 flex-1`}
               />
               <Button type="submit" className={small} disabled={readOnly || !subtask.trim()}>
-                add
+                Add
               </Button>
             </form>
           </div>
@@ -746,15 +746,15 @@ function TaskDetail(props: {
           {confirmDelete ? (
             <span className="flex gap-1.5">
               <Button className={small} onClick={() => setConfirmDelete(false)}>
-                keep
+                Keep
               </Button>
               <Button variant="danger" className={small} onClick={() => void state.remove(task.id)}>
-                confirm delete
+                Confirm delete
               </Button>
             </span>
           ) : (
             <Button variant="danger" className={small} disabled={readOnly} onClick={() => setConfirmDelete(true)}>
-              delete
+              Delete
             </Button>
           )}
         </div>

@@ -37,7 +37,7 @@ import { MAX_ASK } from "../lib/talk";
 import { localDate } from "../lib/tasks";
 
 // Paper "Mobile · JARVIS · Voice" (docs/DESIGN_HANDOFF.md): tidal orb, quoted turns, Proposed card.
-// Plan steps, choices, and undo reuse that card (provisional, D-013).
+// Plan steps, choices, and undo reuse that card (D-050 pass).
 
 const EXAMPLES = [
   "What should I do today?",
@@ -168,7 +168,7 @@ function Bubble({ turn, chat, onDecide, onToggle, onSay, onRetry, onExample }: B
         {turn.retry && (
           <div className="mt-2">
             <Button className="min-h-10" disabled={busy} onClick={() => turn.retry && onRetry(turn.retry)}>
-              retry
+              Try again
             </Button>
           </div>
         )}
@@ -222,17 +222,17 @@ function Bubble({ turn, chat, onDecide, onToggle, onSay, onRetry, onExample }: B
         {reply.via === "model" && <span className="label">ai</span>}
         {plan && canUndo(plan) && !undone && !pending && (
           <Button className="min-h-10" disabled={busy} onClick={() => onSay(`Undo “${plan.input}”`, { undo: plan.id })}>
-            undo
+            Undo
           </Button>
         )}
       </div>
       {pending && (
         <div className="mt-4 flex justify-end gap-2">
           <Button className="min-h-11 min-w-24" disabled={busy} onClick={() => onDecide(false)}>
-            cancel
+            Cancel
           </Button>
           <Button variant="primary" className="min-h-11 min-w-28" disabled={busy || nothingLeft} onClick={() => onDecide(true)}>
-            {skip.length ? `confirm ${plan!.actions.length - skip.length}` : "confirm"}
+            {skip.length ? `confirm ${plan!.actions.length - skip.length}` : "Confirm"}
           </Button>
         </div>
       )}
@@ -383,7 +383,7 @@ export function Ask({ online, panel }: Pick<ModuleProps, "online"> & { panel?: {
           <h2 className="flex-1 text-[17px] font-medium tracking-wide">JARVIS</h2>
           {chat.turns.length > 0 && (
             <button type="button" onClick={() => void restart()} disabled={chat.busy} className="min-h-11 px-2 font-mono text-[11px] text-muted underline-offset-4 hover:underline">
-              new
+              New
             </button>
           )}
           {speakable && (
@@ -393,7 +393,7 @@ export function Ask({ online, panel }: Pick<ModuleProps, "online"> & { panel?: {
               onClick={toggleVoice}
               className={`min-h-11 rounded-full px-3 font-mono text-[11px] ${voice ? "text-accent" : "text-muted"}`}
             >
-              voice reply · {voice ? "on" : "off"}
+              Voice reply · {voice ? "on" : "off"}
             </button>
           )}
           <a href="#/jarvis" className="flex min-h-11 items-center px-2 font-mono text-[11px] text-muted underline-offset-4 hover:underline">
@@ -479,7 +479,7 @@ export function Ask({ online, panel }: Pick<ModuleProps, "online"> & { panel?: {
               className={`${inputClass} min-h-12 flex-1 resize-none rounded-md border-transparent bg-sunken py-3 text-base leading-snug`}
             />
             <Button type="submit" variant="primary" className="min-h-12" disabled={disabled || !draft.trim()}>
-              send
+              Send
             </Button>
             <button
               type="button"
@@ -505,7 +505,7 @@ export function Ask({ online, panel }: Pick<ModuleProps, "online"> & { panel?: {
           </div>
           {listening ? (
             <button type="button" onClick={() => listening.cancel()} className="min-h-9 self-end font-mono text-[11px] text-muted underline underline-offset-4">
-              discard
+              Discard
             </button>
           ) : (
             <p className="label text-right">{support.ok ? "your browser transcribes; Directory gets text only" : "mic · keyboard dictation"}</p>

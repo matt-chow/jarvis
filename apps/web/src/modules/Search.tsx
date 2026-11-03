@@ -9,7 +9,7 @@ import { localDb } from "../lib/db";
 import { MIN_QUERY, SEARCH_GLYPH, hitRoute, searchLocal, type SearchHit } from "../lib/search";
 import { loadCachedData, toLocalDocs } from "../lib/searchCache";
 
-// Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
+// Restyled in the D-050 pass (no separate Paper design): shared tokens and components, sentence case.
 
 const DEBOUNCE_MS = 250;
 

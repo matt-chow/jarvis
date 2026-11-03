@@ -10,7 +10,7 @@ import {
 } from "../lib/webauthn";
 import { Button, Panel } from "./ui";
 
-// Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
+// Restyled in the D-050 pass (no separate Paper design): shared tokens and components, sentence case.
 
 const API_MESSAGES: Record<string, string> = {
   setup_token_invalid: "That setup token is not correct.",
@@ -79,7 +79,7 @@ export function AuthScreen({ setupRequired, unavailable, onSignedIn, onRetry }: 
             <p className="text-sm">Directory can't reach its server, and this device has no saved session.</p>
             <p className="mt-2 font-mono text-xs text-muted">{unavailable}</p>
             <Button className="mt-4" onClick={onRetry}>
-              retry
+              Try again
             </Button>
           </Panel>
         ) : setupRequired ? (
@@ -110,7 +110,7 @@ export function AuthScreen({ setupRequired, unavailable, onSignedIn, onRetry }: 
                 />
               </label>
               <Button type="submit" variant="primary" disabled={busy || !supported || !setupToken.trim()}>
-                {busy ? "waiting for passkey…" : "create passkey"}
+                {busy ? "Waiting for passkey…" : "Create passkey"}
               </Button>
             </form>
           </Panel>
@@ -118,7 +118,7 @@ export function AuthScreen({ setupRequired, unavailable, onSignedIn, onRetry }: 
           <Panel title="sign in">
             <p className="text-sm text-muted">Use the passkey you registered for Directory.</p>
             <Button className="mt-4 w-full" variant="primary" onClick={() => void signIn()} disabled={busy || !supported}>
-              {busy ? "waiting for passkey…" : "sign in with passkey"}
+              {busy ? "Waiting for passkey…" : "Sign in with passkey"}
             </Button>
           </Panel>
         )}

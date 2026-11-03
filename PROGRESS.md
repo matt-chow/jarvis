@@ -176,6 +176,14 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-11-03 — Personal home redesign, slice 6: consistency pass (D-050)
+- Sentence-case controls on every remaining screen except Library (Tasks,
+  Reminders, Projects, Notes, Journal, Files, Inbox, Settings, JARVIS,
+  Ask, sign-in, planner details, shared components); "Try again" for retry.
+  Provisional markers removed; docs/MODULES.md design status updated.
+- Gate: verify ✅ (core 246, Vitest 248, handoff 50), smoke ✅, browser e2e
+  all steps ✅.
+
 ### 2026-11-03 — Personal home redesign, slice 1 polish: Home at a glance and widget sizes (D-050)
 - Home shows a line under the greeting: next or current event, due today,
   overdue (tasks and reminders). Widgets can be set full or half width with

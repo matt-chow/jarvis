@@ -48,8 +48,8 @@ import {
 import { clientId, reminderConflictKey, type ReminderConflict } from "../lib/sync";
 import { isOpen as taskOpen, localDate } from "../lib/tasks";
 
-// Provisional screen: awaiting design integration (D-013; see docs/MODULES.md › Design status).
-// Built from the Tasks screen's rows, pills, and panels.
+// Restyled in the D-050 pass (no separate Paper design): built from the Tasks
+// screen's rows, pills, and panels, in sentence case.
 
 const small = "min-h-7 px-2 text-[10px]";
 const NO_LIST = "none";
@@ -127,11 +127,11 @@ function SyncConflicts({ state, names }: { state: RemindersState; names: (id: st
               <div className="flex flex-wrap gap-2">
                 {!expired && (
                   <Button className={small} disabled={busy !== undefined} onClick={() => void act(c, "mine")}>
-                    {c.kind === "fields" ? "use this device's" : `apply to ${c.theirs.due_date ? "the current one" : "it now"}`}
+                    {c.kind === "fields" ? "Use this device's" : `apply to ${c.theirs.due_date ? "the current one" : "it now"}`}
                   </Button>
                 )}
                 <Button className={small} disabled={busy !== undefined} onClick={() => void act(c, "theirs")}>
-                  {c.kind === "fields" ? "keep other device's" : "discard"}
+                  {c.kind === "fields" ? "Keep other device's" : "Discard"}
                 </Button>
               </div>
             </li>
@@ -276,10 +276,10 @@ export function Reminders({ online }: ModuleProps) {
         </div>
         <div className="mb-3 flex flex-wrap gap-2">
           <Button className={small} aria-pressed={managing === "lists"} onClick={() => setManaging(managing === "lists" ? undefined : "lists")}>
-            lists
+            Lists
           </Button>
           <Button className={small} aria-pressed={managing === "categories"} onClick={() => setManaging(managing === "categories" ? undefined : "categories")}>
-            categories
+            Categories
           </Button>
         </div>
         {view !== "completed" && view !== "deleted" && (
@@ -309,7 +309,7 @@ export function Reminders({ online }: ModuleProps) {
           <div className="mt-4 text-sm">
             <p className="text-muted">Reminders couldn't be loaded.</p>
             <Button className={`${small} mt-2`} onClick={state.reload}>
-              retry
+              Try again
             </Button>
           </div>
         ) : shown.length === 0 ? (
@@ -336,12 +336,12 @@ export function Reminders({ online }: ModuleProps) {
 
       <div className="flex flex-col gap-5">
         {managing === "lists" && (
-          <Panel title="lists" actions={<Button className={small} onClick={() => setManaging(undefined)}>close</Button>}>
+          <Panel title="lists" actions={<Button className={small} onClick={() => setManaging(undefined)}>Close</Button>}>
             <ListManager state={state} disabled={!state.lists} />
           </Panel>
         )}
         {managing === "categories" && (
-          <Panel title="categories" actions={<Button className={small} onClick={() => setManaging(undefined)}>close</Button>}>
+          <Panel title="categories" actions={<Button className={small} onClick={() => setManaging(undefined)}>Close</Button>}>
             <CategoryManager state={cats} disabled={!cats.categories} />
           </Panel>
         )}
@@ -401,7 +401,7 @@ function QuickAdd(props: {
         className={inputClass}
       />
       <Button type="submit" variant="primary" disabled={props.disabled || !title.trim()}>
-        add
+        Add
       </Button>
     </form>
   );
@@ -481,7 +481,7 @@ function ReminderRow(props: {
       {deleted ? (
         <span className="flex gap-1.5">
           <Button className={small} disabled={readOnly} onClick={() => void state.restore(r.id)} aria-label={`Restore “${r.title}”`}>
-            restore
+            Restore
           </Button>
         </span>
       ) : (
@@ -518,7 +518,7 @@ function ListManager({ state, disabled }: { state: RemindersState; disabled: boo
           className={`${inputClass} min-w-0 flex-1`}
         />
         <Button type="submit" className={small} disabled={disabled || !name.trim() || !!problem}>
-          add
+          Add
         </Button>
       </form>
       {problem && <p className="text-xs text-bad">{problem}</p>}
@@ -550,15 +550,15 @@ function ListRow({ list, state, disabled }: { list: ReminderList; state: Reminde
       {confirm ? (
         <>
           <Button className={small} onClick={() => setConfirm(false)}>
-            keep
+            Keep
           </Button>
           <Button variant="danger" className={small} onClick={() => void state.removeList(list.id)}>
-            confirm
+            Confirm
           </Button>
         </>
       ) : (
         <Button variant="danger" className={small} disabled={disabled} onClick={() => setConfirm(true)} aria-label={`Delete list “${list.name}”`}>
-          delete
+          Delete
         </Button>
       )}
     </li>
@@ -638,7 +638,7 @@ function ReminderDetail(props: {
       title={deleted ? "reminder · deleted" : "reminder"}
       actions={
         <Button onClick={onClose} className={small} aria-label="Close reminder details">
-          close
+          Close
         </Button>
       }
     >
@@ -722,7 +722,7 @@ function ReminderDetail(props: {
         {r.due_date && (
           <div className="flex gap-2">
             <Button className={small} disabled={ro} onClick={() => set({ due_date: null })}>
-              remove date
+              Remove date
             </Button>
           </div>
         )}
@@ -947,7 +947,7 @@ function ReminderDetail(props: {
                 className={`${inputClass} min-w-0 flex-1`}
               />
               <Button type="submit" className={small} disabled={ro || !item.trim()}>
-                add
+                Add
               </Button>
             </form>
           )}
@@ -994,7 +994,7 @@ function ReminderDetail(props: {
                 className={`${inputClass} min-w-0 flex-1`}
               />
               <Button type="submit" className={small} disabled={ro || !/^https?:\/\//i.test(link.trim())}>
-                add
+                Add
               </Button>
             </form>
           )}
@@ -1053,21 +1053,21 @@ function ReminderDetail(props: {
           {deleted ? (
             <span className="flex gap-1.5">
               <Button className={small} disabled={readOnly} onClick={() => void state.restore(r.id)}>
-                restore
+                Restore
               </Button>
               {confirmDelete ? (
                 <Button variant="danger" className={small} onClick={() => void state.remove(r.id, true)}>
-                  confirm delete for good
+                  Confirm delete for good
                 </Button>
               ) : (
                 <Button variant="danger" className={small} disabled={readOnly} onClick={() => setConfirmDelete(true)}>
-                  delete for good
+                  Delete for good
                 </Button>
               )}
             </span>
           ) : (
             <Button variant="danger" className={small} disabled={readOnly} onClick={() => void state.remove(r.id)}>
-              delete
+              Delete
             </Button>
           )}
         </div>

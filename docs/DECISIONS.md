@@ -1190,3 +1190,15 @@ DESIGN.md.
   saved before this have no sizes and get the defaults (capture and modules
   full width). No migration: preferences are one JSON document.
 - Home buttons are in sentence case (Customize, Done, Reset to default, Hide).
+
+
+### Consistency pass (slice 6)
+
+- Every remaining screen except Library: button labels start with a capital
+  (sentence case), "retry" reads "Try again", and JARVIS is spelled in
+  capitals. Text after a number stays lowercase ("+3 more", "12 pts").
+- "Provisional" markers are gone from the code; docs/MODULES.md › Design
+  status records which screens were redesigned (D-050) and which got this
+  pass. Layouts and behaviour are unchanged, so no new aesthetic is invented
+  (D-013 still applies to screens without a design).
+- Library and its reader were excluded, as the brief asked.

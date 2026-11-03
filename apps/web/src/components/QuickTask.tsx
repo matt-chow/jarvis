@@ -115,9 +115,9 @@ function QuickTaskForm({ online, onDone }: { online: boolean; onDone: () => void
       )}
       <div className="flex gap-1.5">
         <Button type="submit" variant="primary" disabled={invalid || busy}>
-          add task
+          Add task
         </Button>
-        <Button onClick={onDone}>cancel</Button>
+        <Button onClick={onDone}>Cancel</Button>
       </div>
     </form>
   );

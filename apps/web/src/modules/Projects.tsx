@@ -11,7 +11,7 @@ import { percent, projectProgress, type Progress, type Project } from "../lib/pr
 import { dueLabel, isOverdue, PRIORITY_MARK, projectReminders, type Reminder } from "../lib/reminders";
 import { localDate, type Task } from "../lib/tasks";
 
-// Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
+// Restyled in the D-050 pass (no separate Paper design): shared tokens and components, sentence case.
 
 const small = "min-h-7 px-2 text-[10px]";
 
@@ -97,7 +97,7 @@ export function Projects({ online }: ModuleProps) {
           <div className="mt-4 text-sm">
             <p className="text-muted">Projects couldn't be loaded.</p>
             <Button className={`${small} mt-2`} onClick={state.reload}>
-              retry
+              Try again
             </Button>
           </div>
         ) : (
@@ -195,7 +195,7 @@ function NewProjectForm({ disabled, onCreate }: { disabled: boolean; onCreate: (
         className={`${inputClass} min-w-0 flex-1`}
       />
       <Button type="submit" variant="primary" disabled={disabled || busy || !name.trim()}>
-        create
+        Create
       </Button>
     </form>
   );
@@ -230,7 +230,7 @@ function ProjectDetail(props: {
       title="project"
       actions={
         <Button onClick={props.onClose} className={small} aria-label="Close project details">
-          close
+          Close
         </Button>
       }
     >
@@ -264,7 +264,7 @@ function ProjectDetail(props: {
           <ProgressBar progress={progress} />
           <p className="mt-1 font-mono text-[11px] text-muted">{progress.open} open</p>
         </div>
-        <Button onClick={props.onViewTasks}>view tasks →</Button>
+        <Button onClick={props.onViewTasks}>View tasks →</Button>
         <ProjectReminders projectId={project.id} tasks={props.tasks} reminders={props.reminders} />
         <LinkedSection entity={{ kind: "project", id: project.id }} />
 
@@ -274,21 +274,21 @@ function ProjectDetail(props: {
             disabled={readOnly}
             onClick={() => void state.update(project.id, { status: archivedProject ? "active" : "archived" })}
           >
-            {archivedProject ? "restore" : "archive"}
+            {archivedProject ? "Restore" : "Archive"}
           </Button>
           {confirmDelete ? (
             <span className="flex items-center gap-1.5">
               <span className="text-xs text-muted">Tasks are kept, unassigned.</span>
               <Button className={small} onClick={() => setConfirmDelete(false)}>
-                keep
+                Keep
               </Button>
               <Button variant="danger" className={small} onClick={() => void state.remove(project.id)}>
-                confirm delete
+                Confirm delete
               </Button>
             </span>
           ) : (
             <Button variant="danger" className={small} disabled={readOnly} onClick={() => setConfirmDelete(true)}>
-              delete
+              Delete
             </Button>
           )}
         </div>

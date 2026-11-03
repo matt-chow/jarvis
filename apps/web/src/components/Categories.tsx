@@ -3,7 +3,7 @@ import type { CategoriesState } from "../hooks/useCategories";
 import { MAX_NAME, MAX_PER_ITEM, PALETTE, nameProblem, type Category } from "../lib/categories";
 import { Button, inputClass } from "./ui";
 
-// Shared task and reminder categories (D-049). Provisional screens (D-013):
+// Shared task and reminder categories (D-049), restyled in the D-050 pass:
 // built from the existing chips, pills, and inputs.
 
 const small = "min-h-7 px-2 text-[10px]";
@@ -91,7 +91,7 @@ export function CategoryPicker(props: {
           className={`${inputClass} min-w-0 flex-1`}
         />
         <Button type="submit" className={small} disabled={disabled || !name.trim() || !!problem || full}>
-          add
+          Add
         </Button>
       </form>
       {problem && <p className="mt-1 text-xs text-bad">{problem}</p>}
@@ -125,7 +125,7 @@ export function CategoryManager({ state, disabled }: { state: CategoriesState; d
         <div className="text-sm">
           <p className="text-muted">Categories couldn't be loaded.</p>
           <Button className={`${small} mt-2`} onClick={state.reload}>
-            retry
+            Try again
           </Button>
         </div>
       ) : state.categories.length === 0 ? (
@@ -149,7 +149,7 @@ export function CategoryManager({ state, disabled }: { state: CategoriesState; d
           className={`${inputClass} min-w-0 flex-1`}
         />
         <Button type="submit" className={small} disabled={disabled || !name.trim() || !!problem}>
-          add
+          Add
         </Button>
       </form>
       {problem && <p className="text-xs text-bad">{problem}</p>}
@@ -222,15 +222,15 @@ function CategoryEditRow({ category, count, state, disabled }: { category: Categ
       {confirm ? (
         <span className="flex gap-1.5">
           <Button className={small} onClick={() => setConfirm(false)}>
-            keep
+            Keep
           </Button>
           <Button variant="danger" className={small} onClick={() => void state.remove(category.id)} aria-label={`Confirm delete ${category.name}`}>
-            confirm delete
+            Confirm delete
           </Button>
         </span>
       ) : (
         <Button variant="danger" className={small} disabled={disabled} onClick={() => setConfirm(true)} aria-label={`Delete ${category.name}`}>
-          delete
+          Delete
         </Button>
       )}
     </li>

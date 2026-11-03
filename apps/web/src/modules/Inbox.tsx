@@ -6,7 +6,7 @@ import { useInbox } from "../hooks/useInbox";
 import { formatDate, formatTime } from "../lib/format";
 import type { Triaged } from "../lib/inbox";
 
-// Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
+// Restyled in the D-050 pass (no separate Paper design): shared tokens and components, sentence case.
 
 const small = "min-h-7 px-2 text-[10px]";
 
@@ -71,7 +71,7 @@ export function Inbox({ online }: ModuleProps) {
           <div className="mt-4 text-sm">
             <p className="text-muted">The inbox couldn't be loaded.</p>
             <Button className={`${small} mt-2`} onClick={inbox.reload}>
-              retry
+              Try again
             </Button>
           </div>
         ) : inbox.items.length === 0 ? (
@@ -101,7 +101,7 @@ export function Inbox({ online }: ModuleProps) {
                     aria-label={`Discard “${item.text.slice(0, 40)}”`}
                     onClick={() => void inbox.remove(item.id)}
                   >
-                    discard
+                    Discard
                   </Button>
                 </div>
               </li>

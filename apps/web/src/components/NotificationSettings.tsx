@@ -15,7 +15,7 @@ import {
 import { deviceLabel } from "./AuthScreen";
 import { Button, Panel, StatusChip } from "./ui";
 
-// Provisional (D-013): Settings panel in the existing style.
+// Settings panel in the existing style (D-050 pass).
 
 const small = "min-h-8 px-3 text-xs";
 
@@ -175,16 +175,16 @@ export function NotificationSettings({ online }: { online: boolean }) {
           )}
           {support === "supported" && perm !== "denied" && !on && (
             <Button variant="primary" disabled={busy || !online} onClick={() => void enable()}>
-              turn on for this device
+              Turn on for this device
             </Button>
           )}
           {support === "supported" && on && (
             <Button disabled={busy || !online} onClick={() => void disable()}>
-              turn off for this device
+              Turn off for this device
             </Button>
           )}
           <Button disabled={busy || !online} onClick={() => void test()}>
-            send test
+            Send test
           </Button>
         </div>
       )}
@@ -210,7 +210,7 @@ export function NotificationSettings({ online }: { online: boolean }) {
                     {d.last_error && <span className="block text-xs text-warn">{d.last_error}</span>}
                   </span>
                   <Button variant="danger" className={small} disabled={busy || !online} onClick={() => void remove(d)}>
-                    remove
+                    Remove
                   </Button>
                 </li>
               ))}

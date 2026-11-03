@@ -8,7 +8,7 @@ import { api } from "../lib/api";
 import { TEMPLATE_HINT, describeTrigger, type Rule, type Trigger } from "../lib/automations";
 import { formatDate, formatTime } from "../lib/format";
 
-// Provisional panel: awaiting design integration (see docs/MODULES.md › Design status).
+// Restyled in the D-050 pass (no separate Paper design): shared tokens and components, sentence case.
 
 const small = "min-h-7 px-2 text-[10px]";
 
@@ -110,20 +110,20 @@ function RuleRow({ rule, trigger, onToggle, onDelete }: { rule: Rule; trigger: s
       <div className="flex flex-wrap items-center gap-2">
         <span className={`mr-auto text-sm ${rule.enabled ? "" : "text-muted"}`}>{rule.name}</span>
         <Button className={small} aria-pressed={rule.enabled} aria-label={`${rule.enabled ? "Turn off" : "Turn on"} “${rule.name}”`} onClick={onToggle}>
-          {rule.enabled ? "on" : "off"}
+          {rule.enabled ? "On" : "Off"}
         </Button>
         {confirm ? (
           <>
             <Button className={small} onClick={() => setConfirm(false)}>
-              keep
+              Keep
             </Button>
             <Button variant="danger" className={small} onClick={onDelete}>
-              confirm delete
+              Confirm delete
             </Button>
           </>
         ) : (
           <Button variant="danger" className={small} aria-label={`Delete “${rule.name}”`} onClick={() => setConfirm(true)}>
-            delete
+            Delete
           </Button>
         )}
       </div>
@@ -201,7 +201,7 @@ function NewRuleForm(props: {
       <p className="text-xs text-muted">{TEMPLATE_HINT}</p>
       <div>
         <Button type="submit" variant="primary" className={small} disabled={busy || !name.trim() || !command.trim()}>
-          add automation
+          Add automation
         </Button>
       </div>
     </form>

@@ -10,7 +10,7 @@ import { STATUS_TONE, type Plan, type Preset } from "../lib/jarvis";
 import { entityRoute } from "../lib/links";
 import { localDate } from "../lib/tasks";
 
-// Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
+// Restyled in the D-050 pass (no separate Paper design): shared tokens and components, sentence case.
 
 const small = "min-h-7 px-2 text-[10px]";
 
@@ -25,7 +25,7 @@ function SaveAsPreset({ onSave }: { onSave: (name: string) => Promise<boolean> }
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)} className="font-mono text-[11px] text-muted hover:text-accent">
-        save as preset
+        Save as preset
       </button>
     );
   }
@@ -47,7 +47,7 @@ function SaveAsPreset({ onSave }: { onSave: (name: string) => Promise<boolean> }
         className={`${inputClass} min-h-7 w-36 text-xs`}
       />
       <Button type="submit" className={small} disabled={!name.trim()}>
-        save
+        Save
       </Button>
     </form>
   );
@@ -103,10 +103,10 @@ function PlanCard({
       {plan.status === "pending" && onApprove && (
         <div className="mt-3 flex items-center gap-2">
           <Button variant="primary" className={small} disabled={busy} onClick={onApprove}>
-            approve
+            Approve
           </Button>
           <Button className={small} disabled={busy} onClick={onCancel}>
-            cancel
+            Cancel
           </Button>
           <span className="ml-auto font-mono text-[11px] text-muted">expires {formatTime(plan.expires_at)}</span>
         </div>
@@ -204,7 +204,7 @@ export function Jarvis({ online }: ModuleProps) {
             className={`${inputClass} min-w-0 flex-1 font-mono`}
           />
           <Button type="submit" variant="primary" disabled={!online || busy || !input.trim()}>
-            run
+            Run
           </Button>
         </form>
         {presets && presets.length > 0 && (
