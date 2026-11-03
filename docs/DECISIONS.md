@@ -1138,3 +1138,22 @@ DESIGN.md.
   `WIDGETS`, and the default layout after Recent notes). Existing saved
   layouts are unchanged; the owner adds the widgets from Customize.
 - No streaming services, embeds, or bundled music.
+
+### Habits grid (slice 4)
+
+- **Each habit gets a 20-week contribution grid** (Monday at the top, the
+  current week last; it fits a phone). Days have distinct states that differ
+  in shape, not only colour: done (filled accent), missed (a scheduled past
+  day without a check-in: red outline), rest (an unscheduled day: faint
+  fill), today still open (dashed accent outline). Days before the habit was
+  created and future days are blank, so a new habit never starts in debt.
+  A checked unscheduled day counts as done.
+- The grid is a picture with a summary label ("12 of 30 scheduled days
+  done"); the week of tap targets above it stays the control, and a key
+  explains the states.
+- **Quiet celebrations:** "All done for today." when every habit due today
+  is checked, a short word at streak milestones (7, 30, 100, 365 days), and
+  the "done" UI sound (off when UI sounds are off). No confetti, no streak
+  shaming.
+- Day states are computed in `lib/habits.ts` (`dayState`, `gridWeeks`,
+  `completion`) from the cached check-ins, so the grid works offline.

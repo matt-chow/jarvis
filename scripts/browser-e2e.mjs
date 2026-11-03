@@ -656,6 +656,9 @@ try {
     await page.click("(today)");
     await page.waitForText("1-day streak");
     await page.waitForText("1/1 TODAY"); // panel titles are uppercased by CSS
+    await page.waitForText("All done for today.");
+    // The grid counts only days since the habit began: today, done.
+    await waitFor("grid summary", () => page.evaluate(`!!document.querySelector('[role="img"][aria-label="Stretch, last 20 weeks: 1 of 1 scheduled days done"]')`));
     const today = localToday();
     const list = await page.evaluate(`fetch("/api/v1/habits?today=${today}").then((r) => r.json())`);
     if (!list.habits.some((h) => h.name === "Stretch" && h.checkins.includes(today) && h.streak === 1)) throw new Error(`server habits: ${JSON.stringify(list)}`);

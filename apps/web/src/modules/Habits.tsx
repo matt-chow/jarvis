@@ -1,16 +1,32 @@
 import { useMemo, useState, type FormEvent } from "react";
 import type { ModuleProps } from "../App";
+import { Icon } from "../components/icons";
 import { Button, Panel, inputClass } from "../components/ui";
 import { useHabits, type HabitsState } from "../hooks/useHabits";
-import { EVERY_DAY, WEEKDAY_LETTERS, WEEKDAY_NAMES, describeDays, lastDays, weekday, type HabitView } from "../lib/habits";
+import { EVERY_DAY, MILESTONES, WEEKDAY_LETTERS, WEEKDAY_NAMES, completion, dayState, describeDays, gridWeeks, lastDays, weekday, type DayState, type HabitView } from "../lib/habits";
 import { longDate } from "../lib/journal";
+import { playUiSound } from "../lib/sounds";
 import { localDate } from "../lib/tasks";
 
-// Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
+// Habits (D-050): a week of check-ins to tap, and a contribution grid whose
+// days read as done, missed, rest, or still open, so a schedule is respected
+// (an unscheduled day is rest, never a miss). Celebrations stay quiet.
 
-const small = "min-h-7 px-2 text-[10px]";
+const small = "min-h-8 px-3 text-xs";
 /** Days shown in each habit's check-in row. */
 const SHOWN_DAYS = 7;
+/** Weeks in each habit's grid (fits a phone). */
+const GRID_WEEKS = 20;
+
+const CELL: Record<DayState, string> = {
+  done: "bg-accent",
+  missed: "border border-bad/70",
+  rest: "bg-sunken",
+  today: "border border-dashed border-accent",
+  future: "",
+  before: "",
+};
+const STATE_WORD: Record<DayState, string> = { done: "done", missed: "missed", rest: "rest day", today: "today, not done yet", future: "", before: "" };
 
 export function Habits({ online }: ModuleProps) {
   const state = useHabits(online);
@@ -22,6 +38,8 @@ export function Habits({ online }: ModuleProps) {
   const active = (state.habits ?? []).filter((h) => !h.archived);
   const archived = (state.habits ?? []).filter((h) => h.archived);
   const doneToday = active.filter((h) => h.checkins.includes(today)).length;
+  const due = active.filter((h) => h.days.includes(weekday(today)));
+  const allDone = due.length > 0 && due.every((h) => h.checkins.includes(today));
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5">
@@ -43,22 +61,32 @@ export function Habits({ online }: ModuleProps) {
           <div className="mt-4 text-sm">
             <p className="text-muted">Habits couldn't be loaded.</p>
             <Button className={`${small} mt-2`} onClick={state.reload}>
-              retry
+              Try again
             </Button>
           </div>
         ) : active.length === 0 ? (
           <p className="mt-4 text-sm text-muted">No habits yet. Add one, pick its days, and check it off each day.</p>
         ) : (
-          <ul className="mt-4 divide-y divide-line">
-            {active.map((h) => (
-              <HabitRow key={h.id} habit={h} days={days} today={today} state={state} />
-            ))}
-          </ul>
+          <>
+            <p role="status" className="mt-4 flex min-h-5 items-center gap-2 text-sm text-ok">
+              {allDone && (
+                <>
+                  <Icon name="check" size={14} /> All done for today.
+                </>
+              )}
+            </p>
+            <ul className="mt-2 divide-y divide-line">
+              {active.map((h) => (
+                <HabitRow key={h.id} habit={h} days={days} today={today} state={state} />
+              ))}
+            </ul>
+            <Legend />
+          </>
         )}
         {archived.length > 0 && (
           <div className="mt-4 border-t border-line pt-3">
             <button type="button" onClick={() => setShowArchived((v) => !v)} className="label hover:text-ink" aria-expanded={showArchived}>
-              {showArchived ? "▾" : "▸"} archived · {archived.length}
+              {showArchived ? "▾" : "▸"} Archived · {archived.length}
             </button>
             {showArchived && (
               <ul className="mt-2 flex flex-col gap-1">
@@ -66,7 +94,7 @@ export function Habits({ online }: ModuleProps) {
                   <li key={h.id} className="flex items-center justify-between gap-2 text-sm">
                     <span className="truncate text-muted">{h.name}</span>
                     <Button className={small} onClick={() => void state.update(h.id, { archived: false })}>
-                      restore
+                      Restore
                     </Button>
                   </li>
                 ))}
@@ -130,7 +158,7 @@ function NewHabitForm({ disabled, onCreate }: { disabled: boolean; onCreate: (h:
       />
       <DayPicker value={days} onChange={setDays} disabled={disabled || busy} />
       <Button type="submit" variant="primary" disabled={disabled || busy || !name.trim() || days.length === 0}>
-        add
+        Add
       </Button>
     </form>
   );
@@ -147,6 +175,7 @@ function HabitRow({ habit, days, today, state }: { habit: HabitView; days: strin
           <span className="block truncate text-sm">{habit.name}</span>
           <span className="font-mono text-[11px] text-muted">
             {describeDays(habit.days)} · {habit.streak > 0 ? `${habit.streak}-day streak` : "no streak yet"}
+            {MILESTONES[habit.streak] && <span className="text-accent"> · {MILESTONES[habit.streak]}</span>}
           </span>
         </button>
         <div className="flex gap-1">
@@ -160,7 +189,10 @@ function HabitRow({ habit, days, today, state }: { habit: HabitView; days: strin
                 aria-pressed={done}
                 aria-label={`${habit.name}, ${longDate(d)}${d === today ? " (today)" : ""}`}
                 title={`${longDate(d)}${scheduled ? "" : " (not scheduled)"}`}
-                onClick={() => void state.check(habit.id, d, !done)}
+                onClick={() => {
+                  if (!done) playUiSound("done");
+                  void state.check(habit.id, d, !done);
+                }}
                 className={`grid size-8 place-items-center rounded-sm border font-mono text-[11px] ${
                   done
                     ? "border-accent bg-accent text-accent-ink"
@@ -175,8 +207,52 @@ function HabitRow({ habit, days, today, state }: { habit: HabitView; days: strin
           })}
         </div>
       </div>
+      <HabitGrid habit={habit} today={today} />
       {editing && <HabitEditor habit={habit} state={state} onDone={() => setEditing(false)} />}
     </li>
+  );
+}
+
+/** The last GRID_WEEKS weeks, Monday at the top. A picture; the buttons above are the controls. */
+function HabitGrid({ habit, today }: { habit: HabitView; today: string }) {
+  const weeks = useMemo(() => gridWeeks(today, GRID_WEEKS), [today]);
+  const checked = useMemo(() => new Set(habit.checkins), [habit.checkins]);
+  const { done, due } = completion(habit, weeks.flat(), checked, today);
+  return (
+    <div className="mt-3 flex flex-wrap items-end gap-x-4 gap-y-1">
+      <div role="img" aria-label={`${habit.name}, last ${GRID_WEEKS} weeks: ${done} of ${due} scheduled days done`} className="flex gap-[3px]">
+        {weeks.map((week) => (
+          <div key={week[0]} className="flex flex-col gap-[3px]">
+            {week.map((d) => {
+              const st = dayState(habit, d, checked, today);
+              return <span key={d} title={STATE_WORD[st] ? `${longDate(d)}: ${STATE_WORD[st]}` : undefined} className={`size-[11px] rounded-[2px] ${CELL[st]}`} />;
+            })}
+          </div>
+        ))}
+      </div>
+      <span className="font-mono text-[11px] text-muted" aria-hidden>
+        {due > 0 ? `${done} of ${due} days` : "starts today"}
+      </span>
+    </div>
+  );
+}
+
+function Legend() {
+  const items: [DayState, string][] = [
+    ["done", "Done"],
+    ["missed", "Missed"],
+    ["rest", "Rest day"],
+    ["today", "Today, open"],
+  ];
+  return (
+    <ul aria-label="Grid key" className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-line pt-3 text-xs text-muted">
+      {items.map(([st, word]) => (
+        <li key={st} className="flex items-center gap-1.5">
+          <span aria-hidden className={`size-[11px] rounded-[2px] ${CELL[st]}`} />
+          {word}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -195,31 +271,31 @@ function HabitEditor({ habit, state, onDone }: { habit: HabitView; state: Habits
   return (
     <form onSubmit={(e) => void save(e)} className="mt-3 flex flex-col gap-2 rounded-sm border border-line bg-sunken/40 p-3">
       <label className="flex flex-col gap-1">
-        <span className="label">name</span>
+        <span className="label">Name</span>
         <input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} className={inputClass} />
       </label>
       <DayPicker value={days} onChange={setDays} />
       <div className="flex flex-wrap items-center gap-1.5 pt-1">
         <Button type="submit" variant="primary" className={small} disabled={!changed || !name.trim() || days.length === 0}>
-          save
+          Save
         </Button>
         <Button className={small} onClick={() => void state.update(habit.id, { archived: true })}>
-          archive
+          Archive
         </Button>
         <span className="ml-auto flex items-center gap-1.5">
           {confirmDelete ? (
             <>
               <span className="text-xs text-muted">Deletes its history too.</span>
               <Button className={small} onClick={() => setConfirmDelete(false)}>
-                keep
+                Keep
               </Button>
               <Button variant="danger" className={small} onClick={() => void state.remove(habit.id)}>
-                confirm delete
+                Delete it
               </Button>
             </>
           ) : (
             <Button variant="danger" className={small} onClick={() => setConfirmDelete(true)}>
-              delete
+              Delete
             </Button>
           )}
         </span>

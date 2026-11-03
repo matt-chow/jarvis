@@ -176,6 +176,18 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-11-03 — Personal home redesign, slice 4: Habits grid (D-050)
+- Each habit shows a 20-week grid with distinct done, missed, rest, and
+  open-today states (shape and colour), blank before it began, with a key
+  and a screen-reader summary. Schedules are respected: unscheduled days are
+  rest, never misses.
+- Quiet celebrations: "All done for today.", milestone words at 7, 30, 100,
+  and 365 days, and the "done" UI sound. Sentence-case controls.
+- Tests: Vitest habit grid states, weeks, and completion; browser e2e checks
+  the grid summary and the all-done note.
+- Gate: verify ✅ (core 246, Vitest 245, handoff 50), smoke ✅, browser e2e
+  all steps ✅.
+
 ### 2026-11-03 — Personal home redesign, slice 3: vinyl player (D-050)
 - Music screen leads with a turntable tied to real playback (record turns
   only while playing, still under reduced motion; tonearm follows the
