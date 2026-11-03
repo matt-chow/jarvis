@@ -176,6 +176,16 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-11-03 — Personal home redesign, slice 5: Calendar split view (D-050)
+- "Split with tasks" puts open tasks, grouped by due date, beside the
+  calendar on wide screens; remembered per device. Each task shows its due
+  date and, separately, its planned time; drag to the grid, or Place and
+  Suggest times without a mouse; complete from the pane.
+- Tests: Vitest `taskAgenda`; browser e2e split step (toggle, reload keeps
+  it, complete from the pane reaches the server).
+- Gate: verify ✅ (core 246, Vitest 246, handoff 50), smoke ✅, browser e2e
+  all steps ✅.
+
 ### 2026-11-03 — Personal home redesign, slice 4: Habits grid (D-050)
 - Each habit shows a 20-week grid with distinct done, missed, rest, and
   open-today states (shape and colour), blank before it began, with a key

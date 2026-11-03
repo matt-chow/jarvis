@@ -764,6 +764,38 @@ try {
     if ((await api("GET", "/api/v1/blocks")).blocks.length) throw new Error("sessions left after deleting their task");
   });
 
+  await step("Calendar split view (D-050): tasks by due date beside the calendar, remembered on this device, complete from the pane", async () => {
+    const today = localToday();
+    const created = await page.evaluate(
+      `fetch("/api/v1/tasks", { method: "POST", headers: { "Content-Type": "application/json", Origin: location.origin }, body: JSON.stringify({ title: "Split pane task", due_date: "${today}" }) }).then((r) => r.json())`,
+    );
+    // The split view is for wide screens (lg and up).
+    const desktop = () => page.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+    await desktop();
+    try {
+      await page.hash("/calendar");
+      await page.reload(); // load the task created above
+      await page.click("Split with tasks");
+      await page.waitForText("Split pane task");
+      await page.waitForText("Due today");
+      await page.waitForText("No time planned");
+      await page.reload();
+      await waitFor("split kept after reload", () => page.evaluate(`!!document.querySelector('section[aria-label="Tasks beside the calendar"]')`));
+      await shot("calendar-split", { width: 1440, height: 900 });
+      await desktop(); // shot() clears the override
+      await page.click("Complete “Split pane task”");
+      await waitFor("task left the pane", () => page.evaluate(`!document.querySelector('section[aria-label="Tasks beside the calendar"]').textContent.includes("Split pane task")`));
+      const id = created.task?.id ?? created.id;
+      const t = (await page.evaluate(`fetch("/api/v1/tasks?status=all").then((r) => r.json())`)).tasks.find((x) => x.id === id);
+      if (t?.status !== "done") throw new Error(`split pane completion: ${JSON.stringify(t)}`);
+      await page.click("Split with tasks");
+      await waitFor("split off", () => page.evaluate(`!document.querySelector('section[aria-label="Tasks beside the calendar"]')`));
+      await page.evaluate(`fetch("/api/v1/tasks/${id}", { method: "DELETE", headers: { Origin: location.origin } })`);
+    } finally {
+      await page.send("Emulation.clearDeviceMetricsOverride", {});
+    }
+  });
+
   await step("Dashboard: widgets show today's habit, layout changes persist across reloads", async () => {
     await page.hash("/home");
     await page.waitForText("Stretch"); // habits widget, from the Habits step

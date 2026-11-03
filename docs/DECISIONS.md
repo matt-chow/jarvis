@@ -1157,3 +1157,21 @@ DESIGN.md.
   shaming.
 - Day states are computed in `lib/habits.ts` (`dayState`, `gridWeeks`,
   `completion`) from the cached check-ins, so the grid works offline.
+
+### Calendar split view (slice 5)
+
+- **Split with tasks** (desktop and wide tablets, 1024 px and up): a tasks
+  pane beside the calendar, remembered per device (`splitCalendar`). Open
+  top-level tasks are grouped by due date: overdue, due today, next 7 days,
+  later, no due date (`taskAgenda` in `lib/planner.ts`).
+- **Due dates stay distinct from scheduled work.** Each task shows "Due …"
+  (the deadline) and, separately, its planned time ("1h of 2h scheduled" or
+  "No time planned"). Deadlines on the grid stay ◆ markers; sessions stay
+  blocks.
+- Tasks move to the calendar by drag, or by Place (then a time; keyboard and
+  touch) and Suggest times, the same paths as Unscheduled. The pane replaces
+  the default Unscheduled panel while split; Unscheduled is still a button
+  away. Completing from the pane uses the normal task update (works offline).
+- The month, week, and day views, time blocks, overlap lanes, all-day row,
+  now line, keyboard and touch create/move/resize, and remembered visible
+  hours come from D-047 and are unchanged.

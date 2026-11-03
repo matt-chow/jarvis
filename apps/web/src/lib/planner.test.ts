@@ -15,6 +15,7 @@ import {
   freeGaps,
   layoutDay,
   suggestSlots,
+  taskAgenda,
   unscheduled,
   weekDates,
   type CalItem,
@@ -271,5 +272,30 @@ describe("conflicts and suggestions", () => {
 
   it("lays out Monday-first weeks", () => {
     expect(weekDates("2026-11-05")).toEqual(["2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08"]);
+  });
+});
+
+describe("task agenda (split view)", () => {
+  it("groups open top-level tasks by due date, separate from scheduling", () => {
+    const today = "2026-11-03";
+    const tasks = [
+      task("late", { due_date: "2026-11-01" }),
+      task("now", { due_date: today, priority: "low" }),
+      task("now-high", { due_date: today, priority: "high" }),
+      task("soon", { due_date: "2026-11-10" }),
+      task("far", { due_date: "2026-11-11" }),
+      task("none"),
+      task("done", { due_date: today, status: "done" }),
+      task("sub", { due_date: today, parent_id: "now" }),
+    ];
+    const out = taskAgenda(tasks, today).map((g) => [g.group, g.tasks.map((t) => t.id)]);
+    expect(out).toEqual([
+      ["overdue", ["late"]],
+      ["today", ["now-high", "now"]],
+      ["week", ["soon"]],
+      ["later", ["far"]],
+      ["undated", ["none"]],
+    ]);
+    expect(taskAgenda([], today)).toEqual([]);
   });
 });

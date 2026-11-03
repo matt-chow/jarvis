@@ -4,6 +4,7 @@ import type { ModuleProps } from "../App";
 import { DayAgenda, EntryForm, ItemDetails, PlannerSettings, ScheduleTask, type EntryKind } from "../components/planner/Details";
 import { longDay, shortDate } from "../components/planner/format";
 import { MonthView } from "../components/planner/MonthView";
+import { SplitTasks } from "../components/planner/SplitTasks";
 import { TimeGrid } from "../components/planner/TimeGrid";
 import { Unscheduled } from "../components/planner/Unscheduled";
 import { Button } from "../components/ui";
@@ -11,6 +12,7 @@ import { useHashParam } from "../hooks/useHashParam";
 import { usePlanner, type Spot } from "../hooks/usePlanner";
 import { useReminders } from "../hooks/useReminders";
 import { addDays, monthGrid } from "../lib/calendar";
+import { readDevice, useDevice } from "../lib/device";
 import { monthLabel, monthOf, shiftMonth } from "../lib/journal";
 import { ALL_FILTERS, applyFilters, buildItems, daySummary, unscheduled, weekDates, type CalItem, type Filters, type InboxSort } from "../lib/planner";
 import type { Task } from "../lib/tasks";
@@ -19,8 +21,9 @@ import { durationLabel, fromMinutes, wallClock } from "../lib/time";
 // The unified planner (DECISIONS D-047): month, week, and day views over one
 // set of items (events, work sessions, task deadlines), with direct creation,
 // drag and keyboard rescheduling, an unscheduled-task inbox, suggestions,
-// recurrence, filters, and undo. Provisional layout (D-013): no Paper
-// design for these screens yet; built from the shared tokens and components.
+// recurrence, filters, and undo. On wide screens the owner can split it with
+// a tasks pane (D-050, remembered per device); visible hours are remembered
+// per device too.
 
 type View = "month" | "week" | "day";
 
@@ -89,7 +92,10 @@ export function Calendar({ online }: ModuleProps) {
   const [filters, setFilters] = useLocal<Filters>("planner:filters", ALL_FILTERS);
   const [visible, setVisible] = useLocal<{ range: [number, number] }>("planner:visible", { range: [0, 1440] });
   const [anchor, setAnchor] = useState(today);
-  const [panel, setPanel] = useState<Panel | undefined>(isPhone() ? undefined : { kind: "inbox" });
+  const [device, setDevice] = useDevice();
+  const split = device.splitCalendar;
+  // In the split view the tasks pane stands in for the unscheduled panel.
+  const [panel, setPanel] = useState<Panel | undefined>(isPhone() || readDevice().splitCalendar ? undefined : { kind: "inbox" });
   const [placing, setPlacing] = useState<Task>();
   const [sort, setSort] = useState<InboxSort>("due");
   const [inboxProject, setInboxProject] = useState("");
@@ -142,7 +148,12 @@ export function Calendar({ online }: ModuleProps) {
     setAnchor(d);
     setView("day");
   };
-  const close = () => setPanel(isPhone() ? undefined : { kind: "inbox" });
+  const close = () => setPanel(isPhone() || split ? undefined : { kind: "inbox" });
+  const toggleSplit = () => {
+    setDevice({ splitCalendar: !split });
+    if (!split) setPanel(panel?.kind === "inbox" ? undefined : panel);
+    else if (!panel) setPanel({ kind: "inbox" });
+  };
   // A reminder opens in Reminders; everything else in the side panel.
   const select = (i: CalItem) => {
     if (i.kind === "reminder") location.hash = `/reminders?reminder=${i.id}`;
@@ -348,6 +359,11 @@ export function Calendar({ online }: ModuleProps) {
           <Button className="min-h-9 px-3" aria-pressed={panel?.kind === "inbox"} onClick={() => setPanel(panel?.kind === "inbox" && isPhone() ? undefined : { kind: "inbox" })}>
             unscheduled · {inbox.length}
           </Button>
+          <span className="hidden lg:contents">
+            <Button className="min-h-9 px-3" aria-pressed={split} onClick={toggleSplit}>
+              Split with tasks
+            </Button>
+          </span>
           <Button className="min-h-9 px-3" aria-expanded={showFilters} onClick={() => setShowFilters(!showFilters)}>
             filters{JSON.stringify(filters) !== JSON.stringify(ALL_FILTERS) ? " ●" : ""}
           </Button>
@@ -419,7 +435,30 @@ export function Calendar({ online }: ModuleProps) {
         </dl>
       )}
 
-      <div className={`grid items-start gap-4 ${content ? "lg:grid-cols-[minmax(0,1fr)_22rem]" : ""}`}>
+      <div
+        className={`grid items-start gap-4 ${
+          split
+            ? content
+              ? "lg:grid-cols-[17rem_minmax(0,1fr)] xl:grid-cols-[17rem_minmax(0,1fr)_21rem]"
+              : "lg:grid-cols-[17rem_minmax(0,1fr)]"
+            : content
+              ? "lg:grid-cols-[minmax(0,1fr)_22rem]"
+              : ""
+        }`}
+      >
+        {split && (
+          <div className="hidden lg:sticky lg:top-0 lg:block lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto">
+            <SplitTasks
+              tasks={sources.tasks}
+              allocs={planner.allocs}
+              today={today}
+              placingId={placing?.id}
+              onPlace={togglePlacing}
+              onPlan={(t) => setPanel({ kind: "schedule", taskId: t.id })}
+              onComplete={(t) => void tasks.update(t.id, { status: "done" })}
+            />
+          </div>
+        )}
         <div className="min-w-0">
           {loading ? (
             <p className="text-sm text-muted">Loading calendar…</p>
@@ -493,7 +532,7 @@ export function Calendar({ online }: ModuleProps) {
         {content && (
           <aside
             aria-label={content.title}
-            className="fixed inset-x-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-30 max-h-[70dvh] overflow-y-auto rounded-t-lg border border-line bg-panel shadow-2xl md:bottom-0 lg:static lg:z-auto lg:max-h-none lg:overflow-visible lg:rounded-lg lg:shadow-none"
+            className={`fixed inset-x-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-30 max-h-[70dvh] overflow-y-auto rounded-t-lg border border-line bg-panel shadow-2xl md:bottom-0 lg:static lg:z-auto lg:max-h-none lg:overflow-visible lg:rounded-lg lg:shadow-none ${split ? "lg:col-span-full xl:col-span-1" : ""}`}
           >
             <header className="sticky top-0 z-10 flex min-h-11 items-center gap-2 border-b border-line bg-panel px-4">
               <h2 className="label flex-1">{content.title}</h2>

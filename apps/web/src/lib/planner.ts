@@ -383,6 +383,27 @@ export function unscheduled(tasks: Task[], allocs: Map<string, Allocation>, sort
   return list.sort((a, b) => cmp[sort](a, b) || a.created_at - b.created_at);
 }
 
+export type AgendaGroup = "overdue" | "today" | "week" | "later" | "undated";
+const AGENDA_ORDER: AgendaGroup[] = ["overdue", "today", "week", "later", "undated"];
+export const AGENDA_LABELS: Record<AgendaGroup, string> = { overdue: "Overdue", today: "Due today", week: "Due in the next 7 days", later: "Due later", undated: "No due date" };
+
+/**
+ * Open top-level tasks grouped by due date, for the split view (D-050). The
+ * due date says when a task must be finished; sessions on the calendar say
+ * when it is worked on. The two never stand in for each other.
+ */
+export function taskAgenda(tasks: Task[], today: string): { group: AgendaGroup; tasks: Task[] }[] {
+  const weekEnd = addDays(today, 7);
+  const groups = new Map<AgendaGroup, Task[]>(AGENDA_ORDER.map((g) => [g, []]));
+  for (const t of tasks) {
+    if (!isOpen(t) || t.parent_id) continue;
+    const d = t.due_date;
+    groups.get(!d ? "undated" : d < today ? "overdue" : d === today ? "today" : d <= weekEnd ? "week" : "later")!.push(t);
+  }
+  const cmp = (a: Task, b: Task) => (a.due_date ?? "").localeCompare(b.due_date ?? "") || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.created_at - b.created_at;
+  return AGENDA_ORDER.map((group) => ({ group, tasks: groups.get(group)!.sort(cmp) })).filter((g) => g.tasks.length > 0);
+}
+
 /** Timed items on the same day that overlap `target` (skipped sessions never conflict). */
 export function conflicts(target: { date: string; start: number; end: number; ignore?: (i: CalItem) => boolean }, items: CalItem[]): CalItem[] {
   return items.filter(
