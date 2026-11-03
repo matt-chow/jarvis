@@ -35,6 +35,10 @@ pub struct Preferences {
 pub struct Dashboard {
     /// Widget ids in display order; widgets not listed are hidden.
     pub widgets: Vec<String>,
+    /// Shown widgets that span the full width (D-050). `None` = the
+    /// client's default sizes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wide: Option<Vec<String>>,
 }
 
 /// Working hours the planner suggests slots within (D-047).
@@ -102,9 +106,9 @@ fn backend(e: String) -> PreferencesError {
     PreferencesError::Backend(e)
 }
 
-fn check_dashboard(d: Dashboard) -> Result<Dashboard, PreferencesError> {
+fn check_widgets(list: Vec<String>) -> Result<Vec<String>, PreferencesError> {
     let mut seen: Vec<String> = Vec::new();
-    for w in d.widgets {
+    for w in list {
         if !WIDGETS.contains(&w.as_str()) {
             return Err(PreferencesError::Invalid("dashboard", "unknown widget"));
         }
@@ -116,7 +120,22 @@ fn check_dashboard(d: Dashboard) -> Result<Dashboard, PreferencesError> {
         }
         seen.push(w);
     }
-    Ok(Dashboard { widgets: seen })
+    Ok(seen)
+}
+
+fn check_dashboard(d: Dashboard) -> Result<Dashboard, PreferencesError> {
+    let widgets = check_widgets(d.widgets)?;
+    // A size only matters for a shown widget; hidden ones are dropped.
+    let wide = match d.wide {
+        Some(w) => Some(
+            check_widgets(w)?
+                .into_iter()
+                .filter(|w| widgets.contains(w))
+                .collect(),
+        ),
+        None => None,
+    };
+    Ok(Dashboard { widgets, wide })
 }
 
 fn check_planner(mut p: Planner) -> Result<Planner, PreferencesError> {
@@ -164,6 +183,9 @@ pub fn from_stored(data: &str) -> Preferences {
     let mut prefs: Preferences = serde_json::from_str(data).unwrap_or_default();
     if let Some(d) = &mut prefs.dashboard {
         d.widgets.retain(|w| WIDGETS.contains(&w.as_str()));
+        if let Some(wide) = &mut d.wide {
+            wide.retain(|w| WIDGETS.contains(&w.as_str()));
+        }
     }
     prefs.planner = prefs.planner.and_then(|p| check_planner(p).ok());
     prefs.jarvis = prefs.jarvis.and_then(|j| check_jarvis(j).ok());
@@ -280,6 +302,23 @@ mod tests {
                 block_on(svc.update(&me(), patch(json))).unwrap_err(),
                 PreferencesError::Invalid("dashboard", why)
             );
+        }
+
+        // Sizes: known widgets once each; a hidden widget's size is dropped.
+        let saved = block_on(svc.update(
+            &me(),
+            patch(r#"{"dashboard":{"widgets":["today","capture"],"wide":["today","music"]}}"#),
+        ))
+        .unwrap();
+        assert_eq!(
+            saved.dashboard.unwrap().wide,
+            Some(vec!["today".to_string()])
+        );
+        for json in [
+            r#"{"dashboard":{"widgets":["today"],"wide":["weather"]}}"#,
+            r#"{"dashboard":{"widgets":["today"],"wide":["today","today"]}}"#,
+        ] {
+            assert!(block_on(svc.update(&me(), patch(json))).is_err());
         }
 
         // An omitted field is unchanged; null resets to the default.

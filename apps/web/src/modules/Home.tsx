@@ -1,16 +1,24 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { ModuleProps } from "../App";
 import { CaptureBox } from "../components/CaptureBox";
 import { ModuleGrid } from "../components/ModuleGrid";
 import { Button, Panel } from "../components/ui";
+import { useEvents } from "../hooks/useEvents";
 import { useInbox } from "../hooks/useInbox";
 import { usePreferences } from "../hooks/usePreferences";
+import { useReminders } from "../hooks/useReminders";
+import { useTasks } from "../hooks/useTasks";
+import { occurrences } from "../lib/calendar";
 import { formatTime, greeting, longDay } from "../lib/format";
-import { WIDGETS, moveWidget, widgetsOf, type WidgetId } from "../lib/preferences";
+import { glance, glanceParts } from "../lib/home";
+import { WIDGETS, layoutOf, moveWidget, type Layout, type WidgetId } from "../lib/preferences";
+import { upcoming } from "../lib/reminders";
+import { localDate } from "../lib/tasks";
 import { SuggestCard } from "./Suggest";
 import { BudgetWidget, HabitsWidget, MusicWidget, NotesWidget, RemindersWidget, TodayWidget } from "./widgets";
 
-// Paper "Desktop · Home" and "Mobile · Home" (docs/DESIGN_HANDOFF.md). Widgets stay customizable (D-023).
+// Paper "Desktop · Home" and "Mobile · Home" (docs/DESIGN_HANDOFF.md). Widgets stay customizable (D-023):
+// order, visibility, and size (D-050), with buttons rather than dragging.
 
 const SW_TEXT: Record<ModuleProps["sw"]["kind"], string> = {
   ready: "App shell cached. Directory will open without a connection.",
@@ -22,18 +30,16 @@ const SW_TEXT: Record<ModuleProps["sw"]["kind"], string> = {
 };
 
 const small = "min-h-8 px-3 text-xs";
-/** Widgets that span both columns on wide screens. */
-const WIDE: ReadonlySet<WidgetId> = new Set(["capture", "modules"]);
 
 export function Home(props: ModuleProps) {
   const { online, session } = props;
   const { prefs, error, update } = usePreferences(online);
   const [customizing, setCustomizing] = useState(false);
   const now = new Date();
-  const widgets = widgetsOf(prefs);
+  const { widgets, wide } = layoutOf(prefs);
   const hidden = WIDGETS.filter((w) => !widgets.includes(w.id));
   /** Apply `f` to the latest layout (not this render's), so quick edits all count. */
-  const save = (f: (current: WidgetId[]) => WidgetId[]) => void update((p) => ({ dashboard: { widgets: f(widgetsOf(p)) } }));
+  const save = (f: (current: Required<Layout>) => Layout) => void update((p) => ({ dashboard: f(layoutOf(p)) }));
 
   return (
     <div className="flex flex-col gap-5">
@@ -45,9 +51,10 @@ export function Home(props: ModuleProps) {
             {greeting(now.getHours())}
             {session.status.kind === "signed-in" ? `, ${session.status.user.displayName.split(" ")[0]}` : ""}.
           </h2>
+          <AtAGlance online={online} />
         </div>
         <Button className={small} disabled={!prefs} aria-pressed={customizing} onClick={() => setCustomizing((v) => !v)}>
-          {customizing ? "done" : "customize"}
+          {customizing ? "Done" : "Customize"}
         </Button>
       </div>
 
@@ -60,44 +67,60 @@ export function Home(props: ModuleProps) {
 
       {customizing && (
         <Panel title="dashboard layout">
-          <p className="text-sm text-muted">Reorder or hide widgets below. Your layout is saved to your account and follows you to other devices.</p>
+          <p className="text-sm text-muted">Reorder, resize, or hide widgets below. Your layout is saved to your account and follows you to other devices.</p>
           {hidden.length > 0 && (
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
               <span className="label mr-1">add</span>
               {hidden.map((w) => (
-                <Button key={w.id} className={small} title={w.summary} onClick={() => save((cur) => [...cur, w.id])}>
-                  + {w.label.toLowerCase()}
+                <Button key={w.id} className={small} title={w.summary} onClick={() => save((l) => ({ ...l, widgets: [...l.widgets, w.id] }))}>
+                  + {w.label}
                 </Button>
               ))}
             </div>
           )}
           <Button className={`${small} mt-3`} onClick={() => void update({ dashboard: null })}>
-            reset to default
+            Reset to default
           </Button>
         </Panel>
       )}
 
       {widgets.length === 0 ? (
-        <p className="text-sm text-muted">Your dashboard is empty. Use customize to add widgets.</p>
+        <p className="text-sm text-muted">Your dashboard is empty. Use Customize to add widgets.</p>
       ) : (
         <div className="grid gap-5 md:grid-cols-2">
           {widgets.map((id, i) => {
-            const className = WIDE.has(id) ? "md:col-span-2" : undefined;
+            const isWide = wide.includes(id);
+            const className = isWide ? "md:col-span-2" : undefined;
             const body = <Widget id={id} props={props} className={customizing ? undefined : className} />;
-            if (!customizing) return <div key={id} className="contents">{body}</div>;
+            if (!customizing)
+              return (
+                <div key={id} className="contents">
+                  {body}
+                </div>
+              );
             const label = WIDGETS.find((w) => w.id === id)!.label;
             return (
               <div key={id} className={`flex flex-col gap-1.5 ${className ?? ""}`}>
                 <div className="flex items-center gap-1.5">
                   <span className="label mr-auto">{label}</span>
-                  <Button className={small} aria-label={`Move ${label} up`} disabled={i === 0} onClick={() => save((cur) => moveWidget(cur, id, -1))}>
+                  <Button className={small} aria-label={`Move ${label} up`} disabled={i === 0} onClick={() => save((l) => ({ ...l, widgets: moveWidget(l.widgets, id, -1) }))}>
                     ↑
                   </Button>
-                  <Button className={small} aria-label={`Move ${label} down`} disabled={i === widgets.length - 1} onClick={() => save((cur) => moveWidget(cur, id, 1))}>
+                  <Button className={small} aria-label={`Move ${label} down`} disabled={i === widgets.length - 1} onClick={() => save((l) => ({ ...l, widgets: moveWidget(l.widgets, id, 1) }))}>
                     ↓
                   </Button>
-                  <Button className={small} aria-label={`Hide ${label}`} onClick={() => save((cur) => cur.filter((w) => w !== id))}>
-                    hide
+                  <span className="hidden md:contents">
+                    <Button
+                      className={small}
+                      aria-label={`${label} full width`}
+                      aria-pressed={isWide}
+                      onClick={() => save((l) => ({ ...l, wide: isWide ? l.wide.filter((w) => w !== id) : [...l.wide, id] }))}
+                    >
+                      Full width
+                    </Button>
+                  </span>
+                  <Button className={small} aria-label={`Hide ${label}`} onClick={() => save((l) => ({ widgets: l.widgets.filter((w) => w !== id), wide: l.wide.filter((w) => w !== id) }))}>
+                    Hide
                   </Button>
                 </div>
                 {body}
@@ -131,6 +154,23 @@ function Widget({ id, props, className }: { id: WidgetId; props: ModuleProps; cl
     case "modules":
       return <ModulesWidget navigate={props.navigate} className={className} />;
   }
+}
+
+/** One line under the greeting: what is next today, and what needs attention. */
+function AtAGlance({ online }: { online: boolean }) {
+  const { events } = useEvents(online);
+  const { tasks } = useTasks(online);
+  const { reminders } = useReminders(online);
+  const today = localDate();
+  const d = new Date();
+  const now = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const parts = useMemo(() => {
+    if (!events || !tasks) return undefined;
+    const overdue = reminders ? upcoming(reminders, Date.now(), today).overdue.length : 0;
+    return glanceParts(glance(occurrences(events, today, today), tasks, overdue, today, now));
+  }, [events, tasks, reminders, today, now]);
+  if (!parts) return null;
+  return <p className="mt-3 text-[15px] text-muted">{parts.join(" · ")}</p>;
 }
 
 function CaptureWidget({ online, className }: { online: boolean; className?: string }) {

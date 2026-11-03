@@ -800,13 +800,23 @@ try {
     await page.hash("/home");
     await page.waitForText("Stretch"); // habits widget, from the Habits step
     await page.waitForText("Nothing scheduled or due today.");
-    await page.click("customize");
+    // At a glance: one line under the greeting, never empty.
+    await waitFor("at-a-glance line", () => page.evaluate(`/^(Now|Next): |due today|overdue|Nothing else scheduled/.test(document.querySelector("main h2")?.nextElementSibling?.textContent ?? "")`));
+    await page.click("Customize");
     await page.click("Hide Recent notes");
     await page.click("Move Habits up");
-    await page.click("done");
+    // Sizes only matter with two columns (md and up).
+    await page.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 860, deviceScaleFactor: 1, mobile: false });
+    try {
+      await page.click("Habits full width");
+    } finally {
+      await page.send("Emulation.clearDeviceMetricsOverride", {});
+    }
+    await page.click("Done");
     await waitFor("notes widget hidden", async () => !(await page.text()).toLowerCase().includes("recent notes"));
     // Both edits reach the server, in order (they are sent one at a time).
     await waitFor("server layout", async () => (await page.evaluate(`fetch("/api/v1/preferences").then((r) => r.json())`)).dashboard?.widgets.join() === "capture,today,habits,reminders,budget,music,status,modules");
+    await waitFor("server sizes", async () => (await page.evaluate(`fetch("/api/v1/preferences").then((r) => r.json())`)).dashboard?.wide?.join() === "capture,modules,habits");
     await page.reload();
     await page.waitForText("Stretch");
     // The default layout can show until the saved one loads.
@@ -816,9 +826,9 @@ try {
       return at("recent notes") < 0 && at("habits") >= 0 && at("habits") < at("reminders");
     });
     await shot("dashboard");
-    await page.click("customize");
-    await page.click("reset to default");
-    await page.click("done");
+    await page.click("Customize");
+    await page.click("Reset to default");
+    await page.click("Done");
     await page.waitForText("RECENT NOTES");
   });
 

@@ -3,8 +3,14 @@ import type { Hours } from "./planner";
 
 export type WidgetId = "capture" | "today" | "reminders" | "habits" | "notes" | "budget" | "music" | "status" | "modules";
 
+/** Widget order (unlisted = hidden) and which shown widgets span the full width. */
+export interface Layout {
+  widgets: WidgetId[];
+  wide?: WidgetId[];
+}
+
 export interface Preferences {
-  dashboard?: { widgets: WidgetId[] };
+  dashboard?: Layout;
   /** Working hours for slot suggestions (D-047). */
   planner?: Hours;
   /** How JARVIS schedules sessions (D-048). */
@@ -65,7 +71,7 @@ export function parseJarvisForm(f: JarvisForm): { prefs: JarvisPrefs } | { error
 
 /** `null` resets a field to its default; omitted fields are unchanged. */
 export interface PreferencesPatch {
-  dashboard?: { widgets: WidgetId[] } | null;
+  dashboard?: Layout | null;
   planner?: Hours | null;
   jarvis?: JarvisPrefs | null;
 }
@@ -84,7 +90,12 @@ export const WIDGETS: readonly { id: WidgetId; label: string; summary: string }[
 
 export const DEFAULT_WIDGETS: WidgetId[] = ["capture", "today", "reminders", "habits", "notes", "budget", "music", "status", "modules"];
 
+export const DEFAULT_WIDE: WidgetId[] = ["capture", "modules"];
+
 export const widgetsOf = (p: Preferences | undefined): WidgetId[] => p?.dashboard?.widgets ?? DEFAULT_WIDGETS;
+
+/** The layout with sizes filled in (older saved layouts have none). */
+export const layoutOf = (p: Preferences | undefined): Required<Layout> => ({ widgets: widgetsOf(p), wide: p?.dashboard?.wide ?? DEFAULT_WIDE });
 
 export function applyPreferencesPatch(p: Preferences, patch: PreferencesPatch): Preferences {
   const next = { ...p };

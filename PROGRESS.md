@@ -176,6 +176,17 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-11-03 — Personal home redesign, slice 1 polish: Home at a glance and widget sizes (D-050)
+- Home shows a line under the greeting: next or current event, due today,
+  overdue (tasks and reminders). Widgets can be set full or half width with
+  a button, saved to the account with the layout (optional `wide` list,
+  validated in core). Home buttons in sentence case.
+- Tests: core preferences (sizes validated, hidden widgets dropped), Vitest
+  `glance`, smoke (sizes keep shown widgets only), browser e2e (glance line,
+  size toggle reaches the server).
+- Gate: verify ✅ (core 246, Vitest 248, handoff 50), smoke ✅, browser e2e
+  all steps ✅.
+
 ### 2026-11-03 — Personal home redesign, slice 5: Calendar split view (D-050)
 - "Split with tasks" puts open tasks, grouped by due date, beside the
   calendar on wide screens; remembered per device. Each task shows its due

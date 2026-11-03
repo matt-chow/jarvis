@@ -1175,3 +1175,18 @@ DESIGN.md.
 - The month, week, and day views, time blocks, overlap lanes, all-day row,
   now line, keyboard and touch create/move/resize, and remembered visible
   hours come from D-047 and are unchanged.
+
+
+### Home at a glance and widget sizes (slice 1 polish)
+
+- Under the greeting, one line answers "what now": the next (or current)
+  timed event today, how many tasks are due today, and how many tasks and
+  reminders are overdue, or "Nothing else scheduled or due today." It reads
+  the same cached lists as the widgets, so it works offline (`lib/home.ts`).
+- Widgets can be full width or half width (md and up), as well as reordered,
+  hidden, and added, all with buttons (no dragging needed). Sizes are saved
+  with the layout as an optional `dashboard.wide` list; core checks each
+  entry is a known widget listed once and keeps only shown widgets. Layouts
+  saved before this have no sizes and get the defaults (capture and modules
+  full width). No migration: preferences are one JSON document.
+- Home buttons are in sentence case (Customize, Done, Reset to default, Hide).

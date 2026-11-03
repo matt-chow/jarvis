@@ -808,6 +808,8 @@ async function local() {
       const set = await api.req("PATCH", "/api/v1/preferences", { body: { dashboard: { widgets: ["today", "capture"] } } });
       expect(set.status === 200 && set.json.dashboard.widgets.join() === "today,capture", `patch → ${set.text}`);
       expect((await api.req("PATCH", "/api/v1/preferences", { body: { dashboard: { widgets: ["weather"] } } })).status === 400, "unknown widget");
+      const sized = await api.req("PATCH", "/api/v1/preferences", { body: { dashboard: { widgets: ["today", "capture"], wide: ["today", "music"] } } });
+      expect(sized.status === 200 && sized.json.dashboard.wide.join() === "today", `sizes keep shown widgets only → ${sized.text}`);
       expect((await api.req("PATCH", "/api/v1/preferences", { body: {} })).json.dashboard.widgets.length === 2, "omitted = unchanged");
       expect((await api.req("GET", "/api/v1/export")).json.preferences.dashboard.widgets[0] === "today", "in export");
       expect((await api.req("PATCH", "/api/v1/preferences", { body: { dashboard: null } })).json.dashboard === undefined, "reset");
