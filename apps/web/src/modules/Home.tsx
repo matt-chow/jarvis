@@ -8,7 +8,7 @@ import { usePreferences } from "../hooks/usePreferences";
 import { formatTime, greeting, longDay } from "../lib/format";
 import { WIDGETS, moveWidget, widgetsOf, type WidgetId } from "../lib/preferences";
 import { SuggestCard } from "./Suggest";
-import { HabitsWidget, NotesWidget, RemindersWidget, TodayWidget } from "./widgets";
+import { BudgetWidget, HabitsWidget, MusicWidget, NotesWidget, RemindersWidget, TodayWidget } from "./widgets";
 
 // Paper "Desktop · Home" and "Mobile · Home" (docs/DESIGN_HANDOFF.md). Widgets stay customizable (D-023).
 
@@ -122,6 +122,10 @@ function Widget({ id, props, className }: { id: WidgetId; props: ModuleProps; cl
       return <HabitsWidget online={props.online} className={className} />;
     case "notes":
       return <NotesWidget online={props.online} className={className} />;
+    case "budget":
+      return <BudgetWidget online={props.online} className={className} />;
+    case "music":
+      return <MusicWidget className={className} />;
     case "status":
       return <StatusWidget props={props} className={className} />;
     case "modules":

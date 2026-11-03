@@ -306,3 +306,30 @@ dialog[open] {
     animation: none;
   }
 }
+
+/* Turntable (D-050): the record turns at 33⅓ rpm only while audio plays; the
+   arm eases to the song position. Reduced motion: both hold still (the music
+   keeps playing). */
+@keyframes spin33 {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.turntable-record {
+  animation: spin33 1.8s linear infinite;
+  animation-play-state: paused;
+}
+.turntable-record[data-playing] {
+  animation-play-state: running;
+}
+.turntable-arm {
+  transition: transform 600ms var(--ease-in-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .turntable-record {
+    animation: none;
+  }
+  .turntable-arm {
+    transition: none;
+  }
+}

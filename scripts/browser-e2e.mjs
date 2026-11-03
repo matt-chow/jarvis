@@ -771,7 +771,7 @@ try {
     await page.click("done");
     await waitFor("notes widget hidden", async () => !(await page.text()).toLowerCase().includes("recent notes"));
     // Both edits reach the server, in order (they are sent one at a time).
-    await waitFor("server layout", async () => (await page.evaluate(`fetch("/api/v1/preferences").then((r) => r.json())`)).dashboard?.widgets.join() === "capture,today,habits,reminders,status,modules");
+    await waitFor("server layout", async () => (await page.evaluate(`fetch("/api/v1/preferences").then((r) => r.json())`)).dashboard?.widgets.join() === "capture,today,habits,reminders,budget,music,status,modules");
     await page.reload();
     await page.waitForText("Stretch");
     // The default layout can show until the saved one loads.
@@ -844,6 +844,17 @@ try {
     const focus = lib.playlists.find((p) => p.name === "Focus");
     if (!focus || focus.tracks.length !== 1 || lib.tracks[0].name !== "Tone.wav") throw new Error(`music: ${JSON.stringify(lib)}`);
     await shot("music");
+    // Crackle is off by default; switching it on enables its intensity and is remembered on this device.
+    if (!(await page.evaluate(`document.querySelector('input[aria-label="Crackle intensity"]').disabled`))) throw new Error("crackle intensity enabled while crackle is off");
+    await page.evaluate(`[...document.querySelectorAll("label")].find((l) => l.textContent.includes("Record crackle")).querySelector("input").click()`);
+    await waitFor("crackle on", () => page.evaluate(`!document.querySelector('input[aria-label="Crackle intensity"]').disabled`));
+    await page.reload();
+    await waitFor("crackle kept after reload", () => page.evaluate(`!!document.querySelector('input[aria-label="Crackle intensity"]') && !document.querySelector('input[aria-label="Crackle intensity"]').disabled`));
+    // The Home mini-player drives the same audio.
+    await page.click("Play “Tone”");
+    await page.hash("/home");
+    await waitFor("mini-player", () => page.evaluate(`!!document.querySelector('main button[aria-label="Previous track"]')`));
+    await page.evaluate(`document.querySelector('main button[aria-label="Pause"], main button[aria-label="Play"]').click()`);
     await page.click("Close player");
   });
 

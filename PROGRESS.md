@@ -176,6 +176,21 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-11-03 — Personal home redesign, slice 3: vinyl player (D-050)
+- Music screen leads with a turntable tied to real playback (record turns
+  only while playing, still under reduced motion; tonearm follows the
+  position), large transport, seek, per-device volume, and "up next".
+- Optional record crackle synthesized with Web Audio: off by default, an
+  intensity slider, plays only while music plays, no audio before a press.
+- Play files from this device without uploading (this session only, said
+  plainly). Player bar restyled with icon transport and a seek slider.
+- Home gains Budget (this month) and Music (mini-player) widgets; core
+  `WIDGETS` accepts `budget` and `music`.
+- Tests: Vitest `lib/crackle.test.ts`; browser e2e Music step checks the
+  crackle setting survives a reload and the Home mini-player controls play.
+- Gate: verify ✅ (core 246, Vitest 242, handoff 50), smoke ✅, browser e2e
+  all steps ✅.
+
 ### 2026-11-03 — Personal home redesign, slice 2: Budget (D-050)
 - New Budget module: accounts with opening and derived balances, expenses,
   income, and transfers (excluded from totals), categories with monthly

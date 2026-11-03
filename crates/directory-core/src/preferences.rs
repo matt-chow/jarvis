@@ -12,6 +12,8 @@ pub const WIDGETS: &[&str] = &[
     "reminders",
     "habits",
     "notes",
+    "budget",
+    "music",
     "status",
     "modules",
 ];

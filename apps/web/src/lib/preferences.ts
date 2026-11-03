@@ -1,7 +1,7 @@
 /** Owner preferences (mirrors directory-core `preferences`). */
 import type { Hours } from "./planner";
 
-export type WidgetId = "capture" | "today" | "reminders" | "habits" | "notes" | "status" | "modules";
+export type WidgetId = "capture" | "today" | "reminders" | "habits" | "notes" | "budget" | "music" | "status" | "modules";
 
 export interface Preferences {
   dashboard?: { widgets: WidgetId[] };
@@ -76,11 +76,13 @@ export const WIDGETS: readonly { id: WidgetId; label: string; summary: string }[
   { id: "reminders", label: "Reminders", summary: "Overdue and upcoming reminders, to complete or snooze." },
   { id: "habits", label: "Habits", summary: "Today's habits, to check off." },
   { id: "notes", label: "Recent notes", summary: "The notes you edited last." },
+  { id: "budget", label: "Budget", summary: "This month's spending, income, and net." },
+  { id: "music", label: "Music", summary: "The record player: what is playing, with play, pause, and seek." },
   { id: "status", label: "System status", summary: "API, database, storage, and offline readiness." },
   { id: "modules", label: "Modules", summary: "Every module, with its offline support." },
 ];
 
-export const DEFAULT_WIDGETS: WidgetId[] = ["capture", "today", "reminders", "habits", "notes", "status", "modules"];
+export const DEFAULT_WIDGETS: WidgetId[] = ["capture", "today", "reminders", "habits", "notes", "budget", "music", "status", "modules"];
 
 export const widgetsOf = (p: Preferences | undefined): WidgetId[] => p?.dashboard?.widgets ?? DEFAULT_WIDGETS;
 

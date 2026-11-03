@@ -1,17 +1,21 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import type { ModuleProps } from "../App";
-import { usePlayer } from "../components/Player";
+import { Icon } from "../components/icons";
+import { SeekBar, Transport, usePlayer, usePlayerTime, type Track } from "../components/Player";
+import { Turntable } from "../components/Turntable";
 import { Button, Panel, inputClass } from "../components/ui";
 import { useMusic, type MusicState } from "../hooks/useMusic";
 import { reportIfUnauthorized } from "../hooks/useSession";
 import { api } from "../lib/api";
 import type { FileEntry } from "../lib/files";
+import { useDevice } from "../lib/device";
 import { formatBytes } from "../lib/format";
 import { moveTrack, playlistTracks, trackTitle, type Playlist } from "../lib/music";
 
-// Provisional screen: awaiting design integration (see docs/MODULES.md › Design status).
+// The turntable screen (D-050): the record is tied to real playback; the
+// library and playlists sit below it.
 
-const small = "min-h-7 px-2 text-[10px]";
+const small = "min-h-8 px-3 text-xs";
 /** Where uploads from this screen go (an ordinary Files folder). */
 const MUSIC_FOLDER = "Music";
 
@@ -26,12 +30,14 @@ export function Music({ online }: ModuleProps) {
   const playlist = lib?.playlists.find((p) => p.id === selected);
 
   return (
+    <div className="flex flex-col gap-5">
+    <NowPlaying />
     <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <Panel
-        title={`music${lib ? ` · ${lib.tracks.length}` : ""}`}
+        title={`library${lib ? ` · ${lib.tracks.length}` : ""}`}
         actions={
           <Button className={small} variant="primary" disabled={playable.length === 0} onClick={() => player.play(playable)}>
-            ▶ play all
+            Play all
           </Button>
         }
       >
@@ -52,7 +58,7 @@ export function Music({ online }: ModuleProps) {
           <div className="mt-4 text-sm">
             <p className="text-muted">The music library couldn't be loaded.</p>
             <Button className={`${small} mt-2`} onClick={music.reload}>
-              retry
+              Try again
             </Button>
           </div>
         ) : lib.tracks.length === 0 ? (
@@ -77,8 +83,106 @@ export function Music({ online }: ModuleProps) {
       <div className="flex flex-col gap-5">
         <Playlists music={music} offline={offline} selected={selected} onSelect={setSelected} />
         {playlist && lib && <PlaylistDetail key={playlist.id} playlist={playlist} tracks={lib.tracks} music={music} offline={offline} />}
+        <LocalFiles />
       </div>
     </div>
+    </div>
+  );
+}
+
+function NowPlaying() {
+  const player = usePlayer();
+  const time = usePlayerTime();
+  const [device, setDevice] = useDevice();
+  const current = player.current;
+  const title = current ? trackTitle(current.name) : "";
+  const progress = Number.isFinite(time.length) && time.length > 0 ? time.at / time.length : 0;
+  const upNext = player.queue.slice(player.index + 1, player.index + 6);
+  const field = "flex flex-col gap-1.5 text-xs text-muted";
+
+  return (
+    <Panel title="now playing">
+      <div className="grid items-center gap-6 md:grid-cols-[auto_minmax(0,1fr)]">
+        <div className="mx-auto">
+          <Turntable playing={player.playing} progress={progress} label={title || "idle"} size={260} />
+        </div>
+        <div className="flex min-w-0 flex-col gap-4">
+          {current ? (
+            <div className="min-w-0">
+              <p className="truncate text-2xl">{title}</p>
+              <p className="truncate text-sm text-muted">
+                {current.local ? "From this device · this session only" : current.folder || "Files"} · track {player.index + 1} of {player.queue.length}
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted">Nothing on the platter. Choose a track below, or play a file from this device.</p>
+          )}
+          {current && (
+            <>
+              <Transport player={player} size="lg" />
+              <SeekBar player={player} />
+            </>
+          )}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className={field}>
+              <span className="flex items-center gap-1.5">
+                <Icon name={device.volume === 0 ? "mute" : "volume"} size={14} /> Volume · {Math.round(device.volume * 100)}%
+              </span>
+              <input type="range" min={0} max={1} step={0.05} value={device.volume} onChange={(e) => setDevice({ volume: Number(e.target.value) })} className="accent-accent" />
+            </label>
+            <div className={field}>
+              <label className="flex items-center gap-2 text-ink">
+                <input type="checkbox" checked={device.crackle} onChange={(e) => setDevice({ crackle: e.target.checked })} /> Record crackle
+              </label>
+              <input
+                type="range"
+                min={0.05}
+                max={1}
+                step={0.05}
+                value={device.crackleLevel}
+                disabled={!device.crackle}
+                aria-label="Crackle intensity"
+                aria-valuetext={`${Math.round(device.crackleLevel * 100)}%`}
+                onChange={(e) => setDevice({ crackleLevel: Number(e.target.value) })}
+                className="accent-accent disabled:opacity-40"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-muted">Volume and crackle are saved on this device. Crackle plays only while music does. On iPhone, use the side buttons for volume.</p>
+          {upNext.length > 0 && (
+            <div>
+              <p className="mb-1.5 text-xs text-muted">Up next</p>
+              <ol className="flex flex-col gap-0.5">
+                {upNext.map((t, i) => (
+                  <li key={`${t.id}-${i}`}>
+                    <button type="button" className="w-full truncate rounded-sm px-2 py-1 text-left text-sm hover:bg-sunken/60" onClick={() => player.play(player.queue, player.index + 1 + i)}>
+                      {trackTitle(t.name)}
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+/** Play audio files from this device without uploading them. Nothing is kept. */
+function LocalFiles() {
+  const player = usePlayer();
+  const pick = (files: FileList | null) => {
+    if (!files?.length) return;
+    const now = Date.now();
+    const tracks: Track[] = [...files].map((f, i) => ({ id: `local-${now}-${i}`, folder: "", name: f.name, size: f.size, content_type: f.type, created_at: now, updated_at: now, local: f }));
+    player.play(tracks);
+  };
+  return (
+    <Panel title="from this device">
+      <p className="mb-3 text-sm text-muted">Play audio files without uploading them. They stay for this session only: reloading or closing the page forgets them. To keep a track, upload it to your library.</p>
+      <input type="file" accept="audio/*" multiple aria-label="Play files from this device" onChange={(e) => pick(e.target.files)} className="max-w-full text-sm text-ink file:mr-3 file:rounded-full file:border file:border-line file:bg-panel file:px-3 file:py-1.5 file:text-[13px] file:text-ink" />
+    </Panel>
   );
 }
 
@@ -125,7 +229,7 @@ function TrackRow(props: { track: FileEntry; music: MusicState; offline: boolean
   return (
     <li className="flex flex-wrap items-center gap-2 py-2">
       <Button className={small} aria-label={`Play “${title}”`} disabled={props.offline && !saved} onClick={props.onPlay}>
-        {props.playing ? "♪" : "▶"}
+        <Icon name={props.playing ? "music" : "play"} size={14} />
       </Button>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm">{title}</span>
@@ -144,7 +248,7 @@ function TrackRow(props: { track: FileEntry; music: MusicState; offline: boolean
           }}
           className={`${inputClass} min-h-7 w-auto py-0 text-xs`}
         >
-          <option value="">+ playlist</option>
+          <option value="">Add to playlist</option>
           {props.playlists.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
@@ -162,7 +266,7 @@ function TrackRow(props: { track: FileEntry; music: MusicState; offline: boolean
           setBusy(false);
         }}
       >
-        {busy ? "saving…" : saved ? "remove download" : "save offline"}
+        {busy ? "Saving…" : saved ? "Remove download" : "Save offline"}
       </Button>
     </li>
   );
@@ -185,7 +289,7 @@ function Playlists({ music, offline, selected, onSelect }: { music: MusicState; 
       <form onSubmit={(e) => void create(e)} className="flex gap-2">
         <input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="New playlist…" aria-label="New playlist" disabled={offline} className={`${inputClass} min-w-0 flex-1`} />
         <Button type="submit" variant="primary" className={small} disabled={offline || !name.trim()}>
-          create
+          Create
         </Button>
       </form>
       {playlists.length === 0 ? (
@@ -223,12 +327,12 @@ function PlaylistDetail({ playlist, tracks, music, offline }: { playlist: Playli
       title={playlist.name}
       actions={
         <Button className={small} variant="primary" disabled={playable.length === 0} onClick={() => player.play(playable)}>
-          ▶ play
+          Play
         </Button>
       }
     >
       {list.length === 0 ? (
-        <p className="text-sm text-muted">Empty. Add tracks with “+ playlist” in the list.</p>
+        <p className="text-sm text-muted">Empty. Add tracks with “Add to playlist” in the library.</p>
       ) : (
         <ol className="flex flex-col gap-1">
           {list.map((t, i) => (
@@ -252,15 +356,15 @@ function PlaylistDetail({ playlist, tracks, music, offline }: { playlist: Playli
         {confirm ? (
           <span className="flex gap-1.5">
             <Button className={small} onClick={() => setConfirm(false)}>
-              keep
+              Keep
             </Button>
             <Button variant="danger" className={small} onClick={() => void music.deletePlaylist(playlist.id)}>
-              confirm delete
+              Delete it
             </Button>
           </span>
         ) : (
           <Button variant="danger" className={small} disabled={offline} onClick={() => setConfirm(true)}>
-            delete playlist
+            Delete playlist
           </Button>
         )}
       </div>

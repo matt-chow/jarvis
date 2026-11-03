@@ -1,15 +1,20 @@
 /** Dashboard widgets backed by module hooks (each keeps its own offline cache). */
 import { useMemo } from "react";
+import { SeekBar, Transport, usePlayer, usePlayerTime } from "../components/Player";
 import { SnoozeMenu } from "../components/SnoozeMenu";
+import { Turntable } from "../components/Turntable";
 import { Panel } from "../components/ui";
+import { useBudget } from "../hooks/useBudget";
 import { useEvents } from "../hooks/useEvents";
 import { useHabits } from "../hooks/useHabits";
 import { useNotes } from "../hooks/useNotes";
 import { useReminders } from "../hooks/useReminders";
 import { useTasks } from "../hooks/useTasks";
+import { budgetLines, formatMoney, monthOf, monthRange, totals } from "../lib/budget";
 import { occurrences, timeLabel } from "../lib/calendar";
 import { formatDate, formatTime } from "../lib/format";
 import { weekday } from "../lib/habits";
+import { trackTitle } from "../lib/music";
 import { dueLabel, isOverdue, upcoming } from "../lib/reminders";
 import { isOpen, localDate } from "../lib/tasks";
 
@@ -208,6 +213,108 @@ export function RemindersWidget({ online, className }: { online: boolean; classN
         </ul>
       )}
       {state.error && <p className="mt-2 text-sm text-bad">{state.error}</p>}
+    </Panel>
+  );
+}
+
+/** This month at a glance; the Budget screen has the detail. */
+export function BudgetWidget({ online, className }: { online: boolean; className?: string }) {
+  const month = monthOf(localDate());
+  const state = useBudget(online);
+  const data = state.data;
+  const t = useMemo(() => (data ? totals(data.transactions, monthRange(month)) : undefined), [data, month]);
+  const over = useMemo(() => (data ? budgetLines(data, month).filter((l) => l.left < 0) : []), [data, month]);
+  const money = (n: number, sign = false) => formatMoney(n, data?.currency ?? "CAD", { sign });
+
+  return (
+    <Panel
+      title="budget · this month"
+      className={className}
+      actions={
+        <a href="#/budget" className={link}>
+          budget →
+        </a>
+      }
+    >
+      {!data || !t ? (
+        <p className="text-sm text-muted">{state.loading ? "Loading…" : "The budget couldn't be loaded."}</p>
+      ) : data.accounts.length === 0 ? (
+        <p className="text-sm text-muted">
+          No accounts yet.{" "}
+          <a href="#/budget" className="text-accent underline-offset-4 hover:underline">
+            Set up your budget
+          </a>
+          .
+        </p>
+      ) : (
+        <>
+          <dl className="grid grid-cols-3 gap-3">
+            {(
+              [
+                ["Spent", money(t.spending), ""],
+                ["Income", money(t.income), ""],
+                ["Net", money(t.net, true), t.net < 0 ? "text-bad" : "text-ok"],
+              ] as const
+            ).map(([label, value, tone]) => (
+              <div key={label} className="min-w-0">
+                <dt className="text-xs text-muted">{label}</dt>
+                <dd className={`truncate font-mono text-[15px] ${tone}`}>{value}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-3 text-sm text-muted">
+            {t.count === 0 ? "Nothing recorded this month yet." : over.length > 0 ? `Over budget in ${over.map((l) => l.category.name).join(", ")}.` : `${t.count} ${t.count === 1 ? "entry" : "entries"} this month.`}
+          </p>
+          <a href="#/budget?add=expense" className={`${link} mt-2 inline-block`}>
+            add an expense →
+          </a>
+        </>
+      )}
+      {state.stale && <p className="mt-2 text-xs text-muted">Showing the copy saved on this device.</p>}
+    </Panel>
+  );
+}
+
+/** The mini record player: tied to the same audio as the full turntable. */
+export function MusicWidget({ className }: { className?: string }) {
+  const player = usePlayer();
+  const time = usePlayerTime();
+  const current = player.current;
+  const title = current ? trackTitle(current.name) : "";
+  const progress = Number.isFinite(time.length) && time.length > 0 ? time.at / time.length : 0;
+
+  return (
+    <Panel
+      title="music"
+      className={className}
+      actions={
+        <a href="#/music" className={link}>
+          turntable →
+        </a>
+      }
+    >
+      <div className="flex items-center gap-4">
+        <div className="shrink-0">
+          <Turntable playing={player.playing} progress={progress} label={title || "idle"} size={112} />
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          {current ? (
+            <>
+              <p className="truncate text-[15px]">{title}</p>
+              <Transport player={player} />
+              <SeekBar player={player} compact />
+            </>
+          ) : (
+            <p className="text-sm text-muted">
+              Nothing playing.{" "}
+              <a href="#/music" className="text-accent underline-offset-4 hover:underline">
+                Choose a record
+              </a>
+              .
+            </p>
+          )}
+        </div>
+      </div>
     </Panel>
   );
 }

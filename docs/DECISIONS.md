@@ -1108,3 +1108,33 @@ DESIGN.md.
 - Shortcuts: `g m` opens Budget; Alt+M adds an expense (Alt+E was avoided:
   it opens the browser menu in Chrome and Edge on Windows). The sidebar
   group "Listen" becomes "Money and music".
+
+### Vinyl player (slice 3)
+
+- **The turntable is tied to real playback.** `components/Turntable.tsx` is
+  a drawing (hidden from assistive tech). The record turns only while the
+  audio element is playing, and the tonearm follows the position in the
+  track. Under reduced motion the record and arm stay still and the music
+  keeps playing. Every control is an ordinary button or slider: play/pause,
+  previous, next, seek (`aria-valuetext` "0:12 of 3:04"), and volume.
+- **One player.** The Music screen ("now playing"), the Home mini-player
+  widget, and the player bar share `PlayerProvider`'s single `<audio>`. The
+  position lives in its own context, so only the parts that show it
+  re-render.
+- **Crackle is synthesized on the device** (`lib/crackle.ts`: a low-passed
+  hiss plus random pops in a 4-second Web Audio loop). It needs no files and
+  no network. It is off by default, has an intensity slider (capped well
+  under the music), and plays only while music plays. It stops on pause,
+  close, or track end. The audio context is created inside the press of
+  play, so nothing sounds before the owner interacts. It is separate from UI
+  sounds.
+- **Volume, crackle, and its level are per-device** (`lib/device.ts`). iPhone
+  Safari ignores page volume, and the screen says to use the side buttons.
+- **Local files are honest.** "From this device" plays picked files from
+  memory without uploading them, marked "this session only"; a reload forgets
+  them. To keep a track, the owner uploads it (Files, then "Save offline").
+- **Home widgets:** `budget` (this month's spent, income, net, and any
+  over-budget categories) and `music` join the dashboard widget list (core
+  `WIDGETS`, and the default layout after Recent notes). Existing saved
+  layouts are unchanged; the owner adds the widgets from Customize.
+- No streaming services, embeds, or bundled music.
