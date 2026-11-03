@@ -121,7 +121,9 @@ export async function launch() {
       await withTimeout(loaded, "reload");
     },
     text: () => page.evaluate("document.body.innerText"),
-    waitForText: (text, timeoutMs) => waitFor(`text "${text}"`, async () => (await page.text()).includes(text), timeoutMs),
+    // Case-insensitive: innerText follows CSS text-transform, and headings
+    // changed from uppercase labels to sentence case in the D-050 redesign.
+    waitForText: (text, timeoutMs) => waitFor(`text "${text}"`, async () => (await page.text()).toLowerCase().includes(text.toLowerCase()), timeoutMs),
     /** Set a React-controlled input by its aria-label or label text. */
     async fill(label, value) {
       // Waits for the (enabled) field to exist: editors often mount after a fetch.

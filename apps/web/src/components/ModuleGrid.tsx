@@ -1,5 +1,6 @@
 import type { ModuleProps } from "../App";
 import { MODULES, type ModuleId } from "../lib/modules";
+import { Icon } from "./icons";
 import { StageTag } from "./ui";
 
 /** Every module as a card: the Home "modules" widget and the phone's Modules screen. */
@@ -12,11 +13,11 @@ export function ModuleGrid({ navigate, exclude = [] }: { navigate: ModuleProps["
           <button
             type="button"
             onClick={() => navigate(m.id)}
-            className="group flex h-full w-full flex-col rounded-lg border border-line bg-panel p-4 text-left transition hover:border-accent focus-visible:border-accent sm:p-5"
+            className="press group flex h-full w-full flex-col rounded-lg border border-line bg-panel p-4 text-left transition-colors hover:border-accent focus-visible:border-accent sm:p-5"
           >
             <span className="flex items-center justify-between">
-              <span aria-hidden className="grid size-9 place-items-center rounded-sm bg-sunken font-mono text-lg text-accent">
-                {m.glyph}
+              <span aria-hidden className="grid size-9 place-items-center rounded-sm bg-sunken text-accent">
+                <Icon name={m.icon} size={20} />
               </span>
               {m.stage !== "ready" && <StageTag stage={m.stage} />}
             </span>

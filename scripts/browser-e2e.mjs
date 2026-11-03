@@ -769,15 +769,16 @@ try {
     await page.click("Hide Recent notes");
     await page.click("Move Habits up");
     await page.click("done");
-    await waitFor("notes widget hidden", async () => !(await page.text()).includes("RECENT NOTES"));
+    await waitFor("notes widget hidden", async () => !(await page.text()).toLowerCase().includes("recent notes"));
     // Both edits reach the server, in order (they are sent one at a time).
     await waitFor("server layout", async () => (await page.evaluate(`fetch("/api/v1/preferences").then((r) => r.json())`)).dashboard?.widgets.join() === "capture,today,habits,reminders,status,modules");
     await page.reload();
     await page.waitForText("Stretch");
     // The default layout can show until the saved one loads.
     await waitFor("layout kept after reload", async () => {
-      const t = await page.text();
-      return !t.includes("RECENT NOTES") && t.indexOf("HABITS") < t.indexOf("REMINDERS");
+      const heads = await page.evaluate(`[...document.querySelectorAll("main h2")].map((h) => h.textContent.trim().toLowerCase())`);
+      const at = (name) => heads.findIndex((h) => h.startsWith(name));
+      return at("recent notes") < 0 && at("habits") >= 0 && at("habits") < at("reminders");
     });
     await shot("dashboard");
     await page.click("customize");
@@ -1118,7 +1119,7 @@ try {
       await page.hash("/home");
       await page.waitForText("JARVIS SUGGESTS");
       const tabs = await page.evaluate(`[...document.querySelectorAll('nav[aria-label="Tabs"] li a')].filter((a) => a.offsetParent).map((a) => a.getAttribute("aria-label") ?? a.innerText.trim().split("\\n").pop())`);
-      if (JSON.stringify(tabs) !== JSON.stringify(["Home", "Tasks", "Ask JARVIS", "Projects", "Modules"])) throw new Error(`tab bar: ${JSON.stringify(tabs)}`);
+      if (JSON.stringify(tabs) !== JSON.stringify(["Home", "Tasks", "Ask JARVIS", "Calendar", "Modules"])) throw new Error(`tab bar: ${JSON.stringify(tabs)}`);
       const wide = await page.evaluate(`document.documentElement.scrollWidth > window.innerWidth`);
       if (wide) throw new Error("horizontal scroll at phone width");
       await shot("home-phone", { width: 390, height: 844 });
@@ -1126,8 +1127,8 @@ try {
       await page.waitForText("Changes wait for your confirm");
       await page.hash("/modules");
       await page.waitForText("NEEDS CONNECTION");
-      await page.click("Calendar");
-      await waitFor("Calendar from Modules", async () => (await page.evaluate("location.hash")) === "#/calendar");
+      await page.click("Projects");
+      await waitFor("Projects from Modules", async () => (await page.evaluate("location.hash")) === "#/projects");
       // The Modules tab stays highlighted for screens that aren't tabs.
       const current = await page.evaluate(`document.querySelector('nav[aria-label="Tabs"] a[aria-current="page"]')?.innerText.trim().split("\\n").pop()`);
       if (current !== "Modules") throw new Error(`current tab: ${current}`);
@@ -1194,7 +1195,7 @@ try {
 
   await step("Settings lists one passkey; device token is shown once", async () => {
     await page.hash("/settings");
-    await page.waitForText("PASSKEYS · 1");
+    await waitFor("one passkey", async () => (await page.text()).replace(/\s+/g, " ").includes("Passkeys 1"));
     await page.fill("Token name", "E2E device");
     await page.click("create");
     await page.waitForText("won't be shown again");

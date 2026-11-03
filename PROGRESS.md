@@ -176,6 +176,24 @@ Canonical implementation tracker. Newest entries first. Milestones are defined i
 
 ## Log
 
+### 2026-11-03 — Personal home redesign, slice 0: shell (D-050)
+- Authored SVG icon set replaces text glyphs (sidebar, Modules, tab bar).
+  Sidebar groups: main, Plan, Write and read, Listen, System. Phone tabs:
+  Home, Tasks, JARVIS, Calendar, Modules.
+- One sync/offline indicator with a detail popover replaces the status
+  chips. JARVIS side panel on desktop (header toggle, Ctrl/⌘+.).
+- Keyboard shortcuts from one list: `/`, `g` + letter navigation, Alt+N,
+  Ctrl/⌘+J, Ctrl/⌘+., and `?` for a searchable help dialog. They stay out
+  of fields and show platform key names.
+- Per-device settings (density, interface sounds off by default) in
+  Settings › This device. Paper grain texture, motion tokens, sentence-case
+  panel titles, accent primary buttons. PRODUCT.md and DESIGN.md added.
+- Paper Desktop wasn't running, so the redesign was done in the UI.
+- Tests: Vitest (shortcut matching, platform labels, typing guard, device
+  settings); browser e2e updated for the new tab bar and sentence case.
+- Gate: verify ✅ (core 239, Vitest 224, handoff 50), smoke ✅, browser e2e
+  all steps ✅.
+
 ### 2026-11-02 — Reminders & categories, slice 6: conflict recovery (D-049)
 - A reminder edit that clashes with another device's (queued or online)
   now saves its non-clashing fields and keeps this device's values for the

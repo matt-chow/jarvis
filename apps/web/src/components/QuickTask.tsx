@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { TASKS_CHANGED_EVENT, useTasks } from "../hooks/useTasks";
 import { parseEstimate, PRIORITY_LABELS, type TaskPriority } from "../lib/tasks";
+import { Icon } from "./icons";
 import { Button, inputClass } from "./ui";
 
 /**
@@ -37,15 +38,15 @@ export function QuickTask({ online }: { online: boolean }) {
         onClick={() => setOpen(true)}
         aria-label="Quick add task"
         aria-keyshortcuts="Alt+N"
-        className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-line bg-panel px-3 text-[13px] transition hover:border-accent"
+        className="press inline-flex min-h-9 items-center gap-1.5 rounded-full border border-line bg-panel px-3 text-[13px] transition-colors hover:border-accent"
       >
-        <span aria-hidden>+</span> Task
+        <Icon name="plus" size={16} /> Task
       </button>
       <dialog
         ref={dialog}
         onClose={() => setOpen(false)}
         aria-label="Quick add task"
-        className="m-auto w-[min(28rem,calc(100vw-2rem))] rounded-lg border border-line bg-panel p-0 text-ink shadow-2xl backdrop:bg-ink/30"
+        className="m-auto w-[min(28rem,calc(100vw-2rem))] rounded-lg border border-line bg-panel p-0 text-ink shadow-lift backdrop:bg-black/40"
       >
         {open && <QuickTaskForm online={online} onDone={() => setOpen(false)} />}
       </dialog>
@@ -76,7 +77,7 @@ function QuickTaskForm({ online, onDone }: { online: boolean; onDone: () => void
 
   return (
     <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-3 p-5">
-      <h2 className="label">quick task</h2>
+      <h2 className="text-[17px] font-medium">Quick task</h2>
       <input
         value={title}
         onChange={(e) => setTitle(e.target.value)}

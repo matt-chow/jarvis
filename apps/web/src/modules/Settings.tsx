@@ -12,6 +12,7 @@ import type { ClientError } from "../lib/errors";
 import { formatDate } from "../lib/format";
 import { readLaunchChoice, writeLaunchChoice, type LaunchChoice } from "../lib/launch";
 import { readTheme, writeTheme, type Theme } from "../lib/theme";
+import { useDevice, type Density } from "../lib/device";
 import { localDate } from "../lib/tasks";
 import { creationRequest, describePasskeyError, encodeRegistration } from "../lib/webauthn";
 
@@ -31,6 +32,7 @@ function describe(e: unknown): string {
 function LaunchPanel() {
   const [choice, setChoice] = useState<LaunchChoice>(readLaunchChoice);
   const [theme, setTheme] = useState<Theme>(readTheme);
+  const [device, setDevice] = useDevice();
   return (
     <Panel title="this device" className="lg:col-span-2">
       <label className="mb-3 flex flex-wrap items-center gap-3 text-sm">
@@ -49,6 +51,24 @@ function LaunchPanel() {
           <option value="light">Light</option>
           <option value="night">Night</option>
         </select>
+      </label>
+      <label className="mb-3 flex flex-wrap items-center gap-3 text-sm">
+        <span>Density</span>
+        <select
+          value={device.density}
+          onChange={(e) => setDevice({ density: e.target.value as Density })}
+          aria-label="Density"
+          className="min-h-9 rounded-sm border border-line bg-sunken/40 px-2 text-sm focus:border-accent"
+        >
+          <option value="comfortable">Comfortable</option>
+          <option value="compact">Compact</option>
+        </select>
+      </label>
+      <label className="mb-3 flex items-center gap-3 text-sm">
+        <input type="checkbox" checked={device.uiSounds} onChange={(e) => setDevice({ uiSounds: e.target.checked })} className="size-4 accent-[var(--accent)]" />
+        <span>
+          Interface sounds <span className="text-muted">(a soft tone when you complete or check in; music is set separately)</span>
+        </span>
       </label>
       <label className="flex flex-wrap items-center gap-3 text-sm">
         <span>Home Screen app opens on</span>

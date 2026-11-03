@@ -1,17 +1,22 @@
 import { Suspense, lazy, useEffect, useRef, useState, type ComponentType } from "react";
 import { AuthScreen } from "./components/AuthScreen";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { Icon } from "./components/icons";
 import { installGlobalErrorReporting } from "./hooks/reportError";
 import { PlayerProvider } from "./components/Player";
 import { QuickTask } from "./components/QuickTask";
-import { StageTag, StatusChip, type Tone } from "./components/ui";
+import { ShortcutsDialog } from "./components/shell/ShortcutsDialog";
+import { StatusIndicator } from "./components/shell/StatusIndicator";
+import { StageTag } from "./components/ui";
 import { useHealth, type HealthState } from "./hooks/useHealth";
 import { useOnline } from "./hooks/useOnline";
 import { useSession, type SessionApi } from "./hooks/useSession";
 import { useSync } from "./hooks/useSync";
 import { useServiceWorker, type SwState } from "./hooks/useServiceWorker";
+import { useDevice } from "./lib/device";
 import { noteRoute } from "./lib/focus";
 import { MODULES, SIDEBAR_GROUPS, TABS, moduleFromHash, sidebarModules, type ModuleId } from "./lib/modules";
+import { ariaKeys, isTyping, keyLabel, matchShortcut, shortcutById } from "./lib/shortcuts";
 import { Home } from "./modules/Home";
 
 // Modules load on first use (each is its own chunk; the service worker
@@ -71,31 +76,7 @@ function useHashModule(): [ModuleId, (id: ModuleId) => void] {
   return [id, (next) => (location.hash = `/${next}`)];
 }
 
-export function swChip(sw: SwState): { tone: Tone; value: string } {
-  switch (sw.kind) {
-    case "ready":
-      return { tone: "ok", value: "ready" };
-    case "update":
-      return { tone: "accent", value: "update" };
-    case "installing":
-      return { tone: "warn", value: "caching" };
-    case "disabled":
-      return { tone: "idle", value: "dev" };
-    case "unsupported":
-      return { tone: "idle", value: "n/a" };
-    case "error":
-      return { tone: "bad", value: "error" };
-  }
-}
-
-function apiChip(online: boolean, health: HealthState): { tone: Tone; value: string } {
-  if (health.loading && !health.report) return { tone: "idle", value: "…" };
-  if (!online || (health.error && health.stale)) return { tone: "idle", value: "cached" };
-  if (health.error) return { tone: "bad", value: "down" };
-  return health.report?.status === "ok" ? { tone: "ok", value: "ok" } : { tone: "warn", value: "degraded" };
-}
-
-const shortcutLabel = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘J" : "Ctrl J";
+const desktop = () => window.matchMedia("(min-width: 1024px)").matches;
 
 export function App() {
   const [active, navigate] = useHashModule();
@@ -105,35 +86,60 @@ export function App() {
   const sw = useServiceWorker();
   const session = useSession(online);
   const sync = useSync(online);
+  const [device, setDevice] = useDevice();
+  const [help, setHelp] = useState(false);
   const main = useRef<HTMLElement>(null);
   const activeRef = useRef(active);
   activeRef.current = active;
   useEffect(() => installGlobalErrorReporting(() => activeRef.current), []);
   const current = MODULES.find((m) => m.id === active)!;
   const View = VIEWS[active];
-  const swState = swChip(sw);
-  const api = apiChip(online, health);
+  // The side panel shows beside other screens; on Ask itself it would be a duplicate.
+  const panelOpen = device.jarvisPanel && active !== "ask";
+  const togglePanel = () => {
+    if (!desktop()) {
+      location.hash = "/ask";
+      return;
+    }
+    setDevice({ jarvisPanel: !device.jarvisPanel });
+  };
+  const toggleRef = useRef(togglePanel);
+  toggleRef.current = togglePanel;
 
   useEffect(() => {
     document.title = active === "home" ? "Directory" : `${current.label} · Directory`;
   }, [active, current.label]);
 
-  // "/" opens search from anywhere (except while typing in a field); ⌘J / Ctrl+J opens Ask.
+  // Global shortcuts (lib/shortcuts.ts); never while typing in a field.
   useEffect(() => {
+    let pending: string | null = null;
+    let timer: number | undefined;
     const onKey = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement | null;
-      const typing = el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
-      if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        e.preventDefault();
-        location.hash = "/search";
+      if (e.defaultPrevented || e.repeat) return;
+      const chord = e.metaKey || e.ctrlKey || e.altKey;
+      if (isTyping(e.target) && !chord) return;
+      if (isTyping(e.target) && e.altKey) return;
+      const hit = matchShortcut(e, pending);
+      pending = null;
+      window.clearTimeout(timer);
+      if (hit === "pending") {
+        pending = "g";
+        timer = window.setTimeout(() => (pending = null), 1200);
+        return;
       }
-      if (e.key.toLowerCase() === "j" && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
-        e.preventDefault();
-        location.hash = "/ask";
-      }
+      if (!hit) return;
+      // Alt+N belongs to QuickTask's own listener.
+      if (hit.id === "task") return;
+      e.preventDefault();
+      if (hit.id === "help") setHelp(true);
+      else if (hit.id === "panel") toggleRef.current();
+      else if (hit.to) location.hash = `/${hit.to}`;
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.clearTimeout(timer);
+    };
   }, []);
 
   const status = session.status;
@@ -156,186 +162,188 @@ export function App() {
   }
 
   const user = status.user;
-  // Phone: only chips that need attention (desktop shows all four).
-  const quiet = { net: online, api: api.tone === "ok", sw: swState.tone === "ok" };
+  const panelKeys = shortcutById("panel");
 
   return (
     <PlayerProvider>
-    {/* Keyboard users can jump past the navigation (a link would change the hash route). */}
-    <button
-      type="button"
-      onClick={() => main.current?.focus()}
-      className="sr-only z-50 rounded-full bg-ink px-4 py-2 text-sm text-canvas focus:not-sr-only focus:fixed focus:top-2 focus:left-2"
-    >
-      Skip to content
-    </button>
-    <div className="flex h-full">
-      {/* Sidebar (tablet / desktop): Paper "Desktop · Home" */}
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-line bg-panel md:flex">
-        <a href="#/home" className="flex items-center gap-3 px-6 pt-7 pb-6">
-          <span aria-hidden className="bg-tidal size-6 rounded-[7px]" />
-          <span className="text-[15px] font-medium">Directory</span>
-        </a>
-        <nav aria-label="Modules" className="flex flex-1 flex-col overflow-y-auto px-3 pb-4">
-          {SIDEBAR_GROUPS.map(({ group, label }) => (
-            <div key={group} className={label ? "mt-6" : undefined}>
-              {label && <p className="label px-3 pb-2">{label}</p>}
-              <ul className="flex flex-col gap-0.5">
-                {sidebarModules(group).map((m) => {
-                  const isActive = m.id === active;
+      {/* Keyboard users can jump past the navigation (a link would change the hash route). */}
+      <button
+        type="button"
+        onClick={() => main.current?.focus()}
+        className="sr-only z-50 rounded-full bg-ink px-4 py-2 text-sm text-canvas focus:not-sr-only focus:fixed focus:top-2 focus:left-2"
+      >
+        Skip to content
+      </button>
+      <div className="flex h-full">
+        {/* Sidebar (tablet and desktop). */}
+        <aside className="hidden w-60 shrink-0 flex-col border-r border-line bg-panel md:flex">
+          <a href="#/home" className="flex items-center gap-3 px-6 pt-6 pb-5">
+            <span aria-hidden className="bg-tidal size-6 rounded-[7px]" />
+            <span className="text-[15px] font-medium">Directory</span>
+          </a>
+          <nav aria-label="Modules" className="flex flex-1 flex-col overflow-y-auto px-3 pb-4">
+            {SIDEBAR_GROUPS.map(({ group, label }) => (
+              <div key={group} className={label ? "mt-5" : undefined}>
+                {label && <p className="px-3 pb-1.5 text-xs text-muted">{label}</p>}
+                <ul className="flex flex-col gap-px">
+                  {sidebarModules(group).map((m) => {
+                    const isActive = m.id === active;
+                    return (
+                      <li key={m.id}>
+                        <a
+                          href={`#/${m.id}`}
+                          aria-current={isActive ? "page" : undefined}
+                          className={`flex min-h-9 items-center gap-3 rounded-sm px-3 text-[15px] transition-colors ${
+                            isActive ? "bg-sunken text-ink" : "text-muted hover:bg-sunken/60 hover:text-ink"
+                          }`}
+                        >
+                          <Icon name={m.icon} className={isActive ? "text-accent" : ""} />
+                          <span className="flex-1">{m.label}</span>
+                          {m.stage === "planned" && <StageTag stage={m.stage} />}
+                        </a>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </nav>
+          <button
+            type="button"
+            onClick={() => setHelp(true)}
+            aria-keyshortcuts="Shift+?"
+            className="mx-3 flex min-h-9 items-center gap-3 rounded-sm px-3 text-sm text-muted transition-colors hover:bg-sunken/60 hover:text-ink"
+          >
+            <Icon name="keyboard" />
+            <span className="flex-1 text-left">Shortcuts</span>
+            <kbd className="font-mono text-xs">?</kbd>
+          </button>
+          {/* Account footer: opens Settings. */}
+          <a
+            href="#/settings"
+            aria-current={active === "settings" ? "page" : undefined}
+            className={`m-3 flex items-center gap-3 rounded-md px-3 py-3 transition-colors hover:bg-sunken ${active === "settings" ? "bg-sunken" : "bg-sunken/60"}`}
+          >
+            <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-full bg-periwinkle text-sm font-medium text-[#1c1e2e]">
+              {user.displayName.trim().charAt(0).toUpperCase() || "·"}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm">{user.displayName}</span>
+              <span className="block text-xs text-muted" title={status.verified ? undefined : "Server unreachable: using the session saved on this device"}>
+                Settings · {status.verified ? `v${health.report?.version ?? "0.0.1"}` : "offline, unverified"}
+              </span>
+            </span>
+          </a>
+        </aside>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="pt-safe sticky top-0 z-20 bg-canvas/90 backdrop-blur">
+            <div className="flex items-center gap-2 px-4 pt-3 pb-2 md:px-8 md:pt-5">
+              <h1 className={active === "home" ? "sr-only" : "min-w-0 flex-1 truncate text-[22px] font-medium tracking-tight"}>{current.label}</h1>
+              {active === "home" && <span className="flex-1" />}
+              <StatusIndicator online={online} health={health} sw={sw} sync={sync} />
+              {active !== "ask" && <QuickTask online={online} />}
+              {active !== "ask" && (
+                <button
+                  type="button"
+                  onClick={togglePanel}
+                  aria-pressed={panelOpen}
+                  aria-keyshortcuts={ariaKeys(panelKeys)}
+                  title={`JARVIS side panel (${panelKeys.keys.map((k) => keyLabel(k)).join(" ")})`}
+                  className={`press hidden min-h-9 items-center gap-2 rounded-full border px-3 text-[13px] transition-colors md:inline-flex ${
+                    panelOpen ? "border-accent bg-accent text-accent-ink" : "border-line bg-panel hover:border-accent"
+                  }`}
+                >
+                  <Icon name="ask" size={16} />
+                  JARVIS
+                </button>
+              )}
+              <button type="button" onClick={() => setHelp(true)} aria-label="Keyboard shortcuts and help" className="grid size-9 place-items-center rounded-full text-muted hover:bg-sunken hover:text-ink md:hidden">
+                <Icon name="help" />
+              </button>
+            </div>
+            {sync.rejected.length > 0 && (
+              <div role="alert" className="flex items-start justify-between gap-3 border-y border-line bg-panel px-4 py-2 text-sm md:px-8">
+                <ul className="text-bad">
+                  {sync.rejected.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+                <button type="button" onClick={sync.dismiss} className="min-h-8 text-muted underline underline-offset-4">
+                  Dismiss
+                </button>
+              </div>
+            )}
+            {sw.kind === "update" && (
+              <div className="flex items-center justify-between gap-3 border-y border-line bg-panel px-4 py-2 text-sm md:px-8">
+                <span>A new version of Directory is ready.</span>
+                <button type="button" onClick={sw.apply} className="min-h-8 font-medium text-accent underline underline-offset-4">
+                  Reload to update
+                </button>
+              </div>
+            )}
+          </header>
+
+          <div className="flex min-h-0 flex-1">
+            <main ref={main} tabIndex={-1} className="min-w-0 flex-1 overflow-y-auto px-4 pt-3 pb-40 focus:outline-none md:px-8 md:pb-24">
+              <div className="mx-auto max-w-6xl">
+                {/* A crash stays inside the module; switching modules starts fresh. */}
+                <ErrorBoundary key={active} module={active}>
+                  <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>
+                    <View online={online} health={health} sw={sw} session={session} navigate={navigate} />
+                  </Suspense>
+                </ErrorBoundary>
+              </div>
+            </main>
+            {panelOpen && (
+              <aside aria-label="JARVIS side panel" className="drawer hidden w-[24rem] shrink-0 border-l border-line lg:block">
+                <ErrorBoundary module="ask">
+                  <Suspense fallback={<p className="p-5 text-sm text-muted">Loading…</p>}>
+                    <Ask online={online} panel={{ onClose: () => setDevice({ jarvisPanel: false }) }} />
+                  </Suspense>
+                </ErrorBoundary>
+              </aside>
+            )}
+          </div>
+
+          {/* Tab bar (phone). JARVIS capture is the raised middle button. */}
+          <nav aria-label="Tabs" className="pb-safe fixed inset-x-0 bottom-0 z-20 border-t border-line bg-panel/95 backdrop-blur md:hidden">
+            <ul className="mx-auto flex max-w-md items-end">
+              {TABS.map((id) => {
+                const m = MODULES.find((x) => x.id === id)!;
+                const isActive = id === active || (id === "modules" && !TABS.includes(active));
+                if (id === "ask") {
                   return (
-                    <li key={m.id}>
+                    <li key={id} className="flex flex-1 justify-center">
                       <a
-                        href={`#/${m.id}`}
+                        href="#/ask"
+                        aria-label="Ask JARVIS"
                         aria-current={isActive ? "page" : undefined}
-                        className={`flex min-h-9 items-center gap-3 rounded-sm px-3 text-[15px] transition ${
-                          isActive ? "bg-sunken text-ink" : "text-muted hover:bg-sunken/60 hover:text-ink"
-                        }`}
+                        className="press bg-tidal -mt-6 mb-2 grid size-14 place-items-center rounded-full ring-4 ring-canvas"
                       >
-                        <span aria-hidden className={`w-4 shrink-0 text-center font-mono text-sm ${isActive ? "text-accent" : ""}`}>
-                          {m.glyph}
-                        </span>
-                        <span className="flex-1">{m.label}</span>
-                        {m.stage === "planned" && <StageTag stage={m.stage} />}
+                        <Icon name="ask" size={26} />
                       </a>
                     </li>
                   );
-                })}
-              </ul>
-            </div>
-          ))}
-        </nav>
-        {/* Account footer: opens Settings. */}
-        <a
-          href="#/settings"
-          aria-current={active === "settings" ? "page" : undefined}
-          className={`m-3 flex items-center gap-3 rounded-md px-3 py-3 transition hover:bg-sunken ${active === "settings" ? "bg-sunken" : "bg-sunken/60"}`}
-        >
-          <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-full bg-periwinkle text-sm font-medium text-[#1c1e2e]">
-            {user.displayName.trim().charAt(0).toUpperCase() || "·"}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm">{user.displayName}</span>
-            <span
-              className="block font-mono text-[11px] text-muted"
-              title={status.verified ? undefined : "Server unreachable: using the session saved on this device"}
-            >
-              Settings · {status.verified ? `v${health.report?.version ?? "0.0.1"}` : "offline · unverified"}
-            </span>
-          </span>
-        </a>
-      </aside>
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="pt-safe sticky top-0 z-10 bg-canvas/85 backdrop-blur">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 pt-4 pb-3 md:px-10 md:pt-6">
-            <h1 className={active === "home" ? "sr-only" : "min-w-0 flex-1 basis-40 truncate text-[22px] tracking-tight"}>{current.label}</h1>
-            {active === "home" && <span className="flex-1" />}
-            <div className="flex flex-wrap items-center gap-1.5" role="status" aria-live="polite">
-              <span className={quiet.net ? "hidden md:inline-flex" : "inline-flex"}>
-                <StatusChip tone={online ? "ok" : "warn"} label="net" value={online ? "online" : "offline"} />
-              </span>
-              <span className={quiet.api ? "hidden md:inline-flex" : "inline-flex"}>
-                <StatusChip tone={api.tone} label="api" value={api.value} />
-              </span>
-              <span className={quiet.sw ? "hidden md:inline-flex" : "inline-flex"}>
-                <StatusChip tone={swState.tone} label="offline" value={swState.value} title="Service worker / app-shell cache" />
-              </span>
-              {sync.pending > 0 && (
-                <StatusChip tone="warn" label="sync" value={sync.syncing ? "syncing…" : `${sync.pending} pending`} title="Changes saved on this device, waiting to sync" />
-              )}
-              {active !== "ask" && (
-                <a
-                  href="#/ask"
-                  className="ml-1 hidden min-h-8 items-center gap-2 rounded-full border border-line bg-panel px-3 text-[13px] transition hover:border-accent md:inline-flex"
-                >
-                  <span aria-hidden className="size-1.5 rounded-full bg-accent" />
-                  Ask JARVIS
-                  <kbd className="font-mono text-[11px] text-muted">{shortcutLabel}</kbd>
-                </a>
-              )}
-            </div>
-            {active !== "ask" && <QuickTask online={online} />}
-          </div>
-          {sync.rejected.length > 0 && (
-            <div role="alert" className="flex items-start justify-between gap-3 border-y border-line bg-panel px-4 py-2 text-sm md:px-10">
-              <ul className="text-bad">
-                {sync.rejected.map((r, i) => (
-                  <li key={i}>{r}</li>
-                ))}
-              </ul>
-              <button type="button" onClick={sync.dismiss} className="min-h-8 text-muted underline underline-offset-4">
-                Dismiss
-              </button>
-            </div>
-          )}
-          {sw.kind === "update" && (
-            <div className="flex items-center justify-between gap-3 border-y border-line bg-panel px-4 py-2 text-sm md:px-10">
-              <span>A new version of Directory is ready.</span>
-              <button type="button" onClick={sw.apply} className="min-h-8 font-medium text-accent underline underline-offset-4">
-                Reload to update
-              </button>
-            </div>
-          )}
-        </header>
-
-        <main ref={main} tabIndex={-1} className="flex-1 overflow-y-auto px-4 pt-3 pb-40 focus:outline-none md:px-10 md:pb-24">
-          <div className="mx-auto max-w-6xl">
-            {/* A crash stays inside the module; switching modules starts fresh. */}
-            <ErrorBoundary key={active} module={active}>
-              <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>
-                <View online={online} health={health} sw={sw} session={session} navigate={navigate} />
-              </Suspense>
-            </ErrorBoundary>
-          </div>
-        </main>
-
-        {/* Tab bar (phone): Paper "Mobile · Home". Ask is the raised JARVIS button. */}
-        <nav aria-label="Tabs" className="pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-line bg-panel/95 backdrop-blur md:hidden">
-          <ul className="mx-auto flex max-w-md items-end">
-            {TABS.map((id) => {
-              const m = MODULES.find((x) => x.id === id)!;
-              const isActive = id === active || (id === "modules" && !TABS.includes(active));
-              if (id === "ask") {
+                }
                 return (
-                  <li key={id} className="flex flex-1 justify-center">
+                  <li key={id} className="flex-1">
                     <a
-                      href="#/ask"
-                      aria-label="Ask JARVIS"
+                      href={`#/${id}`}
                       aria-current={isActive ? "page" : undefined}
-                      className="bg-tidal -mt-7 mb-2 grid size-16 place-items-center rounded-full shadow-[0_8px_24px_-8px_rgb(59_63_168/60%)] ring-4 ring-canvas"
+                      className={`flex min-h-14 flex-col items-center justify-center gap-1 text-[11px] ${isActive ? "text-ink" : "text-muted"}`}
                     >
-                      <svg aria-hidden viewBox="0 0 24 24" className="size-7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                        <path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" />
-                      </svg>
+                      <Icon name={m.icon} size={22} className={isActive ? "text-accent" : ""} />
+                      {m.label}
                     </a>
                   </li>
                 );
-              }
-              return (
-                <li key={id} className="flex-1">
-                  <a
-                    href={`#/${id}`}
-                    aria-current={isActive ? "page" : undefined}
-                    className={`flex min-h-14 flex-col items-center justify-center gap-1 text-[11px] ${isActive ? "text-ink" : "text-muted"}`}
-                  >
-                    <span
-                      aria-hidden
-                      className={`grid size-6 place-items-center rounded-[7px] border font-mono text-xs leading-none ${
-                        isActive ? "border-accent bg-accent text-accent-ink" : "border-current"
-                      }`}
-                    >
-                      {m.glyph}
-                    </span>
-                    {m.label}
-                  </a>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
+              })}
+            </ul>
+          </nav>
+        </div>
       </div>
-    </div>
+      <ShortcutsDialog open={help} onClose={() => setHelp(false)} />
     </PlayerProvider>
   );
 }

@@ -1,3 +1,4 @@
+import { Icon } from "../components/icons";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { ModuleProps } from "../App";
 import { Button, StatusChip, inputClass } from "../components/ui";
@@ -240,7 +241,8 @@ function Bubble({ turn, chat, onDecide, onToggle, onSay, onRetry, onExample }: B
 }
 
 /** JARVIS conversation: talk or type, hear the answer, review and confirm changes. iPhone-first. */
-export function Ask({ online }: ModuleProps) {
+/** `panel`: the desktop side panel (D-050), the same conversation UI beside any screen. */
+export function Ask({ online, panel }: Pick<ModuleProps, "online"> & { panel?: { onClose: () => void } }) {
   const [chat, setChat] = useState<Chat>(EMPTY_CHAT);
   const chatRef = useRef(chat);
   chatRef.current = chat;
@@ -360,12 +362,24 @@ export function Ask({ online }: ModuleProps) {
   const disabled = !online || chat.busy;
 
   return (
-    <div className="fixed inset-0 z-30 flex flex-col bg-canvas md:relative md:inset-auto md:z-auto md:mx-auto md:h-[calc(100dvh-9rem)] md:max-w-2xl md:overflow-hidden md:rounded-lg md:border md:border-line">
-      <header className="pt-safe">
+    <div
+      className={
+        panel
+          ? "flex h-full flex-col bg-panel"
+          : "fixed inset-0 z-30 flex flex-col bg-canvas md:relative md:inset-auto md:z-auto md:mx-auto md:h-[calc(100dvh-9rem)] md:max-w-2xl md:overflow-hidden md:rounded-lg md:border md:border-line"
+      }
+    >
+      <header className={panel ? "border-b border-line" : "pt-safe"}>
         <div className="flex items-center gap-1 px-3 py-2 md:px-5">
-          <a href="#/home" aria-label="Close JARVIS" className="flex min-h-11 min-w-11 items-center justify-center text-lg text-muted md:hidden">
-            ←
-          </a>
+          {panel ? (
+            <button type="button" onClick={panel.onClose} aria-label="Close the JARVIS panel" className="grid min-h-11 min-w-11 place-items-center text-muted hover:text-ink">
+              <Icon name="close" />
+            </button>
+          ) : (
+            <a href="#/home" aria-label="Close JARVIS" className="flex min-h-11 min-w-11 items-center justify-center text-muted md:hidden">
+              <Icon name="chevronLeft" size={22} />
+            </a>
+          )}
           <h2 className="flex-1 text-[17px] font-medium tracking-wide">JARVIS</h2>
           {chat.turns.length > 0 && (
             <button type="button" onClick={() => void restart()} disabled={chat.busy} className="min-h-11 px-2 font-mono text-[11px] text-muted underline-offset-4 hover:underline">

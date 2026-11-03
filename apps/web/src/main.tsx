@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { applyLaunchRoute } from "./lib/launch";
+import { applyDensity } from "./lib/device";
 import { applyTheme } from "./lib/theme";
 import "./index.css";
 
@@ -9,6 +10,7 @@ import "./index.css";
 // and this device's Light / Night choice applies without a flash.
 applyLaunchRoute();
 applyTheme();
+applyDensity();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

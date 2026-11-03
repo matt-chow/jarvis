@@ -166,3 +166,143 @@
     animation: none;
   }
 }
+
+/* ── D-050 redesign: motion, depth, density, texture, browser surfaces ── */
+
+@theme {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  /* One soft lift for things that float (popovers, dialogs, the side panel). */
+  --shadow-lift: 0 1px 2px rgb(0 0 0 / 6%), 0 12px 32px -12px rgb(0 0 0 / 28%);
+}
+
+:root {
+  /* Density (Settings › Appearance, per device): card padding and grid gaps. */
+  --pad-card: 1.25rem;
+  --gap-grid: 1rem;
+  --row: 2.75rem;
+  /* Paper grain: a faint fibre over the ground, never over text panels. */
+  --grain-opacity: 0.035;
+}
+
+:root[data-density="compact"] {
+  --pad-card: 0.875rem;
+  --gap-grid: 0.625rem;
+  --row: 2.25rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --grain-opacity: 0.05;
+  }
+}
+:root[data-theme="night"] {
+  --grain-opacity: 0.05;
+}
+
+@layer base {
+  body {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The grain sits above the ground colour and below every surface. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: var(--grain-opacity);
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    background-size: 160px;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--muted) 45%, transparent) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--muted) 40%, transparent);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+  }
+
+  button,
+  [role="button"] {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
+/* Popovers grow from their trigger; dialogs and the side panel ease in.
+ * Opacity only under reduced motion. */
+.pop {
+  transition:
+    opacity 160ms var(--ease-out),
+    transform 160ms var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.96) translateY(-2px);
+  }
+}
+
+.drawer {
+  transition: transform 280ms var(--ease-drawer);
+  @starting-style {
+    transform: translateX(100%);
+  }
+}
+
+dialog[open] {
+  transition:
+    opacity 180ms var(--ease-out),
+    transform 180ms var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+/* Press feedback on anything pressable. */
+.press {
+  transition: transform 140ms var(--ease-out);
+}
+.press:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Quiet acknowledgement: a check that settles in once. */
+@keyframes settle {
+  from {
+    transform: scale(0.85);
+    opacity: 0.4;
+  }
+}
+.settle {
+  animation: settle 220ms var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pop,
+  dialog[open] {
+    @starting-style {
+      transform: none;
+    }
+  }
+  .drawer {
+    transition: none;
+  }
+  .press:active:not(:disabled) {
+    transform: none;
+  }
+  .settle {
+    animation: none;
+  }
+}

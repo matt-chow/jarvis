@@ -1034,3 +1034,36 @@ Guide: docs/NOTIFICATIONS.md.
   (union of fields, newest value per field). Stored conflicts are
   per-device and never leave it; they hold the same data the device
   already caches.
+
+## D-050 — Personal digital home redesign: shell, shortcuts, device settings
+**Status:** accepted (owner goal, 2026-11-03: redesign Directory as a calm,
+retro, accessible "personal digital home" without approval checkpoints;
+palette and typography preserved). Builds on D-046. Paper Desktop was not
+running, so the redesign was done directly in the UI and recorded in
+DESIGN.md.
+
+### Shell (slice 0)
+
+- **Icons, not glyphs.** An authored SVG set (`components/icons.tsx`,
+  24-px grid, 1.6 stroke) replaces the text glyphs in the sidebar, Modules,
+  and tab bar.
+- **Navigation:** sidebar groups are main, Plan, Write and read, Listen,
+  System. The phone tab bar is Home, Tasks, JARVIS (raised), Calendar,
+  Modules: Calendar replaces Projects because the day's schedule is the
+  most used planning view on a phone. Projects stays one tap away in
+  Modules.
+- **Sync status** is one always-visible indicator (Synced, Syncing…,
+  N pending, Offline, Server unreachable) with a popover for detail,
+  replacing the row of status chips.
+- **JARVIS side panel** (desktop ≥ 1024 px): the Ask conversation in a
+  slide-out drawer, toggled from the header or Ctrl/⌘+. ; below 1024 px the
+  toggle opens the Ask screen. Its open state is per device.
+- **Shortcuts** come from one list (`lib/shortcuts.ts`) that drives both the
+  handler and the searchable help dialog (`?`). They never fire while typing
+  in a field (except chords), never replace a browser default, and show ⌘/⌥
+  on Apple keyboards. Sequences use `g` then a letter.
+- **Device settings** (`lib/device.ts`, `localStorage`): density, interface
+  sounds (off by default), music volume, crackle on/level, JARVIS panel,
+  calendar split. Per device, never synced, safe defaults on bad data.
+- **Sentence case.** Panel titles and status labels are sentence case;
+  mono is kept for data. The browser e2e text match is case-insensitive.

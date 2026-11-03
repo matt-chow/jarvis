@@ -4,53 +4,56 @@
  * should share these ids.
  */
 
+import type { IconName } from "../components/icons";
+
 export type ModuleId = "home" | "ask" | "search" | "inbox" | "tasks" | "reminders" | "projects" | "calendar" | "habits" | "notes" | "journal" | "library" | "music" | "files" | "jarvis" | "settings" | "modules";
 
 export interface ModuleMeta {
   id: ModuleId;
   label: string;
-  /** Monospace glyph used as the nav icon. */
-  glyph: string;
+  /** Nav icon from the authored set (components/icons.tsx, D-050). */
+  icon: IconName;
   summary: string;
   stage: "ready" | "preview" | "planned";
   /** Works without a network connection. */
   offline: boolean;
-  /** Sidebar section (Paper: main, Knowledge, Media; System at the bottom). */
+  /** Sidebar section; System sits at the bottom. */
   group: ModuleGroup;
 }
 
-export type ModuleGroup = "main" | "knowledge" | "media" | "system";
+export type ModuleGroup = "main" | "plan" | "knowledge" | "life" | "system";
 
 export const MODULES: readonly ModuleMeta[] = [
-  { id: "home", label: "Home", glyph: "~", summary: "System status and overview.", stage: "ready", offline: true, group: "main" },
-  { id: "ask", label: "Ask", glyph: "◎", summary: "Talk or type to JARVIS. Changes wait for your confirm.", stage: "preview", offline: false, group: "main" },
-  { id: "search", label: "Search", glyph: "⌕", summary: "Find anything across tasks, notes, projects, and journal.", stage: "preview", offline: false, group: "main" },
-  { id: "inbox", label: "Inbox", glyph: "↓", summary: "Capture first, sort later: triage into tasks, notes, or the journal.", stage: "preview", offline: true, group: "main" },
-  { id: "tasks", label: "Tasks", glyph: "☐", summary: "Tasks and subtasks with due dates and priorities.", stage: "preview", offline: true, group: "main" },
-  { id: "reminders", label: "Reminders", glyph: "◷", summary: "Reminders with alerts, repeats, lists, and snooze.", stage: "preview", offline: true, group: "main" },
-  { id: "projects", label: "Projects", glyph: "▦", summary: "Group tasks and track progress.", stage: "preview", offline: true, group: "main" },
-  { id: "calendar", label: "Calendar", glyph: "▣", summary: "Events by month and day, with tasks that are due.", stage: "preview", offline: true, group: "main" },
-  { id: "habits", label: "Habits", glyph: "✓", summary: "Daily routines on chosen days, with streaks.", stage: "preview", offline: true, group: "main" },
-  { id: "notes", label: "Notes", glyph: "¶", summary: "Notes and wiki pages, with autosave and backlinks.", stage: "preview", offline: true, group: "knowledge" },
-  { id: "journal", label: "Journal", glyph: "≡", summary: "One entry per day, with mood.", stage: "preview", offline: true, group: "main" },
-  { id: "library", label: "Library", glyph: "◫", summary: "PDFs and ePubs with reading progress.", stage: "preview", offline: false, group: "knowledge" },
-  { id: "music", label: "Music", glyph: "♫", summary: "Your audio files, playlists, and offline listening.", stage: "preview", offline: true, group: "media" },
-  { id: "files", label: "Files", glyph: "▤", summary: "Private cloud storage.", stage: "preview", offline: false, group: "knowledge" },
-  { id: "jarvis", label: "JARVIS", glyph: "◉", summary: "Command console: preview and approval, presets, automations, history.", stage: "preview", offline: false, group: "system" },
-  { id: "modules", label: "Modules", glyph: "⊞", summary: "Every module in one place.", stage: "ready", offline: true, group: "system" },
-  { id: "settings", label: "Settings", glyph: "§", summary: "Passkeys, device tokens, and sign-out.", stage: "ready", offline: false, group: "system" },
+  { id: "home", label: "Home", icon: "home", summary: "Today at a glance: schedule, tasks, reminders, habits.", stage: "ready", offline: true, group: "main" },
+  { id: "ask", label: "Ask", icon: "ask", summary: "Talk or type to JARVIS. Changes wait for your confirm.", stage: "preview", offline: false, group: "main" },
+  { id: "search", label: "Search", icon: "search", summary: "Find anything across tasks, notes, projects, and journal.", stage: "preview", offline: false, group: "main" },
+  { id: "inbox", label: "Inbox", icon: "inbox", summary: "Capture first, sort later: triage into tasks, notes, or the journal.", stage: "preview", offline: true, group: "main" },
+  { id: "tasks", label: "Tasks", icon: "tasks", summary: "Tasks and subtasks with due dates and priorities.", stage: "preview", offline: true, group: "plan" },
+  { id: "calendar", label: "Calendar", icon: "calendar", summary: "Month, week, and day, with scheduled work and due dates.", stage: "preview", offline: true, group: "plan" },
+  { id: "reminders", label: "Reminders", icon: "reminders", summary: "Reminders with alerts, repeats, lists, and snooze.", stage: "preview", offline: true, group: "plan" },
+  { id: "projects", label: "Projects", icon: "projects", summary: "Group tasks and track progress.", stage: "preview", offline: true, group: "plan" },
+  { id: "habits", label: "Habits", icon: "habits", summary: "Routines on chosen days, with streaks and a year grid.", stage: "preview", offline: true, group: "plan" },
+  { id: "notes", label: "Notes", icon: "notes", summary: "Notes and wiki pages, with autosave and backlinks.", stage: "preview", offline: true, group: "knowledge" },
+  { id: "journal", label: "Journal", icon: "journal", summary: "One entry per day, with mood.", stage: "preview", offline: true, group: "knowledge" },
+  { id: "library", label: "Library", icon: "library", summary: "PDFs and ePubs with reading progress.", stage: "preview", offline: false, group: "knowledge" },
+  { id: "files", label: "Files", icon: "files", summary: "Private cloud storage.", stage: "preview", offline: false, group: "knowledge" },
+  { id: "music", label: "Music", icon: "music", summary: "A turntable for your own audio files and playlists.", stage: "preview", offline: true, group: "life" },
+  { id: "jarvis", label: "JARVIS", icon: "jarvis", summary: "Command console: preview and approval, presets, automations, history.", stage: "preview", offline: false, group: "system" },
+  { id: "modules", label: "Modules", icon: "modules", summary: "Every module in one place.", stage: "ready", offline: true, group: "system" },
+  { id: "settings", label: "Settings", icon: "settings", summary: "Appearance, sounds, passkeys, device tokens, and sign-out.", stage: "ready", offline: false, group: "system" },
 ];
 
 export const DEFAULT_MODULE: ModuleId = "home";
 
-/** Phone tab bar (Paper Mobile): Ask sits in the middle as the JARVIS button. */
-export const TABS: readonly ModuleId[] = ["home", "tasks", "ask", "projects", "modules"];
+/** Phone tab bar: JARVIS capture sits in the middle as the raised button. */
+export const TABS: readonly ModuleId[] = ["home", "tasks", "ask", "calendar", "modules"];
 
 /** Sidebar groups, in order. Settings lives in the account footer; Modules is the phone launcher. */
 export const SIDEBAR_GROUPS: readonly { group: ModuleGroup; label?: string }[] = [
   { group: "main" },
-  { group: "knowledge", label: "Knowledge" },
-  { group: "media", label: "Media" },
+  { group: "plan", label: "Plan" },
+  { group: "knowledge", label: "Write and read" },
+  { group: "life", label: "Listen" },
   { group: "system", label: "System" },
 ];
 
